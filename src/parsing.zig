@@ -11,8 +11,8 @@ pub const StringLiteral = struct {
 
 pub const Expression = union {
     bareword: Bareword,
-    stringLiteral: StringLiteral,
     invocation: Invocation,
+    stringLiteral: StringLiteral,
 };
 
 pub const Invocation = struct {
