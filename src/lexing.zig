@@ -3,7 +3,7 @@ const std = @import("std");
 pub const Token = struct {
     pub const Kind = enum {
         Bareword,
-        String,
+        StringLiteral,
         Newline,
         // Operators
         Assign,
