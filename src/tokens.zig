@@ -1,4 +1,5 @@
 const std = @import("std");
+const PipelineState = @import("pipeline.zig").State;
 
 pub const Token = struct {
     pub const Kind = enum {
@@ -19,28 +20,39 @@ pub const Token = struct {
     value: []const u8,
 };
 
-pub fn lex(src: []const u8, ally: std.mem.Allocator) ![]Token {
+pub fn lex(state: *PipelineState) ![]Token {
     var idx: usize = 0;
-    var list = std.ArrayList(Token).init(ally);
+    var list = std.ArrayList(Token).init(state.arena);
 
-    for (src, 0..src.len) |c, i| {
+    for (state.source, 0..state.source.len) |c, i| {
         if (c == ' ' or c == '\n') {
             try list.append(.{
                 .kind = .Bareword,
-                .value = src[idx..i],
+                .value = state.source[idx..i],
             });
             idx = i + 1;
         }
     }
 
-    if (idx != src.len) {
+    if (idx != state.source.len) {
         try list.append(.{
             .kind = .Bareword,
-            .value = src[idx..src.len],
+            .value = state.source[idx..state.source.len],
         });
     }
 
     return list.toOwnedSlice();
+}
+
+pub fn dump(state: *PipelineState) void {
+    const print = std.debug.print;
+    for (state.tokens) |token| {
+        print("{}", .{token.kind});
+        if (token.value.len == 0) {
+            print(", {s}\n", .{token.value});
+        }
+        print("\n", .{});
+    }
 }
 
 const expectEqual = std.testing.expectEqual;
