@@ -2,6 +2,7 @@ const std = @import("std");
 const tokens = @import("tokens.zig");
 const ast = @import("ast.zig");
 const pipeline = @import("pipeline.zig");
+const repl = @import("repl.zig").repl;
 
 const eq = std.mem.eql;
 
@@ -33,17 +34,14 @@ pub fn main() !void {
     const arena_allocator = arena.allocator();
     const args = try std.process.argsAlloc(arena_allocator);
 
-    if (args.len <= 1) {
-        //todo: show help
-        return;
-    }
-
     var verboseLexer = false;
     var verboseParser = false;
     var verboseCodegen = false;
     var file: ?[]const u8 = null;
 
-    for (args) |arg| {
+    std.debug.print("args: {s}\n", .{args});
+
+    for (args[1..args.len]) |arg| {
         if (in(arg, &.{
             "--help",
             "-h",
@@ -62,8 +60,7 @@ pub fn main() !void {
     }
 
     if (file == null) {
-        //TODO: file not specified
-        return;
+        return repl();
     }
 
     const source = try readfile(arena_allocator, file.?);
@@ -72,13 +69,9 @@ pub fn main() !void {
         .arena = arena_allocator,
         .ally = ally,
         .source = source,
-        .tokens = &[_]tokens.Token{},
-        .root = .{
-            .statements = &[_]ast.Statement{},
-        },
-        .verboseParser = verboseParser,
-        .verboseLexer = verboseLexer,
         .verboseCodegen = verboseCodegen,
+        .verboseLexer = verboseLexer,
+        .verboseParser = verboseParser,
     };
 
     try pipeline.run(&state);

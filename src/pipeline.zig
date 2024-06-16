@@ -10,8 +10,10 @@ pub const State = struct {
     arena: std.mem.Allocator,
     ally: std.mem.Allocator,
     source: []const u8,
-    tokens: []Token,
-    root: ast.Root,
+    tokens: []Token = &[_]tokens.Token{},
+    root: ast.Root = .{
+        .statements = &[_]ast.Statement{},
+    },
     verboseLexer: bool,
     verboseParser: bool,
     verboseCodegen: bool,

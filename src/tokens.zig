@@ -1,4 +1,5 @@
 const std = @import("std");
+const ast = @import("ast.zig");
 const PipelineState = @import("pipeline.zig").State;
 
 pub const Token = struct {
@@ -59,10 +60,18 @@ const expectEqual = std.testing.expectEqual;
 const expectEqualStrings = std.testing.expectEqualStrings;
 
 test "lex barewords" {
-    const src = "ls -l -a";
     const ally = std.testing.allocator_instance.allocator();
 
-    const tokens = try lex(src, ally);
+    var state: PipelineState = .{
+        .ally = ally,
+        .verboseLexer = false,
+        .verboseParser = false,
+        .verboseCodegen = false,
+        .arena = ally,
+        .source = "ls -l -a",
+    };
+
+    const tokens = try lex(&state);
     defer ally.free(tokens);
 
     try expectEqual(3, tokens.len);
