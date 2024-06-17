@@ -21,35 +21,79 @@ pub const Token = struct {
     value: []const u8,
 };
 
-pub fn lex(state: *PipelineState) ![]Token {
-    var idx: usize = 0;
-    var list = std.ArrayList(Token).init(state.arena);
+const LexState = struct {
+    state: *PipelineState,
+    idx: usize = 0,
+    list: std.ArrayList(Token),
 
-    for (state.source, 0..state.source.len) |c, i| {
+    pub fn get(self: LexState) u8 {
+        return self.state.source[self.idx];
+    }
+
+    pub fn eof(self: LexState) bool {
+        return self.idx >= self.state.source.len;
+    }
+
+    pub fn next(self: *LexState) void {
+        self.idx += 1;
+    }
+};
+
+pub fn lex(state: *PipelineState) ![]Token {
+    var lstate = LexState{
+        .state = state,
+        .list = std.ArrayList(Token).init(state.arena),
+    };
+
+    var idx: usize = 0;
+    while (!lstate.eof()) : (lstate.next()) {
+        skipChars(&lstate);
+        if (lstate.eof()) {
+            break;
+        }
+        const c = lstate.get();
         if (c == ' ' or c == '\n') {
-            try list.append(.{
+            try lstate.list.append(.{
                 .kind = .Bareword,
-                .value = state.source[idx..i],
+                .value = state.source[idx..lstate.idx],
             });
-            idx = i + 1;
+            idx = lstate.idx + 1;
         }
     }
 
     if (idx != state.source.len) {
-        try list.append(.{
+        try lstate.list.append(.{
             .kind = .Bareword,
             .value = state.source[idx..state.source.len],
         });
     }
 
-    return list.toOwnedSlice();
+    return lstate.list.toOwnedSlice();
+}
+
+fn skipChars(state: *LexState) void {
+    while (!state.eof()) : (state.next()) {
+        switch (state.get()) {
+            ' ', '\n', '\t' => {},
+            '#' => {
+                while (!state.eof()) : (state.next()) {
+                    switch (state.get()) {
+                        '\n' => return,
+                        else => {},
+                    }
+                }
+                return;
+            },
+            else => return,
+        }
+    }
 }
 
 pub fn dump(state: *PipelineState) void {
     const print = std.debug.print;
     for (state.tokens) |token| {
         print("{}", .{token.kind});
-        if (token.value.len == 0) {
+        if (token.value.len != 0) {
             print(", {s}\n", .{token.value});
         }
         print("\n", .{});
