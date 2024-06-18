@@ -94,7 +94,7 @@ fn parseInvocation(ctx: *Context) !?Invocation {
         try args.append(expr);
     }
 
-    if (ctx.getIf(.Newline) != null) {
+    if (ctx.getIf(.Newline) != null or ctx.eot()) {
         return Invocation{
             .token = token.?,
             .arguments = try args.toOwnedSlice(),

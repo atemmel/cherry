@@ -37,6 +37,14 @@ const LexState = struct {
     pub fn next(self: *LexState) void {
         self.idx += 1;
     }
+
+    pub fn lastWasNewline(self: *LexState) bool {
+        return self.list.items[self.list.items.len - 1].kind == .Newline;
+    }
+
+    pub fn slice(self: LexState, from: usize, to: usize) []const u8 {
+        return self.state.source[from..to];
+    }
 };
 
 pub fn lex(state: *PipelineState) ![]Token {
@@ -45,36 +53,49 @@ pub fn lex(state: *PipelineState) ![]Token {
         .list = std.ArrayList(Token).init(state.arena),
     };
 
-    var idx: usize = 0;
     while (!lstate.eof()) : (lstate.next()) {
-        skipChars(&lstate);
+        try skipChars(&lstate);
         if (lstate.eof()) {
             break;
         }
-        const c = lstate.get();
-        if (c == ' ' or c == '\n') {
-            try lstate.list.append(.{
-                .kind = .Bareword,
-                .value = state.source[idx..lstate.idx],
-            });
-            idx = lstate.idx + 1;
-        }
-    }
 
-    if (idx != state.source.len) {
-        try lstate.list.append(.{
-            .kind = .Bareword,
-            .value = state.source[idx..state.source.len],
-        });
+        if (lexBareword(&lstate)) |bareword| {
+            try lstate.list.append(bareword);
+        }
     }
 
     return lstate.list.toOwnedSlice();
 }
 
-fn skipChars(state: *LexState) void {
+fn lexBareword(state: *LexState) ?Token {
+    const begin = state.idx;
     while (!state.eof()) : (state.next()) {
         switch (state.get()) {
-            ' ', '\n', '\t' => {},
+            // non-token
+            ' ', '\n', '\t', '\r', '#' => break,
+            else => {},
+        }
+    }
+    return if (state.idx == begin) null else Token{
+        .kind = .Bareword,
+        .value = state.slice(begin, state.idx),
+    };
+}
+
+fn skipChars(state: *LexState) !void {
+    while (!state.eof()) : (state.next()) {
+        switch (state.get()) {
+            ' ', '\t' => {},
+            '\n' => {
+                if (state.list.items.len == 0 or state.lastWasNewline()) {
+                    continue;
+                }
+
+                try state.list.append(.{
+                    .kind = .Newline,
+                    .value = state.slice(state.idx, state.idx + 1),
+                });
+            },
             '#' => {
                 while (!state.eof()) : (state.next()) {
                     switch (state.get()) {
@@ -94,7 +115,7 @@ pub fn dump(state: *PipelineState) void {
     for (state.tokens) |token| {
         print("{}", .{token.kind});
         if (token.value.len != 0) {
-            print(", {s}\n", .{token.value});
+            print(", {s}", .{token.value});
         }
         print("\n", .{});
     }

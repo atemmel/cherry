@@ -29,7 +29,7 @@ pub fn main() !void {
     };
     defer std.debug.assert(base_allocator.deinit() == .ok);
     const ally = base_allocator.allocator();
-    var arena = std.heap.ArenaAllocator.init(base_allocator.allocator());
+    var arena = std.heap.ArenaAllocator.init(ally);
     defer arena.deinit();
     const arena_allocator = arena.allocator();
     const args = try std.process.argsAlloc(arena_allocator);
