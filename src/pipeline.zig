@@ -1,6 +1,8 @@
 const std = @import("std");
 const tokens = @import("tokens.zig");
 const ast = @import("ast.zig");
+const interpret = @import("interpreter.zig").interpret;
+
 const Token = tokens.Token;
 
 const print = std.debug.print;
@@ -19,7 +21,7 @@ pub const State = struct {
     verboseCodegen: bool,
 };
 
-pub fn logTime(comptime prefix: []const u8, start_ms: i64, stop_ms: i64) void {
+fn logTime(comptime prefix: []const u8, start_ms: i64, stop_ms: i64) void {
     const s = @as(f64, @floatFromInt(stop_ms - start_ms)) / std.time.ms_per_s;
     print(prefix ++ "{d:.3}s\n", .{s});
 }
@@ -40,4 +42,6 @@ pub fn run(state: *State) !void {
         logTime("Parsing: ", ast_start_ms, ast_stop_ms);
         ast.dump(state.root);
     }
+
+    try interpret(state);
 }
