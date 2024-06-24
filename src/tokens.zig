@@ -59,7 +59,9 @@ pub fn lex(state: *PipelineState) ![]Token {
             break;
         }
 
-        if (lexBareword(&lstate)) |bareword| {
+        if (lexStringLiteral(&lstate)) |string_literal| {
+            try lstate.list.append(string_literal);
+        } else if (lexBareword(&lstate)) |bareword| {
             try lstate.list.append(bareword);
         }
     }
@@ -78,6 +80,29 @@ fn lexBareword(state: *LexState) ?Token {
     }
     return if (state.idx == begin) null else Token{
         .kind = .Bareword,
+        .value = state.slice(begin, state.idx),
+    };
+}
+
+fn lexStringLiteral(state: *LexState) ?Token {
+    if (state.get() != '"') {
+        return null;
+    }
+    state.next();
+    const begin = state.idx;
+    while (!state.eof()) : (state.next()) {
+        switch (state.get()) {
+            // TODO: handle error
+            '\n',
+            => unreachable,
+            '"',
+            => break,
+            else => {},
+        }
+    }
+    defer state.next();
+    return Token{
+        .kind = .StringLiteral,
         .value = state.slice(begin, state.idx),
     };
 }
@@ -129,9 +154,6 @@ test "lex barewords" {
 
     var state: PipelineState = .{
         .ally = ally,
-        .verboseLexer = false,
-        .verboseParser = false,
-        .verboseCodegen = false,
         .arena = ally,
         .source = "ls -l -a",
     };
@@ -146,4 +168,23 @@ test "lex barewords" {
     try expectEqual(Token.Kind.Bareword, tokens[1].kind);
     try expectEqualStrings("-a", tokens[2].value);
     try expectEqual(Token.Kind.Bareword, tokens[2].kind);
+}
+
+test "lex string literals" {
+    const ally = std.testing.allocator_instance.allocator();
+
+    var state: PipelineState = .{
+        .ally = ally,
+        .arena = ally,
+        .source = "\"hi\" \"hello\"",
+    };
+
+    const tokens = try lex(&state);
+    defer ally.free(tokens);
+
+    try expectEqual(2, tokens.len);
+    try expectEqualStrings("hi", tokens[0].value);
+    try expectEqual(Token.Kind.StringLiteral, tokens[0].kind);
+    try expectEqualStrings("hello", tokens[1].value);
+    try expectEqual(Token.Kind.StringLiteral, tokens[1].kind);
 }

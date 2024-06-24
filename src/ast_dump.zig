@@ -65,6 +65,6 @@ fn dumpBareword(bw: ast.Bareword) void {
 }
 
 fn dumpStringLiteral(str: ast.StringLiteral) void {
-    leaf("StringLiteral: {s}\n", .{str.token.value});
+    leaf("StringLiteral: \"{s}\"\n", .{str.token.value});
     up();
 }

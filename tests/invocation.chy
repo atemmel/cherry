@@ -2,4 +2,4 @@
 
 ls -la
 
-ls -l -a
+ls "-l" -a

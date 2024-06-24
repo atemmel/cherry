@@ -6,6 +6,7 @@ const Value = []const u8;
 
 const Context = struct {
     ally: std.mem.Allocator,
+    arena: std.mem.Allocator,
     root: ast.Root,
     values: std.ArrayList(Value),
 };
@@ -13,6 +14,7 @@ const Context = struct {
 pub fn interpret(state: *PipelineState) !void {
     var ctx = Context{
         .ally = state.ally,
+        .arena = state.arena,
         .root = state.root,
         .values = try std.ArrayList(Value).initCapacity(state.arena, 8),
     };

@@ -16,9 +16,9 @@ pub const State = struct {
     root: ast.Root = .{
         .statements = &.{},
     },
-    verboseLexer: bool,
-    verboseParser: bool,
-    verboseCodegen: bool,
+    verboseLexer: bool = false,
+    verboseParser: bool = false,
+    verboseCodegen: bool = false,
 };
 
 fn logTime(comptime prefix: []const u8, start_ms: i64, stop_ms: i64) void {
