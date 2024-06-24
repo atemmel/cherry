@@ -10,9 +10,9 @@ pub const State = struct {
     arena: std.mem.Allocator,
     ally: std.mem.Allocator,
     source: []const u8,
-    tokens: []Token = &[_]tokens.Token{},
+    tokens: []Token = &.{},
     root: ast.Root = .{
-        .statements = &[_]ast.Statement{},
+        .statements = &.{},
     },
     verboseLexer: bool,
     verboseParser: bool,
@@ -34,11 +34,10 @@ pub fn run(state: *State) !void {
     }
 
     const ast_start_ms = microTimestamp();
-    _ = try ast.parse(state);
+    state.root = try ast.parse(state);
     const ast_stop_ms = microTimestamp();
     if (state.verboseParser) {
         logTime("Parsing: ", ast_start_ms, ast_stop_ms);
-        //TODO:
-        //ast.dump(state);
+        ast.dump(state.root);
     }
 }

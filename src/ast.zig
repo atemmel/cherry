@@ -1,6 +1,7 @@
 const std = @import("std");
 const Token = @import("tokens.zig").Token;
 const PipelineState = @import("pipeline.zig").State;
+pub const dump = @import("ast_dump.zig").dump;
 
 pub const Bareword = struct {
     token: *const Token,
@@ -10,7 +11,7 @@ pub const StringLiteral = struct {
     token: *const Token,
 };
 
-pub const Expression = union {
+pub const Expression = union(enum) {
     bareword: Bareword,
     stringLiteral: StringLiteral,
 };
@@ -20,7 +21,7 @@ pub const Invocation = struct {
     arguments: []Expression,
 };
 
-pub const Statement = union {
+pub const Statement = union(enum) {
     invocation: Invocation,
 };
 
@@ -60,7 +61,7 @@ pub fn parse(state: *PipelineState) !Root {
         .ally = state.arena,
     };
 
-    var statements = std.ArrayList(Statement).init(state.ally);
+    var statements = std.ArrayList(Statement).init(ctx.ally);
     defer statements.deinit();
 
     while (try parseStatement(&ctx)) |stmnt| {
