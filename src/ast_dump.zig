@@ -27,32 +27,39 @@ fn leaf(comptime str: []const u8, args: anytype) void {
 }
 
 pub fn dump(root: ast.Root) void {
-    leaf("Root:\n", .{});
     defer up();
+    leaf("Root:\n", .{});
     for (root.statements) |stmnt| {
         dumpStatement(stmnt);
     }
 }
 
 fn dumpStatement(stmnt: ast.Statement) void {
-    leaf("Statement:\n", .{});
     defer up();
+    leaf("Statement:\n", .{});
     switch (stmnt) {
         .invocation => |inv| dumpInvocation(inv),
+        .var_decl => |var_decl| dumpVarDecl(var_decl),
     }
 }
 
-fn dumpInvocation(inv: ast.Invocation) void {
-    leaf("Invocation: {s}\n", .{inv.token.value});
+fn dumpVarDecl(var_decl: ast.VarDecl) void {
     defer up();
+    leaf("Variable declaration: '{s}'\n", .{var_decl.token.value});
+    dumpExpression(var_decl.expression);
+}
+
+fn dumpInvocation(inv: ast.Invocation) void {
+    defer up();
+    leaf("Invocation: '{s}'\n", .{inv.token.value});
     for (inv.arguments) |expr| {
         dumpExpression(expr);
     }
 }
 
 fn dumpExpression(expr: ast.Expression) void {
-    leaf("Expression:\n", .{});
     defer up();
+    leaf("Expression:\n", .{});
     switch (expr) {
         .bareword => |bw| dumpBareword(bw),
         .stringLiteral => |str| dumpStringLiteral(str),
@@ -60,11 +67,11 @@ fn dumpExpression(expr: ast.Expression) void {
 }
 
 fn dumpBareword(bw: ast.Bareword) void {
-    leaf("Bareword: {s}\n", .{bw.token.value});
-    up();
+    defer up();
+    leaf("Bareword: '{s}'\n", .{bw.token.value});
 }
 
 fn dumpStringLiteral(str: ast.StringLiteral) void {
-    leaf("StringLiteral: \"{s}\"\n", .{str.token.value});
-    up();
+    defer up();
+    leaf("StringLiteral: '{s}'\n", .{str.token.value});
 }

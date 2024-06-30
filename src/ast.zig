@@ -21,8 +21,14 @@ pub const Invocation = struct {
     arguments: []Expression,
 };
 
+pub const VarDecl = struct {
+    token: *const Token, // contains identifier
+    expression: Expression,
+};
+
 pub const Statement = union(enum) {
     invocation: Invocation,
+    var_decl: VarDecl,
 };
 
 pub const Root = struct {
@@ -68,19 +74,46 @@ pub fn parse(state: *PipelineState) !Root {
         try statements.append(stmnt);
     }
 
+    // being unable to parse statements without running out of tokens is an error
+
     return Root{
         .statements = try statements.toOwnedSlice(),
     };
 }
 
 fn parseStatement(ctx: *Context) !?Statement {
-    const invAttempt = try parseInvocation(ctx);
-    if (invAttempt) |inv| {
+    if (try parseInvocation(ctx)) |inv| {
         return Statement{
             .invocation = inv,
         };
+    } else if (parseVarDeclaration(ctx)) |var_decl| {
+        return Statement{
+            .var_decl = var_decl,
+        };
+    } else return null;
+}
+
+fn parseVarDeclaration(ctx: *Context) ?VarDecl {
+    if (ctx.getIf(.Var) == null) {
+        return null;
     }
-    return null;
+
+    // 'var' MUST be followed by a identifer/bareword
+    const id = ctx.getIf(.Bareword) orelse unreachable;
+
+    // the identifer must be followed by an assignment (as of now)
+    if (ctx.getIf(.Assign) == null) unreachable;
+
+    // the assignment operation must be followed by an expression
+    const expr = parseExpression(ctx) orelse unreachable;
+
+    // the assignment must be followed by a terminating newline or eot
+    if (ctx.getIf(.Newline) == null and !ctx.eot()) unreachable;
+
+    return VarDecl{
+        .token = id,
+        .expression = expr,
+    };
 }
 
 fn parseInvocation(ctx: *Context) !?Invocation {

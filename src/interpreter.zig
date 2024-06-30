@@ -1,8 +1,8 @@
 const std = @import("std");
 const PipelineState = @import("pipeline.zig").State;
 const ast = @import("ast.zig");
-
-const Value = []const u8;
+const symtable = @import("symtable.zig");
+const Value = symtable.Value;
 
 const Context = struct {
     ally: std.mem.Allocator,
@@ -20,6 +20,9 @@ pub fn interpret(state: *PipelineState) !void {
     };
     defer ctx.values.deinit();
 
+    symtable.init(ctx.ally);
+    defer symtable.deinit();
+
     try interpretRoot(&ctx);
 }
 
@@ -32,7 +35,13 @@ fn interpretRoot(ctx: *Context) !void {
 fn interpretStatement(ctx: *Context, stmnt: ast.Statement) !void {
     switch (stmnt) {
         .invocation => |inv| try interpretInvocation(ctx, inv),
+        .var_decl => |var_decl| try interpretVarDecl(var_decl),
     }
+}
+
+fn interpretVarDecl(var_decl: ast.VarDecl) !void {
+    const value = evalExpression(var_decl.expression) orelse unreachable;
+    try symtable.insert(var_decl.token.value, value);
 }
 
 fn interpretInvocation(ctx: *Context, inv: ast.Invocation) !void {
