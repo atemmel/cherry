@@ -62,7 +62,8 @@ fn dumpExpression(expr: ast.Expression) void {
     leaf("Expression:\n", .{});
     switch (expr) {
         .bareword => |bw| dumpBareword(bw),
-        .stringLiteral => |str| dumpStringLiteral(str),
+        .string_literal => |str| dumpStringLiteral(str),
+        .variable => |variable| dumpVariable(variable),
     }
 }
 
@@ -74,4 +75,9 @@ fn dumpBareword(bw: ast.Bareword) void {
 fn dumpStringLiteral(str: ast.StringLiteral) void {
     defer up();
     leaf("StringLiteral: '{s}'\n", .{str.token.value});
+}
+
+fn dumpVariable(variable: ast.Variable) void {
+    defer up();
+    leaf("Variable: '${s}'\n", .{variable.token.value});
 }

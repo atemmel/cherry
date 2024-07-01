@@ -2,6 +2,7 @@ const std = @import("std");
 const PipelineState = @import("pipeline.zig").State;
 const ast = @import("ast.zig");
 const symtable = @import("symtable.zig");
+const builtins = @import("builtins.zig");
 const Value = symtable.Value;
 
 const Context = struct {
@@ -54,16 +55,21 @@ fn interpretInvocation(ctx: *Context, inv: ast.Invocation) !void {
         } else unreachable; // this construct expects only values
     }
 
-    var proc = std.process.Child.init(ctx.values.items, ctx.ally);
-    const term = try proc.spawnAndWait();
-    //TODO: handle result
-    _ = term;
+    if (builtins.lookup(name)) |builtin| {
+        try builtin(ctx.values.items);
+    } else {
+        var proc = std.process.Child.init(ctx.values.items, ctx.ally);
+        const term = try proc.spawnAndWait();
+        //TODO: handle result
+        _ = term;
+    }
 }
 
 fn evalExpression(expr: ast.Expression) ?Value {
     return switch (expr) {
         .bareword => |bw| evalBareword(bw),
-        .stringLiteral => |str| evalStringLiteral(str),
+        .string_literal => |str| evalStringLiteral(str),
+        .variable => |variable| evalVariable(variable),
     };
 }
 
@@ -73,4 +79,9 @@ fn evalBareword(bw: ast.Bareword) Value {
 
 fn evalStringLiteral(str: ast.StringLiteral) Value {
     return str.token.value;
+}
+
+fn evalVariable(variable: ast.Variable) Value {
+    //TODO: handle error
+    return symtable.get(variable.token.value) orelse unreachable;
 }

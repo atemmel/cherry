@@ -7,6 +7,7 @@ pub const Token = struct {
         // Values/literals
         Bareword,
         StringLiteral,
+        Variable,
         // Significant whitespace
         Newline,
         // Symbols
@@ -79,6 +80,8 @@ pub fn lex(state: *PipelineState) ![]Token {
 
         if (lexSymbol(&lstate)) |symbol| {
             try lstate.list.append(symbol);
+        } else if (lexVariable(&lstate)) |variable| {
+            try lstate.list.append(variable);
         } else if (lexKeyword(&lstate)) |keyword| {
             try lstate.list.append(keyword);
         } else if (lexStringLiteral(&lstate)) |string_literal| {
@@ -126,9 +129,25 @@ fn lexSymbol(state: *LexState) ?Token {
         else => unreachable,
     };
 
-    return Token{
+    return .{
         .kind = kind,
         .value = state.slice(token_begin, state.idx),
+    };
+}
+
+fn lexVariable(state: *LexState) ?Token {
+    switch (state.get()) {
+        '$' => state.next(),
+        else => return null,
+    }
+
+    const begin = state.idx;
+    while (!state.eof() and std.ascii.isAlphabetic(state.get())) : (state.next()) {}
+    const end = state.idx;
+    if (begin == end) unreachable;
+    return .{
+        .kind = .Variable,
+        .value = state.slice(begin, end),
     };
 }
 
@@ -138,7 +157,7 @@ fn lexKeyword(state: *LexState) ?Token {
     const end = state.idx;
     return if (begin == end)
         null
-    else if (string_keyword_map.get(state.slice(begin, end))) |kind| Token{
+    else if (string_keyword_map.get(state.slice(begin, end))) |kind| .{
         .kind = kind,
         .value = "",
     } else {
@@ -164,7 +183,7 @@ fn lexStringLiteral(state: *LexState) ?Token {
         }
     }
     defer state.next();
-    return Token{
+    return .{
         .kind = .StringLiteral,
         .value = state.slice(begin, state.idx),
     };
@@ -179,10 +198,13 @@ fn lexBareword(state: *LexState) ?Token {
             else => {},
         }
     }
-    return if (state.idx == begin) null else Token{
-        .kind = .Bareword,
-        .value = state.slice(begin, state.idx),
-    };
+    return if (state.idx == begin)
+        null
+    else
+        .{
+            .kind = .Bareword,
+            .value = state.slice(begin, state.idx),
+        };
 }
 
 fn skipChars(state: *LexState) !void {
@@ -267,7 +289,7 @@ test "lex string literals" {
     try expectEqual(Token.Kind.StringLiteral, tokens[1].kind);
 }
 
-test "lex var decl" {
+test "lex var declaration" {
     const ally = std.testing.allocator_instance.allocator();
 
     var state: PipelineState = .{
@@ -284,4 +306,22 @@ test "lex var decl" {
     try expectEqual(Token.Kind.Bareword, tokens[1].kind);
     try expectEqual(Token.Kind.Assign, tokens[2].kind);
     try expectEqual(Token.Kind.StringLiteral, tokens[3].kind);
+}
+
+test "lex call with variable" {
+    const ally = std.testing.allocator_instance.allocator();
+
+    var state: PipelineState = .{
+        .ally = ally,
+        .arena = ally,
+        .source = "say $x",
+    };
+
+    const tokens = try lex(&state);
+    defer ally.free(tokens);
+
+    try expectEqual(2, tokens.len);
+    try expectEqual(Token.Kind.Bareword, tokens[0].kind);
+    try expectEqual(Token.Kind.Variable, tokens[1].kind);
+    try expectEqualStrings("x", tokens[1].value);
 }

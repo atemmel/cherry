@@ -11,9 +11,14 @@ pub const StringLiteral = struct {
     token: *const Token,
 };
 
+pub const Variable = struct {
+    token: *const Token,
+};
+
 pub const Expression = union(enum) {
     bareword: Bareword,
-    stringLiteral: StringLiteral,
+    string_literal: StringLiteral,
+    variable: Variable,
 };
 
 pub const Invocation = struct {
@@ -142,9 +147,13 @@ fn parseExpression(ctx: *Context) ?Expression {
         return Expression{
             .bareword = bareword,
         };
-    } else if (parseStringLiteral(ctx)) |stringLiteral| {
+    } else if (parseStringLiteral(ctx)) |string_literal| {
         return Expression{
-            .stringLiteral = stringLiteral,
+            .string_literal = string_literal,
+        };
+    } else if (parseVariable(ctx)) |variable| {
+        return Expression{
+            .variable = variable,
         };
     }
     return null;
@@ -166,6 +175,16 @@ fn parseStringLiteral(ctx: *Context) ?StringLiteral {
         return null;
     }
     return StringLiteral{
+        .token = token.?,
+    };
+}
+
+fn parseVariable(ctx: *Context) ?Variable {
+    const token = ctx.getIf(.Variable);
+    if (token == null) {
+        return null;
+    }
+    return Variable{
         .token = token.?,
     };
 }
