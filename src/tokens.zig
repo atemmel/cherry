@@ -26,6 +26,8 @@ pub const Token = struct {
         Else,
         While,
         For,
+        True,
+        False,
     };
 
     kind: Kind,
@@ -38,6 +40,8 @@ const string_keyword_map = std.StaticStringMap(Token.Kind).initComptime(&.{
     .{ "else", .Else },
     .{ "while", .While },
     .{ "for", .For },
+    .{ "true", .True },
+    .{ "false", .False },
 });
 
 const LexState = struct {
@@ -55,6 +59,13 @@ const LexState = struct {
 
     pub fn next(self: *LexState) void {
         self.idx += 1;
+    }
+
+    pub fn isReservedChar(self: *LexState) bool {
+        return switch (self.get()) {
+            '=', '|', '(', ')', '{', '}', '[', ']' => true,
+            else => false,
+        };
     }
 
     pub fn lastWasNewline(self: *LexState) bool {
@@ -95,11 +106,8 @@ pub fn lex(state: *PipelineState) ![]Token {
 }
 
 fn lexSymbol(state: *LexState) ?Token {
-    switch (state.get()) {
-        // ok symbols
-        '=', '|', '(', ')', '{', '}', '[', ']' => {},
-        // not a symbol
-        else => return null,
+    if (!state.isReservedChar()) {
+        return null;
     }
 
     defer state.next();

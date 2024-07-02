@@ -32,6 +32,16 @@ pub fn build(b: *std.Build) void {
     // such a dependency.
     const run_cmd = b.addRunArtifact(exe);
 
+    const exe_check = b.addExecutable(.{
+        .name = "yash",
+        .root_source_file = b.path("src/main.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+
+    const check = b.step("check", "Check if yash compiles");
+    check.dependOn(&exe_check.step);
+
     // By making the run step depend on the install step, it will be run from the
     // installation directory rather than directly from within the cache directory.
     // This is not necessary, however, if the application depends on other installed

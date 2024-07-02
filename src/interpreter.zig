@@ -46,39 +46,64 @@ fn interpretVarDecl(var_decl: ast.VarDecl) !void {
 }
 
 fn interpretInvocation(ctx: *Context, inv: ast.Invocation) !void {
-    defer ctx.values.clearRetainingCapacity();
     const name = inv.token.value;
-    try ctx.values.append(name);
+    if (builtins.lookup(name)) |builtin| {
+        try evalBuiltin(ctx, inv, builtin);
+    } else {
+        try evalProc(ctx, inv);
+    }
+}
+
+fn evalBuiltin(ctx: *Context, inv: ast.Invocation, builtin: *const builtins.Builtin) !void {
+    defer ctx.values.clearRetainingCapacity();
     for (inv.arguments) |arg| {
         if (evalExpression(arg)) |value| {
             try ctx.values.append(value);
         } else unreachable; // this construct expects only values
     }
+    try builtin(ctx.values.items);
+}
 
-    if (builtins.lookup(name)) |builtin| {
-        try builtin(ctx.values.items);
-    } else {
-        var proc = std.process.Child.init(ctx.values.items, ctx.ally);
-        const term = try proc.spawnAndWait();
-        //TODO: handle result
-        _ = term;
+fn evalProc(ctx: *Context, inv: ast.Invocation) !void {
+    const name = inv.token.value;
+    var arena = std.heap.ArenaAllocator.init(ctx.ally);
+    defer arena.deinit();
+    const ally = arena.allocator();
+
+    var args = try std.ArrayList([]const u8).initCapacity(ally, inv.arguments.len);
+
+    try args.append(name);
+    for (inv.arguments) |arg| {
+        if (evalExpression(arg)) |value| {
+            try args.append(try value.asStr(ally));
+        } else unreachable; // this construct expects only values
     }
+
+    var proc = std.process.Child.init(args.items, ally);
+    const term = try proc.spawnAndWait();
+    //TODO: handle result
+    _ = term;
 }
 
 fn evalExpression(expr: ast.Expression) ?Value {
     return switch (expr) {
         .bareword => |bw| evalBareword(bw),
         .string_literal => |str| evalStringLiteral(str),
+        .bool_literal => |bl| evalBoolLiteral(bl),
         .variable => |variable| evalVariable(variable),
     };
 }
 
 fn evalBareword(bw: ast.Bareword) Value {
-    return bw.token.value;
+    return Value.str(bw.token.value);
 }
 
 fn evalStringLiteral(str: ast.StringLiteral) Value {
-    return str.token.value;
+    return Value.str(str.token.value);
+}
+
+fn evalBoolLiteral(bl: ast.BoolLiteral) Value {
+    return Value.bol(bl.token.kind == .True);
 }
 
 fn evalVariable(variable: ast.Variable) Value {

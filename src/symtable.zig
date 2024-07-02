@@ -1,10 +1,10 @@
 const std = @import("std");
 
+pub const Value = @import("value.zig").Value;
+
 pub const SymtableError = error{
     VariableAlreadyDeclared,
 };
-
-pub const Value = []const u8;
 
 const Symtable = std.StringHashMap(Value);
 
@@ -18,13 +18,13 @@ pub fn deinit() void {
     symtable.deinit();
 }
 
-pub fn get(str: []const u8) ?Value {
-    return symtable.get(str);
+pub fn get(key: []const u8) ?Value {
+    return symtable.get(key);
 }
 
-pub fn insert(str: []const u8, value: Value) !void {
-    return if (symtable.get(str) != null)
+pub fn insert(key: []const u8, value: Value) !void {
+    return if (symtable.get(key) != null)
         SymtableError.VariableAlreadyDeclared
     else
-        symtable.put(str, value);
+        symtable.put(key, value);
 }

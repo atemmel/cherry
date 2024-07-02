@@ -11,6 +11,10 @@ pub const StringLiteral = struct {
     token: *const Token,
 };
 
+pub const BoolLiteral = struct {
+    token: *const Token,
+};
+
 pub const Variable = struct {
     token: *const Token,
 };
@@ -18,6 +22,7 @@ pub const Variable = struct {
 pub const Expression = union(enum) {
     bareword: Bareword,
     string_literal: StringLiteral,
+    bool_literal: BoolLiteral,
     variable: Variable,
 };
 
@@ -155,6 +160,10 @@ fn parseExpression(ctx: *Context) ?Expression {
         return Expression{
             .variable = variable,
         };
+    } else if (parseBoolLiteral(ctx)) |bool_literal| {
+        return Expression{
+            .bool_literal = bool_literal,
+        };
     }
     return null;
 }
@@ -175,6 +184,16 @@ fn parseStringLiteral(ctx: *Context) ?StringLiteral {
         return null;
     }
     return StringLiteral{
+        .token = token.?,
+    };
+}
+
+fn parseBoolLiteral(ctx: *Context) ?BoolLiteral {
+    const token = ctx.getIf(.True) orelse ctx.getIf(.False);
+    if (token == null) {
+        return null;
+    }
+    return BoolLiteral{
         .token = token.?,
     };
 }
