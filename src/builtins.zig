@@ -8,10 +8,8 @@ pub const BuiltinError = error{
 pub const Builtin = fn (args: []const Value) BuiltinError!void;
 
 const builtins_table = std.StaticStringMap(*const Builtin).initComptime(&.{
-    .{
-        "assert", assert,
-        "say",    say,
-    },
+    .{ "assert", assert },
+    .{ "say", say },
 });
 
 pub fn lookup(str: []const u8) ?*const Builtin {
