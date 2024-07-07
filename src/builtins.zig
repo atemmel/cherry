@@ -5,11 +5,19 @@ pub const BuiltinError = error{
     AssertionFailed,
 } || std.mem.Allocator.Error || std.fs.File.WriteError;
 
-pub const Builtin = fn (args: []const Value) BuiltinError!void;
+const Result = union(enum) {
+    value: Value,
+    none: void,
+};
+
+pub const Builtin = fn (args: []const Value) BuiltinError!Result;
 
 const builtins_table = std.StaticStringMap(*const Builtin).initComptime(&.{
+    // general
     .{ "assert", assert },
     .{ "say", say },
+    // operations
+    .{ "+", sum },
 });
 
 pub fn lookup(str: []const u8) ?*const Builtin {
@@ -43,4 +51,16 @@ fn assert(args: []const Value) !void {
         true => {},
         false => BuiltinError.AssertionFailed,
     };
+}
+
+fn sum(args: []const Value) !void {
+    var sum_value: i64 = 0;
+    for (args) |arg| {
+        switch (arg) {
+            .integer => |i| {
+                sum_value += i;
+            },
+        }
+    }
+    return Value{};
 }
