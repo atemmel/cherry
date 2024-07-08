@@ -24,6 +24,7 @@ pub const Expression = union(enum) {
     string_literal: StringLiteral,
     bool_literal: BoolLiteral,
     variable: Variable,
+    capturing_invocation: Invocation,
 };
 
 pub const Invocation = struct {
@@ -96,14 +97,14 @@ fn parseStatement(ctx: *Context) !?Statement {
         return Statement{
             .invocation = inv,
         };
-    } else if (parseVarDeclaration(ctx)) |var_decl| {
+    } else if (try parseVarDeclaration(ctx)) |var_decl| {
         return Statement{
             .var_decl = var_decl,
         };
     } else return null;
 }
 
-fn parseVarDeclaration(ctx: *Context) ?VarDecl {
+fn parseVarDeclaration(ctx: *Context) !?VarDecl {
     if (ctx.getIf(.Var) == null) {
         return null;
     }
@@ -115,7 +116,7 @@ fn parseVarDeclaration(ctx: *Context) ?VarDecl {
     if (ctx.getIf(.Assign) == null) unreachable;
 
     // the assignment operation must be followed by an expression
-    const expr = parseExpression(ctx) orelse unreachable;
+    const expr = try parseExpression(ctx) orelse unreachable;
 
     // the assignment must be followed by a terminating newline or eot
     if (ctx.getIf(.Newline) == null and !ctx.eot()) unreachable;
@@ -134,7 +135,7 @@ fn parseInvocation(ctx: *Context) !?Invocation {
 
     var args = std.ArrayList(Expression).init(ctx.ally);
     defer args.deinit();
-    while (parseExpression(ctx)) |expr| {
+    while (try parseExpression(ctx)) |expr| {
         try args.append(expr);
     }
 
@@ -147,8 +148,38 @@ fn parseInvocation(ctx: *Context) !?Invocation {
     unreachable;
 }
 
-fn parseExpression(ctx: *Context) ?Expression {
-    if (parseBareword(ctx)) |bareword| {
+fn parseCapturingInvocation(ctx: *Context) std.mem.Allocator.Error!?Invocation {
+    const left = ctx.getIf(.LParens);
+    if (left == null) {
+        return null;
+    }
+
+    const token = ctx.getIf(.Bareword);
+    if (token == null) {
+        return null;
+    }
+
+    var args = std.ArrayList(Expression).init(ctx.ally);
+    defer args.deinit();
+    while (try parseExpression(ctx)) |expr| {
+        try args.append(expr);
+    }
+
+    if (ctx.getIf(.RParens) != null) {
+        return Invocation{
+            .token = token.?,
+            .arguments = try args.toOwnedSlice(),
+        };
+    }
+    unreachable;
+}
+
+fn parseExpression(ctx: *Context) !?Expression {
+    if (try parseCapturingInvocation(ctx)) |capturing_inv| {
+        return Expression{
+            .capturing_invocation = capturing_inv,
+        };
+    } else if (parseBareword(ctx)) |bareword| {
         return Expression{
             .bareword = bareword,
         };

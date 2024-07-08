@@ -65,6 +65,7 @@ fn dumpExpression(expr: ast.Expression) void {
         .string_literal => |str| dumpStringLiteral(str),
         .bool_literal => |bl| dumpBoolLiteral(bl),
         .variable => |variable| dumpVariable(variable),
+        .capturing_invocation => |inv| dumpInvocation(inv),
     }
 }
 

@@ -3,7 +3,13 @@ const PipelineState = @import("pipeline.zig").State;
 const ast = @import("ast.zig");
 const symtable = @import("symtable.zig");
 const builtins = @import("builtins.zig");
-const Value = symtable.Value;
+const values = @import("value.zig");
+const Value = values.Value;
+const Result = values.Result;
+
+const something = values.something;
+const nothing = values.nothing;
+const integer = values.integer;
 
 const Context = struct {
     ally: std.mem.Allocator,
@@ -35,33 +41,49 @@ fn interpretRoot(ctx: *Context) !void {
 
 fn interpretStatement(ctx: *Context, stmnt: ast.Statement) !void {
     switch (stmnt) {
-        .invocation => |inv| try interpretInvocation(ctx, inv),
-        .var_decl => |var_decl| try interpretVarDecl(var_decl),
+        .invocation => |inv| _ = try evalInvocation(ctx, inv, .{
+            .capturing = false,
+        }),
+        .var_decl => |var_decl| try interpretVarDecl(ctx, var_decl),
     }
 }
 
-fn interpretVarDecl(var_decl: ast.VarDecl) !void {
-    const value = evalExpression(var_decl.expression) orelse unreachable;
+fn interpretVarDecl(ctx: *Context, var_decl: ast.VarDecl) !void {
+    const value = switch (try evalExpression(ctx, var_decl.expression)) {
+        .value => |value| value,
+        .nothing => unreachable,
+    };
     try symtable.insert(var_decl.token.value, value);
 }
 
-fn interpretInvocation(ctx: *Context, inv: ast.Invocation) !void {
+const InvocationParams = struct {
+    capturing: bool,
+};
+
+fn evalInvocation(
+    ctx: *Context,
+    inv: ast.Invocation,
+    params: InvocationParams,
+) !Result {
+    _ = params;
     const name = inv.token.value;
-    if (builtins.lookup(name)) |builtin| {
-        try evalBuiltin(ctx, inv, builtin);
-    } else {
+    return if (builtins.lookup(name)) |builtin|
+        try evalBuiltin(ctx, inv, builtin)
+    else blk: {
         try evalProc(ctx, inv);
-    }
+        break :blk nothing;
+    };
 }
 
-fn evalBuiltin(ctx: *Context, inv: ast.Invocation, builtin: *const builtins.Builtin) !void {
+fn evalBuiltin(ctx: *Context, inv: ast.Invocation, builtin: *const builtins.Builtin) !Result {
     defer ctx.values.clearRetainingCapacity();
     for (inv.arguments) |arg| {
-        if (evalExpression(arg)) |value| {
-            try ctx.values.append(value);
-        } else unreachable; // this construct expects only values
+        switch (try evalExpression(ctx, arg)) {
+            .value => |value| try ctx.values.append(value),
+            .nothing => unreachable, // this construct expects only values
+        }
     }
-    try builtin(ctx.values.items);
+    return try builtin(ctx.values.items);
 }
 
 fn evalProc(ctx: *Context, inv: ast.Invocation) !void {
@@ -74,9 +96,10 @@ fn evalProc(ctx: *Context, inv: ast.Invocation) !void {
 
     try args.append(name);
     for (inv.arguments) |arg| {
-        if (evalExpression(arg)) |value| {
-            try args.append(try value.asStr(ally));
-        } else unreachable; // this construct expects only values
+        switch (try evalExpression(ctx, arg)) {
+            .value => |value| try args.append(try value.asStr(ally)),
+            .nothing => unreachable, // this construct expects only values
+        }
     }
 
     var proc = std.process.Child.init(args.items, ally);
@@ -85,12 +108,17 @@ fn evalProc(ctx: *Context, inv: ast.Invocation) !void {
     _ = term;
 }
 
-fn evalExpression(expr: ast.Expression) ?Value {
+pub const EvalError = builtins.BuiltinError || std.process.Child.RunError;
+
+fn evalExpression(ctx: *Context, expr: ast.Expression) EvalError!Result {
     return switch (expr) {
-        .bareword => |bw| evalBareword(bw),
-        .string_literal => |str| evalStringLiteral(str),
-        .bool_literal => |bl| evalBoolLiteral(bl),
-        .variable => |variable| evalVariable(variable),
+        .bareword => |bw| something(evalBareword(bw)),
+        .string_literal => |str| something(evalStringLiteral(str)),
+        .bool_literal => |bl| something(evalBoolLiteral(bl)),
+        .variable => |variable| something(evalVariable(variable)),
+        .capturing_invocation => |cap_inv| try evalInvocation(ctx, cap_inv, .{
+            .capturing = true,
+        }),
     };
 }
 

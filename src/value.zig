@@ -14,9 +14,9 @@ pub const Value = union(enum) {
         };
     }
 
-    pub fn int(integer: i64) Value {
+    pub fn int(i: i64) Value {
         return .{
-            .integer = integer,
+            .integer = i,
         };
     }
 
@@ -58,3 +58,18 @@ pub const Value = union(enum) {
         };
     }
 };
+
+pub const Result = union(enum) {
+    value: Value,
+    nothing: void,
+};
+
+pub const nothing = Result{ .nothing = {} };
+
+pub fn something(value: Value) Result {
+    return Result{ .value = value };
+}
+
+pub fn integer(int: i64) Result {
+    return something(Value{ .integer = int });
+}

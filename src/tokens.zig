@@ -205,6 +205,7 @@ fn lexBareword(state: *LexState) ?Token {
             ' ', '\n', '\t', '\r', '#', '"' => break,
             else => {},
         }
+        if (state.isReservedChar()) break;
     }
     return if (state.idx == begin)
         null

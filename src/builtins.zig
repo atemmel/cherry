@@ -1,14 +1,15 @@
 const std = @import("std");
-const Value = @import("symtable.zig").Value;
+const values = @import("value.zig");
+const Value = values.Value;
+const Result = values.Result;
+
+const something = values.something;
+const nothing = values.nothing;
+const integer = values.integer;
 
 pub const BuiltinError = error{
     AssertionFailed,
 } || std.mem.Allocator.Error || std.fs.File.WriteError;
-
-const Result = union(enum) {
-    value: Value,
-    none: void,
-};
 
 pub const Builtin = fn (args: []const Value) BuiltinError!Result;
 
@@ -17,22 +18,24 @@ const builtins_table = std.StaticStringMap(*const Builtin).initComptime(&.{
     .{ "assert", assert },
     .{ "say", say },
     // operations
-    .{ "+", sum },
+    .{ "sum", add },
+    .{ "+", add },
 });
 
 pub fn lookup(str: []const u8) ?*const Builtin {
     return builtins_table.get(str);
 }
 
-fn say(args: []const Value) !void {
+fn say(args: []const Value) !Result {
     const stdout = std.io.getStdOut().writer();
     for (args) |arg| {
         try stdout.print("{s} ", .{arg});
     }
     try stdout.print("\n", .{});
+    return nothing;
 }
 
-fn assert(args: []const Value) !void {
+fn assert(args: []const Value) !Result {
     const stderr = std.io.getStdErr().writer();
     var all_passed = true;
     for (args, 0..) |arg, idx| {
@@ -48,19 +51,20 @@ fn assert(args: []const Value) !void {
     }
 
     return switch (all_passed) {
-        true => {},
+        true => nothing,
         false => BuiltinError.AssertionFailed,
     };
 }
 
-fn sum(args: []const Value) !void {
+pub fn add(args: []const Value) !Result {
     var sum_value: i64 = 0;
     for (args) |arg| {
         switch (arg) {
             .integer => |i| {
                 sum_value += i;
             },
+            else => unreachable, //TODO: hmmm...
         }
     }
-    return Value{};
+    return integer(sum_value);
 }
