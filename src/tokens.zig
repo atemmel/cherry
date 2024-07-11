@@ -7,12 +7,12 @@ pub const Token = struct {
         // Values/literals
         Bareword,
         StringLiteral,
+        IntegerLiteral,
         Variable,
         // Significant whitespace
         Newline,
         // Symbols
         Assign,
-        Equals,
         Pipe,
         LParens,
         RParens,
@@ -61,9 +61,21 @@ const LexState = struct {
         self.idx += 1;
     }
 
-    pub fn isReservedChar(self: *LexState) bool {
+    pub fn isSymbolChar(self: LexState) bool {
         return switch (self.get()) {
             '=', '|', '(', ')', '{', '}', '[', ']' => true,
+            else => false,
+        };
+    }
+
+    pub fn isNum(self: LexState) bool {
+        return std.ascii.isDigit(self.get());
+    }
+
+    pub fn isUnallowedBarewordChar(self: LexState) bool {
+        // chars that are never allowed to appear in the middle of a bareword
+        return switch (self.get()) {
+            '|', '(', ')', '{', '}', '[', ']', ' ', '\n', '\t', '\r', '#', '"' => true,
             else => false,
         };
     }
@@ -97,6 +109,8 @@ pub fn lex(state: *PipelineState) ![]Token {
             try lstate.list.append(keyword);
         } else if (lexStringLiteral(&lstate)) |string_literal| {
             try lstate.list.append(string_literal);
+        } else if (lexIntegerLiteral(&lstate)) |string_literal| {
+            try lstate.list.append(string_literal);
         } else if (lexBareword(&lstate)) |bareword| {
             try lstate.list.append(bareword);
         }
@@ -106,21 +120,23 @@ pub fn lex(state: *PipelineState) ![]Token {
 }
 
 fn lexSymbol(state: *LexState) ?Token {
-    if (!state.isReservedChar()) {
+    if (!state.isSymbolChar()) {
         return null;
     }
-
-    defer state.next();
 
     const token_begin = state.idx;
     const kind: Token.Kind = switch (state.get()) {
         '=' => blk: {
             state.next();
             if (state.eof()) {
+                state.idx -= 1;
                 break :blk .Assign;
             }
             break :blk switch (state.get()) {
-                '=' => .Equals,
+                '=' => {
+                    state.idx -= 1;
+                    return null;
+                },
                 else => {
                     state.idx -= 1;
                     break :blk .Assign;
@@ -197,6 +213,31 @@ fn lexStringLiteral(state: *LexState) ?Token {
     };
 }
 
+fn lexIntegerLiteral(state: *LexState) ?Token {
+    if (!state.isNum()) {
+        return null;
+    }
+    const begin = state.idx;
+    while (!state.eof() and !state.isUnallowedBarewordChar()) : (state.next()) {}
+    const end = state.idx;
+
+    const int_prospect = state.slice(begin, end);
+
+    for (int_prospect) |c| {
+        if (!std.ascii.isDigit(c)) {
+            //TODO: bad token
+            unreachable;
+        }
+    }
+
+    state.idx -= 1;
+
+    return .{
+        .value = int_prospect,
+        .kind = .IntegerLiteral,
+    };
+}
+
 fn lexBareword(state: *LexState) ?Token {
     const begin = state.idx;
     while (!state.eof()) : (state.next()) {
@@ -205,14 +246,20 @@ fn lexBareword(state: *LexState) ?Token {
             ' ', '\n', '\t', '\r', '#', '"' => break,
             else => {},
         }
-        if (state.isReservedChar()) break;
+        if (state.isUnallowedBarewordChar()) {
+            break;
+        }
     }
-    return if (state.idx == begin)
+    const end = state.idx;
+    if (!state.eof()) {
+        state.idx -= 1;
+    }
+    return if (end == begin)
         null
     else
         .{
             .kind = .Bareword,
-            .value = state.slice(begin, state.idx),
+            .value = state.slice(begin, end),
         };
 }
 
@@ -333,4 +380,62 @@ test "lex call with variable" {
     try expectEqual(Token.Kind.Bareword, tokens[0].kind);
     try expectEqual(Token.Kind.Variable, tokens[1].kind);
     try expectEqualStrings("x", tokens[1].value);
+}
+
+test "lex equals" {
+    const ally = std.testing.allocator_instance.allocator();
+
+    var state: PipelineState = .{
+        .ally = ally,
+        .arena = ally,
+        .source = "== 1 2",
+    };
+
+    const tokens = try lex(&state);
+    defer ally.free(tokens);
+
+    try expectEqual(3, tokens.len);
+    try expectEqual(.Bareword, tokens[0].kind);
+    try expectEqualStrings("==", tokens[0].value);
+    try expectEqual(.IntegerLiteral, tokens[1].kind);
+    try expectEqualStrings("1", tokens[1].value);
+    try expectEqual(.IntegerLiteral, tokens[2].kind);
+    try expectEqualStrings("2", tokens[2].value);
+}
+
+test "lex rpar rpar" {
+    const ally = std.testing.allocator_instance.allocator();
+
+    var state: PipelineState = .{
+        .ally = ally,
+        .arena = ally,
+        .source = "3))",
+    };
+
+    const tokens = try lex(&state);
+    defer ally.free(tokens);
+
+    try expectEqual(3, tokens.len);
+    try expectEqual(.IntegerLiteral, tokens[0].kind);
+    try expectEqual(.RParens, tokens[1].kind);
+    try expectEqual(.RParens, tokens[2].kind);
+}
+
+test "lex integer" {
+    const ally = std.testing.allocator_instance.allocator();
+
+    var state: PipelineState = .{
+        .ally = ally,
+        .arena = ally,
+        .source = "3 5",
+    };
+
+    const tokens = try lex(&state);
+    defer ally.free(tokens);
+
+    try expectEqual(2, tokens.len);
+    try expectEqual(.IntegerLiteral, tokens[0].kind);
+    try expectEqualStrings("3", tokens[0].value);
+    try expectEqual(.IntegerLiteral, tokens[1].kind);
+    try expectEqualStrings("5", tokens[1].value);
 }

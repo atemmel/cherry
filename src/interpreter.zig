@@ -14,18 +14,21 @@ const integer = values.integer;
 const Context = struct {
     ally: std.mem.Allocator,
     arena: std.mem.Allocator,
+    stmntArena: std.heap.ArenaAllocator,
+    stmntAlly: std.mem.Allocator,
     root: ast.Root,
-    values: std.ArrayList(Value),
 };
 
 pub fn interpret(state: *PipelineState) !void {
+    var stmntArena = std.heap.ArenaAllocator.init(state.ally);
+    defer stmntArena.deinit();
     var ctx = Context{
         .ally = state.ally,
         .arena = state.arena,
         .root = state.root,
-        .values = try std.ArrayList(Value).initCapacity(state.arena, 8),
+        .stmntArena = stmntArena,
+        .stmntAlly = stmntArena.allocator(),
     };
-    defer ctx.values.deinit();
 
     symtable.init(ctx.ally);
     defer symtable.deinit();
@@ -40,6 +43,7 @@ fn interpretRoot(ctx: *Context) !void {
 }
 
 fn interpretStatement(ctx: *Context, stmnt: ast.Statement) !void {
+    defer _ = ctx.stmntArena.reset(.retain_capacity);
     switch (stmnt) {
         .invocation => |inv| _ = try evalInvocation(ctx, inv, .{
             .capturing = false,
@@ -76,33 +80,30 @@ fn evalInvocation(
 }
 
 fn evalBuiltin(ctx: *Context, inv: ast.Invocation, builtin: *const builtins.Builtin) !Result {
-    defer ctx.values.clearRetainingCapacity();
+    var args = try std.ArrayList(Value).initCapacity(ctx.stmntAlly, inv.arguments.len);
+    defer args.deinit();
     for (inv.arguments) |arg| {
         switch (try evalExpression(ctx, arg)) {
-            .value => |value| try ctx.values.append(value),
+            .value => |value| try args.append(value),
             .nothing => unreachable, // this construct expects only values
         }
     }
-    return try builtin(ctx.values.items);
+    return try builtin(args.items);
 }
 
 fn evalProc(ctx: *Context, inv: ast.Invocation) !void {
     const name = inv.token.value;
-    var arena = std.heap.ArenaAllocator.init(ctx.ally);
-    defer arena.deinit();
-    const ally = arena.allocator();
-
-    var args = try std.ArrayList([]const u8).initCapacity(ally, inv.arguments.len);
+    var args = try std.ArrayList([]const u8).initCapacity(ctx.stmntAlly, inv.arguments.len);
 
     try args.append(name);
     for (inv.arguments) |arg| {
         switch (try evalExpression(ctx, arg)) {
-            .value => |value| try args.append(try value.asStr(ally)),
+            .value => |value| try args.append(try value.asStr(ctx.stmntAlly)),
             .nothing => unreachable, // this construct expects only values
         }
     }
 
-    var proc = std.process.Child.init(args.items, ally);
+    var proc = std.process.Child.init(args.items, ctx.stmntAlly);
     const term = try proc.spawnAndWait();
     //TODO: handle result
     _ = term;
@@ -114,6 +115,7 @@ fn evalExpression(ctx: *Context, expr: ast.Expression) EvalError!Result {
     return switch (expr) {
         .bareword => |bw| something(evalBareword(bw)),
         .string_literal => |str| something(evalStringLiteral(str)),
+        .integer_literal => |int| something(evalIntegerLiteral(int)),
         .bool_literal => |bl| something(evalBoolLiteral(bl)),
         .variable => |variable| something(evalVariable(variable)),
         .capturing_invocation => |cap_inv| try evalInvocation(ctx, cap_inv, .{
@@ -128,6 +130,12 @@ fn evalBareword(bw: ast.Bareword) Value {
 
 fn evalStringLiteral(str: ast.StringLiteral) Value {
     return Value.str(str.token.value);
+}
+
+fn evalIntegerLiteral(int: ast.IntegerLiteral) Value {
+    //TODO: this should not be done here...
+    const i = std.fmt.parseInt(i64, int.token.value, 10) catch unreachable;
+    return Value.int(i);
 }
 
 fn evalBoolLiteral(bl: ast.BoolLiteral) Value {

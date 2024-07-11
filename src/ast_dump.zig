@@ -63,6 +63,7 @@ fn dumpExpression(expr: ast.Expression) void {
     switch (expr) {
         .bareword => |bw| dumpBareword(bw),
         .string_literal => |str| dumpStringLiteral(str),
+        .integer_literal => |int| dumpIntegerLiteral(int),
         .bool_literal => |bl| dumpBoolLiteral(bl),
         .variable => |variable| dumpVariable(variable),
         .capturing_invocation => |inv| dumpInvocation(inv),
@@ -77,6 +78,11 @@ fn dumpBareword(bw: ast.Bareword) void {
 fn dumpStringLiteral(str: ast.StringLiteral) void {
     defer up();
     leaf("StringLiteral: '{s}'\n", .{str.token.value});
+}
+
+fn dumpIntegerLiteral(int: ast.IntegerLiteral) void {
+    defer up();
+    leaf("IntegerLiteral: '{s}'\n", .{int.token.value});
 }
 
 fn dumpBoolLiteral(bl: ast.BoolLiteral) void {
