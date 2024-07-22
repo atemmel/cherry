@@ -6,6 +6,7 @@ const Result = values.Result;
 const something = values.something;
 const nothing = values.nothing;
 const integer = values.integer;
+const boolean = values.boolean;
 
 pub const BuiltinError = error{
     AssertionFailed,
@@ -20,6 +21,8 @@ const builtins_table = std.StaticStringMap(*const Builtin).initComptime(&.{
     // operations
     .{ "sum", add },
     .{ "+", add },
+    .{ "eq", equals },
+    .{ "==", equals },
 });
 
 pub fn lookup(str: []const u8) ?*const Builtin {
@@ -67,4 +70,21 @@ pub fn add(args: []const Value) !Result {
         }
     }
     return integer(sum_value);
+}
+
+pub fn equals(args: []const Value) !Result {
+    if (args.len == 0) {
+        return boolean(true);
+    }
+
+    const first = args[0];
+    for (args[1..]) |arg| {
+        //TODO: handle type error
+        const order = first.compare(arg) catch unreachable;
+        switch (order) {
+            .equal => {},
+            else => return boolean(false),
+        }
+    }
+    return boolean(true);
 }

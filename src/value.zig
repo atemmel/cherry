@@ -26,9 +26,9 @@ pub const Value = union(enum) {
         };
     }
 
-    pub fn bol(boolean: bool) Value {
+    pub fn bol(bl: bool) Value {
         return .{
-            .boolean = boolean,
+            .boolean = bl,
         };
     }
 
@@ -57,6 +57,41 @@ pub const Value = union(enum) {
             .boolean => |b| if (b) "true" else "false",
         };
     }
+
+    const Errors = error{MismatchedTypeError};
+
+    const Order = enum {
+        less,
+        greater,
+        equal,
+    };
+
+    pub fn compare(self: Value, other: Value) !Order {
+        return switch (self) {
+            //TODO: needs more comparisons
+            .string => unreachable,
+            .integer => |lhs| switch (other) {
+                .string => return Errors.MismatchedTypeError,
+                .integer => |rhs| {
+                    if (lhs < rhs) {
+                        return .less;
+                    } else if (lhs > rhs) {
+                        return .greater;
+                    }
+                    return .equal;
+                },
+                .float => return Errors.MismatchedTypeError,
+                .boolean => return Errors.MismatchedTypeError,
+            },
+            .float => unreachable,
+            .boolean => switch (other) {
+                .string => return Errors.MismatchedTypeError,
+                .integer => return Errors.MismatchedTypeError,
+                .float => return Errors.MismatchedTypeError,
+                .boolean => unreachable,
+            },
+        };
+    }
 };
 
 pub const Result = union(enum) {
@@ -72,4 +107,8 @@ pub fn something(value: Value) Result {
 
 pub fn integer(int: i64) Result {
     return something(Value{ .integer = int });
+}
+
+pub fn boolean(bl: bool) Result {
+    return something(Value{ .boolean = bl });
 }

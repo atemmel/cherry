@@ -11,6 +11,10 @@ pub const StringLiteral = struct {
     token: *const Token,
 };
 
+pub const IntegerLiteral = struct {
+    token: *const Token,
+};
+
 pub const BoolLiteral = struct {
     token: *const Token,
 };
@@ -22,6 +26,7 @@ pub const Variable = struct {
 pub const Expression = union(enum) {
     bareword: Bareword,
     string_literal: StringLiteral,
+    integer_literal: IntegerLiteral,
     bool_literal: BoolLiteral,
     variable: Variable,
     capturing_invocation: Invocation,
@@ -145,6 +150,7 @@ fn parseInvocation(ctx: *Context) !?Invocation {
             .arguments = try args.toOwnedSlice(),
         };
     }
+    std.debug.print("{}\n", .{ctx.peek()});
     unreachable;
 }
 
@@ -191,6 +197,10 @@ fn parseExpression(ctx: *Context) !?Expression {
         return Expression{
             .variable = variable,
         };
+    } else if (parseIntegerLiteral(ctx)) |integer_literal| {
+        return Expression{
+            .integer_literal = integer_literal,
+        };
     } else if (parseBoolLiteral(ctx)) |bool_literal| {
         return Expression{
             .bool_literal = bool_literal,
@@ -215,6 +225,16 @@ fn parseStringLiteral(ctx: *Context) ?StringLiteral {
         return null;
     }
     return StringLiteral{
+        .token = token.?,
+    };
+}
+
+fn parseIntegerLiteral(ctx: *Context) ?IntegerLiteral {
+    const token = ctx.getIf(.IntegerLiteral);
+    if (token == null) {
+        return null;
+    }
+    return IntegerLiteral{
         .token = token.?,
     };
 }
