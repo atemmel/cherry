@@ -1,10 +1,15 @@
 const std = @import("std");
-const fmt = std.fmt.format;
 const terminal = @import("term.zig");
 const Term = terminal.Term;
 
+/// fmt wrapper that doesn't care if it fails
+fn fmt(writer: anytype, comptime str: []const u8, args: anytype) void {
+    std.fmt.format(writer, str, args) catch {};
+}
+
+// fmt wrapper for writing comptime strings
 fn fmts(writer: anytype, comptime str: []const u8) void {
-    fmt(writer, str, .{}) catch unreachable;
+    fmt(writer, str, .{});
 }
 
 pub fn repl() !void {
@@ -21,7 +26,7 @@ pub fn repl() !void {
     while (true) {
         terminal.clearLine(out, length + prefix.len + 1);
         fmts(out, prefix);
-        try fmt(out, "{s}\r", .{buffer[0..length]});
+        fmt(out, "{s}\r", .{buffer[0..length]});
         terminal.moveRight(out, prefix.len + cursor);
         try buffered_writer.flush();
         const event = try term.readEvent();
@@ -44,11 +49,11 @@ pub fn repl() !void {
             .ctrl => |ctrl| {
                 switch (ctrl) {
                     'd' => {
-                        try out.print("exit", .{});
+                        fmts(out, "exit");
                         return;
                     },
                     'c' => {
-                        try out.print("^C\n\r", .{});
+                        fmts(out, "^C\n\r");
                         length = 0;
                         cursor = 0;
                     },
