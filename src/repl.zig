@@ -7,10 +7,16 @@ fn fmt(writer: anytype, comptime str: []const u8, args: anytype) void {
     std.fmt.format(writer, str, args) catch {};
 }
 
-// fmt wrapper for writing comptime strings
+/// fmt wrapper for writing comptime strings
 fn fmts(writer: anytype, comptime str: []const u8) void {
     fmt(writer, str, .{});
 }
+
+//TODO
+// - run actual commands
+// - display commands in a nice way (colors, etc)
+// - history
+// - tab completion
 
 pub fn repl() !void {
     var term = try Term.init();
