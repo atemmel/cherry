@@ -1,18 +1,17 @@
 const std = @import("std");
 const values = @import("value.zig");
+const gc = @import("gc.zig");
 const Value = values.Value;
 const Result = values.Result;
 
 const something = values.something;
 const nothing = values.nothing;
-const integer = values.integer;
-const boolean = values.boolean;
 
 pub const BuiltinError = error{
     AssertionFailed,
 } || std.mem.Allocator.Error || std.fs.File.WriteError;
 
-pub const Builtin = fn (args: []const Value) BuiltinError!Result;
+pub const Builtin = fn (args: []const *Value) BuiltinError!Result;
 
 const builtins_table = std.StaticStringMap(*const Builtin).initComptime(&.{
     // general
@@ -29,7 +28,7 @@ pub fn lookup(str: []const u8) ?*const Builtin {
     return builtins_table.get(str);
 }
 
-fn say(args: []const Value) !Result {
+fn say(args: []const *Value) !Result {
     const stdout = std.io.getStdOut().writer();
     for (args) |arg| {
         try stdout.print("{s} ", .{arg});
@@ -38,11 +37,11 @@ fn say(args: []const Value) !Result {
     return nothing;
 }
 
-fn assert(args: []const Value) !Result {
+fn assert(args: []const *Value) !Result {
     const stderr = std.io.getStdErr().writer();
     var all_passed = true;
     for (args, 0..) |arg, idx| {
-        switch (arg) {
+        switch (arg.as) {
             .boolean => |b| {
                 if (!b) {
                     try stderr.print("Assertion failed for value {}\n", .{idx});
@@ -59,22 +58,22 @@ fn assert(args: []const Value) !Result {
     };
 }
 
-pub fn add(args: []const Value) !Result {
+pub fn add(args: []const *Value) !Result {
     var sum_value: i64 = 0;
     for (args) |arg| {
-        switch (arg) {
+        switch (arg.as) {
             .integer => |i| {
                 sum_value += i;
             },
             else => unreachable, //TODO: hmmm...
         }
     }
-    return integer(sum_value);
+    return something(try gc.integer(sum_value));
 }
 
-pub fn equals(args: []const Value) !Result {
+pub fn equals(args: []const *Value) !Result {
     if (args.len == 0) {
-        return boolean(true);
+        return something(try gc.boolean(true));
     }
 
     const first = args[0];
@@ -83,8 +82,8 @@ pub fn equals(args: []const Value) !Result {
         const order = first.compare(arg) catch unreachable;
         switch (order) {
             .equal => {},
-            else => return boolean(false),
+            else => return something(try gc.boolean(false)),
         }
     }
-    return boolean(true);
+    return something(try gc.boolean(true));
 }

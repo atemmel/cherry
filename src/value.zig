@@ -1,35 +1,40 @@
 const std = @import("std");
 
-pub const Value = union(enum) {
-    // strings are immutable
-    string: []const u8,
-    // integer type
-    integer: i64,
-    float: f64,
-    boolean: bool,
+pub const Value = struct {
+    as: union(enum) {
+        // strings are immutable
+        string: []const u8,
+        // integer type
+        integer: i64,
+        float: f64,
+        boolean: bool,
+    },
+    marked: bool = false,
 
-    pub fn str(string: []const u8) Value {
-        return .{
-            .string = string,
-        };
+    pub fn mark(self: *Value) void {
+        if (self.marked) {
+            return;
+        }
+        self.marked = true;
+        switch (self.as) {
+            .string, .integer, .float, .boolean => {},
+            // Visit children/etc
+        }
     }
 
-    pub fn int(i: i64) Value {
-        return .{
-            .integer = i,
-        };
+    pub fn unmark(self: *Value) void {
+        self.marked = false;
     }
 
-    pub fn flt(float: f64) Value {
-        return .{
-            .float = float,
-        };
-    }
-
-    pub fn bol(bl: bool) Value {
-        return .{
-            .boolean = bl,
-        };
+    pub fn deinit(self: *Value, ally: std.mem.Allocator) void {
+        switch (self.as) {
+            .integer, .float, .boolean => {},
+            //TODO: eventually free this
+            .string => |s| {
+                ally.free(s);
+            },
+            // Visit children/etc
+        }
     }
 
     pub fn format(
@@ -41,7 +46,7 @@ pub const Value = union(enum) {
         _ = fmt;
         _ = options;
 
-        switch (self) {
+        switch (self.as) {
             .string => |s| try writer.print("{s}", .{s}),
             .integer => |i| try writer.print("{}", .{i}),
             .float => |f| try writer.print("{}", .{f}),
@@ -50,7 +55,7 @@ pub const Value = union(enum) {
     }
 
     pub fn asStr(self: Value, ally: std.mem.Allocator) ![]const u8 {
-        return switch (self) {
+        return switch (self.as) {
             .string => |s| s,
             .integer => |i| try std.fmt.allocPrint(ally, "{}", .{i}),
             .float => |f| try std.fmt.allocPrint(ally, "{}", .{f}),
@@ -66,11 +71,11 @@ pub const Value = union(enum) {
         equal,
     };
 
-    pub fn compare(self: Value, other: Value) !Order {
-        return switch (self) {
+    pub fn compare(self: *const Value, other: *const Value) !Order {
+        return switch (self.as) {
             //TODO: needs more comparisons
             .string => unreachable,
-            .integer => |lhs| switch (other) {
+            .integer => |lhs| switch (other.as) {
                 .string => return Errors.MismatchedTypeError,
                 .integer => |rhs| {
                     if (lhs < rhs) {
@@ -84,7 +89,7 @@ pub const Value = union(enum) {
                 .boolean => return Errors.MismatchedTypeError,
             },
             .float => unreachable,
-            .boolean => switch (other) {
+            .boolean => switch (other.as) {
                 .string => return Errors.MismatchedTypeError,
                 .integer => return Errors.MismatchedTypeError,
                 .float => return Errors.MismatchedTypeError,
@@ -95,20 +100,12 @@ pub const Value = union(enum) {
 };
 
 pub const Result = union(enum) {
-    value: Value,
+    value: *Value,
     nothing: void,
 };
 
 pub const nothing = Result{ .nothing = {} };
 
-pub fn something(value: Value) Result {
+pub fn something(value: *Value) Result {
     return Result{ .value = value };
-}
-
-pub fn integer(int: i64) Result {
-    return something(Value{ .integer = int });
-}
-
-pub fn boolean(bl: bool) Result {
-    return something(Value{ .boolean = bl });
 }

@@ -6,7 +6,7 @@ pub const SymtableError = error{
     VariableAlreadyDeclared,
 };
 
-const Symtable = std.StringHashMap(Value);
+const Symtable = std.StringHashMap(*Value);
 
 var symtable: Symtable = undefined;
 
@@ -18,11 +18,15 @@ pub fn deinit() void {
     symtable.deinit();
 }
 
-pub fn get(key: []const u8) ?Value {
+pub fn get(key: []const u8) ?*Value {
     return symtable.get(key);
 }
 
-pub fn insert(key: []const u8, value: Value) !void {
+pub fn iterator() Symtable.Iterator {
+    return symtable.iterator();
+}
+
+pub fn insert(key: []const u8, value: *Value) !void {
     return if (symtable.get(key) != null)
         SymtableError.VariableAlreadyDeclared
     else

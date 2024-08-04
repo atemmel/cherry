@@ -2,6 +2,7 @@ const std = @import("std");
 const PipelineState = @import("pipeline.zig").State;
 const ast = @import("ast.zig");
 const symtable = @import("symtable.zig");
+const gc = @import("gc.zig");
 const builtins = @import("builtins.zig");
 const values = @import("value.zig");
 const Value = values.Value;
@@ -29,6 +30,9 @@ pub fn interpret(state: *PipelineState) !void {
         .stmntArena = stmntArena,
         .stmntAlly = stmntArena.allocator(),
     };
+
+    try gc.init(ctx.ally);
+    defer gc.deinit();
 
     symtable.init(ctx.ally);
     defer symtable.deinit();
@@ -80,7 +84,7 @@ fn evalInvocation(
 }
 
 fn evalBuiltin(ctx: *Context, inv: ast.Invocation, builtin: *const builtins.Builtin) !Result {
-    var args = try std.ArrayList(Value).initCapacity(ctx.stmntAlly, inv.arguments.len);
+    var args = try std.ArrayList(*Value).initCapacity(ctx.stmntAlly, inv.arguments.len);
     defer args.deinit();
     for (inv.arguments) |arg| {
         switch (try evalExpression(ctx, arg)) {
@@ -113,10 +117,10 @@ pub const EvalError = builtins.BuiltinError || std.process.Child.RunError;
 
 fn evalExpression(ctx: *Context, expr: ast.Expression) EvalError!Result {
     return switch (expr) {
-        .bareword => |bw| something(evalBareword(bw)),
-        .string_literal => |str| something(evalStringLiteral(str)),
-        .integer_literal => |int| something(evalIntegerLiteral(int)),
-        .bool_literal => |bl| something(evalBoolLiteral(bl)),
+        .bareword => |bw| something(try evalBareword(bw)),
+        .string_literal => |str| something(try evalStringLiteral(str)),
+        .integer_literal => |int| something(try evalIntegerLiteral(int)),
+        .bool_literal => |bl| something(try evalBoolLiteral(bl)),
         .variable => |variable| something(evalVariable(variable)),
         .capturing_invocation => |cap_inv| try evalInvocation(ctx, cap_inv, .{
             .capturing = true,
@@ -124,25 +128,25 @@ fn evalExpression(ctx: *Context, expr: ast.Expression) EvalError!Result {
     };
 }
 
-fn evalBareword(bw: ast.Bareword) Value {
-    return Value.str(bw.token.value);
+fn evalBareword(bw: ast.Bareword) !*Value {
+    return try gc.string(bw.token.value);
 }
 
-fn evalStringLiteral(str: ast.StringLiteral) Value {
-    return Value.str(str.token.value);
+fn evalStringLiteral(str: ast.StringLiteral) !*Value {
+    return try gc.string(str.token.value);
 }
 
-fn evalIntegerLiteral(int: ast.IntegerLiteral) Value {
+fn evalIntegerLiteral(int: ast.IntegerLiteral) !*Value {
     //TODO: this should not be done here...
     const i = std.fmt.parseInt(i64, int.token.value, 10) catch unreachable;
-    return Value.int(i);
+    return try gc.integer(i);
 }
 
-fn evalBoolLiteral(bl: ast.BoolLiteral) Value {
-    return Value.bol(bl.token.kind == .True);
+fn evalBoolLiteral(bl: ast.BoolLiteral) !*Value {
+    return try gc.boolean(bl.token.kind == .True);
 }
 
-fn evalVariable(variable: ast.Variable) Value {
+fn evalVariable(variable: ast.Variable) *Value {
     //TODO: handle error
     return symtable.get(variable.token.value) orelse unreachable;
 }
