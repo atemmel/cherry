@@ -1,4 +1,8 @@
 const std = @import("std");
+const gc = @import("gc.zig");
+const symtable = @import("symtable.zig");
+
+pub const Errors = error{ MismatchedTypeError, MismatchedBraces, BadLookup };
 
 pub const Value = struct {
     as: union(enum) {
@@ -29,7 +33,6 @@ pub const Value = struct {
     pub fn deinit(self: *Value, ally: std.mem.Allocator) void {
         switch (self.as) {
             .integer, .float, .boolean => {},
-            //TODO: eventually free this
             .string => |s| {
                 ally.free(s);
             },
@@ -56,14 +59,12 @@ pub const Value = struct {
 
     pub fn asStr(self: Value, ally: std.mem.Allocator) ![]const u8 {
         return switch (self.as) {
-            .string => |s| s,
+            .string => |s| try ally.dupe(u8, s),
             .integer => |i| try std.fmt.allocPrint(ally, "{}", .{i}),
             .float => |f| try std.fmt.allocPrint(ally, "{}", .{f}),
-            .boolean => |b| if (b) "true" else "false",
+            .boolean => |b| try ally.dupe(u8, if (b) "true" else "false"),
         };
     }
-
-    const Errors = error{MismatchedTypeError};
 
     const Order = enum {
         less,
@@ -74,7 +75,19 @@ pub const Value = struct {
     pub fn compare(self: *const Value, other: *const Value) !Order {
         return switch (self.as) {
             //TODO: needs more comparisons
-            .string => unreachable,
+            .string => |lhs| switch (other.as) {
+                .string => |rhs| {
+                    const order = std.mem.order(u8, lhs, rhs);
+                    return switch (order) {
+                        .lt => .less,
+                        .gt => .greater,
+                        .eq => .equal,
+                    };
+                },
+                .integer => return Errors.MismatchedTypeError,
+                .float => return Errors.MismatchedTypeError,
+                .boolean => return Errors.MismatchedTypeError,
+            },
             .integer => |lhs| switch (other.as) {
                 .string => return Errors.MismatchedTypeError,
                 .integer => |rhs| {
@@ -97,6 +110,39 @@ pub const Value = struct {
             },
         };
     }
+
+    pub fn interpolate(self: *const Value, ally: std.mem.Allocator) !*Value {
+        const str: []const u8 = switch (self.as) {
+            .string => |str| str,
+            else => return Errors.MismatchedTypeError,
+        };
+
+        var result = try std.ArrayList(u8).initCapacity(ally, str.len * 2);
+        errdefer result.deinit();
+
+        var idx: usize = 0;
+        while (idx < str.len) {
+            const lbrace = std.mem.indexOfPos(u8, str, idx, "{") orelse str.len;
+            try result.appendSlice(str[idx..lbrace]);
+
+            if (lbrace >= str.len) {
+                break;
+            }
+
+            const rbrace = std.mem.indexOfPos(u8, str, lbrace, "}") orelse return Errors.MismatchedBraces;
+
+            const variable_name = str[lbrace + 1 .. rbrace];
+            const variable_value = symtable.get(variable_name) orelse return Errors.BadLookup;
+
+            //TODO: arena allocator candidate
+            const variable_string = try variable_value.asStr(ally);
+            defer ally.free(variable_string);
+
+            try result.appendSlice(variable_string);
+            idx = rbrace + 1;
+        }
+        return try gc.allocedString(try result.toOwnedSlice());
+    }
 };
 
 pub const Result = union(enum) {
@@ -108,4 +154,48 @@ pub const nothing = Result{ .nothing = {} };
 
 pub fn something(value: *Value) Result {
     return Result{ .value = value };
+}
+
+test "interpolate single value" {
+    const ally = std.testing.allocator;
+
+    try gc.init(ally);
+    symtable.init(ally);
+    defer gc.deinit();
+    defer symtable.deinit();
+
+    try symtable.insert("y", try gc.string("x"));
+
+    const str = try gc.string("x {y}");
+
+    const result = try str.interpolate(ally);
+    try std.testing.expectEqualStrings("x x", result.as.string);
+}
+
+test "interpolate multiple values" {
+    const ally = std.testing.allocator;
+
+    try gc.init(ally);
+    symtable.init(ally);
+    defer gc.deinit();
+    defer symtable.deinit();
+
+    try symtable.insert("y", try gc.string("x"));
+
+    const str = try gc.string("x {y} {y}");
+
+    const result = try str.interpolate(ally);
+    try std.testing.expectEqualStrings("x x x", result.as.string);
+}
+
+test "interpolate no values" {
+    const ally = std.testing.allocator;
+
+    try gc.init(ally);
+    defer gc.deinit();
+
+    const str = try gc.string("x");
+
+    const result = try str.interpolate(ally);
+    try std.testing.expectEqualStrings("x", result.as.string);
 }

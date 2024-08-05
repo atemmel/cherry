@@ -113,12 +113,12 @@ fn evalProc(ctx: *Context, inv: ast.Invocation) !void {
     _ = term;
 }
 
-pub const EvalError = builtins.BuiltinError || std.process.Child.RunError;
+pub const EvalError = builtins.BuiltinError || std.process.Child.RunError || values.Errors;
 
 fn evalExpression(ctx: *Context, expr: ast.Expression) EvalError!Result {
     return switch (expr) {
         .bareword => |bw| something(try evalBareword(bw)),
-        .string_literal => |str| something(try evalStringLiteral(str)),
+        .string_literal => |str| something(try evalStringLiteral(ctx, str)),
         .integer_literal => |int| something(try evalIntegerLiteral(int)),
         .bool_literal => |bl| something(try evalBoolLiteral(bl)),
         .variable => |variable| something(evalVariable(variable)),
@@ -132,7 +132,15 @@ fn evalBareword(bw: ast.Bareword) !*Value {
     return try gc.string(bw.token.value);
 }
 
-fn evalStringLiteral(str: ast.StringLiteral) !*Value {
+fn evalStringLiteral(ctx: *Context, str: ast.StringLiteral) !*Value {
+    if (str.interpolates) {
+        const value = Value{
+            .as = .{
+                .string = str.token.value,
+            },
+        };
+        return try value.interpolate(ctx.ally);
+    }
     return try gc.string(str.token.value);
 }
 

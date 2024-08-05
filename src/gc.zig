@@ -88,6 +88,14 @@ pub fn string(s: []const u8) !*Value {
     });
 }
 
+pub fn allocedString(s: []const u8) !*Value {
+    return push(.{
+        .as = .{
+            .string = s,
+        },
+    });
+}
+
 pub fn boolean(b: bool) !*Value {
     return push(.{
         .as = .{

@@ -9,6 +9,7 @@ pub const Bareword = struct {
 
 pub const StringLiteral = struct {
     token: *const Token,
+    interpolates: bool,
 };
 
 pub const IntegerLiteral = struct {
@@ -226,6 +227,8 @@ fn parseStringLiteral(ctx: *Context) ?StringLiteral {
     }
     return StringLiteral{
         .token = token.?,
+        //TODO: this should handle escapes
+        .interpolates = std.mem.indexOf(u8, token.?.value, "{") != null,
     };
 }
 

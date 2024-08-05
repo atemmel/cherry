@@ -1,3 +1,5 @@
 var x = "hello"
 
 say $x
+
+assert (== "hello" $x)

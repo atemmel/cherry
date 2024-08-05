@@ -169,6 +169,7 @@ fn lexVariable(state: *LexState) ?Token {
     while (!state.eof() and std.ascii.isAlphabetic(state.get())) : (state.next()) {}
     const end = state.idx;
     if (begin == end) unreachable;
+    state.idx -= 1;
     return .{
         .kind = .Variable,
         .value = state.slice(begin, end),
@@ -206,7 +207,6 @@ fn lexStringLiteral(state: *LexState) ?Token {
             else => {},
         }
     }
-    defer state.next();
     return .{
         .kind = .StringLiteral,
         .value = state.slice(begin, state.idx),
@@ -419,6 +419,48 @@ test "lex rpar rpar" {
     try expectEqual(.IntegerLiteral, tokens[0].kind);
     try expectEqual(.RParens, tokens[1].kind);
     try expectEqual(.RParens, tokens[2].kind);
+}
+
+test "lex assert equals rpar" {
+    const ally = std.testing.allocator_instance.allocator();
+
+    var state: PipelineState = .{
+        .ally = ally,
+        .arena = ally,
+        .source = "assert (== \"hello\" $x)",
+    };
+
+    const tokens = try lex(&state);
+    defer ally.free(tokens);
+
+    try expectEqual(6, tokens.len);
+    try expectEqual(.Bareword, tokens[0].kind);
+    try expectEqual(.LParens, tokens[1].kind);
+    try expectEqual(.Bareword, tokens[2].kind);
+    try expectEqual(.StringLiteral, tokens[3].kind);
+    try expectEqual(.Variable, tokens[4].kind);
+    try expectEqual(.RParens, tokens[5].kind);
+}
+
+test "lex assert str str" {
+    const ally = std.testing.allocator_instance.allocator();
+
+    var state: PipelineState = .{
+        .ally = ally,
+        .arena = ally,
+        .source = "assert (== \"H\" \"H\")",
+    };
+
+    const tokens = try lex(&state);
+    defer ally.free(tokens);
+
+    try expectEqual(6, tokens.len);
+    try expectEqual(.Bareword, tokens[0].kind);
+    try expectEqual(.LParens, tokens[1].kind);
+    try expectEqual(.Bareword, tokens[2].kind);
+    try expectEqual(.StringLiteral, tokens[3].kind);
+    try expectEqual(.StringLiteral, tokens[4].kind);
+    try expectEqual(.RParens, tokens[5].kind);
 }
 
 test "lex integer" {
