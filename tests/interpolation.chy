@@ -9,3 +9,6 @@ var age = 24
 say "You are {age}"
 
 assert (== "You are {age}" "You are 24")
+
+# Escaping interpolations does not work atm
+# assert (== 5 (len "{{age}}"))

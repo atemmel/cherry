@@ -22,6 +22,7 @@ const builtins_table = std.StaticStringMap(*const Builtin).initComptime(&.{
     .{ "+", add },
     .{ "eq", equals },
     .{ "==", equals },
+    .{ "len", len },
 });
 
 pub fn lookup(str: []const u8) ?*const Builtin {
@@ -58,7 +59,7 @@ fn assert(args: []const *Value) !Result {
     };
 }
 
-pub fn add(args: []const *Value) !Result {
+fn add(args: []const *Value) !Result {
     var sum_value: i64 = 0;
     for (args) |arg| {
         switch (arg.as) {
@@ -71,7 +72,7 @@ pub fn add(args: []const *Value) !Result {
     return something(try gc.integer(sum_value));
 }
 
-pub fn equals(args: []const *Value) !Result {
+fn equals(args: []const *Value) !Result {
     if (args.len == 0) {
         return something(try gc.boolean(true));
     }
@@ -86,4 +87,15 @@ pub fn equals(args: []const *Value) !Result {
         }
     }
     return something(try gc.boolean(true));
+}
+
+fn len(args: []const *Value) !Result {
+    var sum: i64 = 0;
+    for (args) |arg| {
+        switch (arg.as) {
+            .string => |s| sum += @intCast(s.len),
+            .integer, .float, .boolean => unreachable, //TODO: this
+        }
+    }
+    return something(try gc.integer(sum));
 }
