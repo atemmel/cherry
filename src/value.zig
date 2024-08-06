@@ -92,7 +92,7 @@ pub const Value = struct {
     };
 
     pub fn compare(self: *const Value, other: *const Value) !Order {
-        return switch (self.as) {
+        switch (self.as) {
             //TODO: needs more comparisons
             .string => |lhs| switch (other.as) {
                 .string => |rhs| {
@@ -123,11 +123,21 @@ pub const Value = struct {
                 .list => return Errors.MismatchedTypeError,
             },
             .float => unreachable,
-            .boolean => switch (other.as) {
+            .boolean => |lhs| switch (other.as) {
                 .string => return Errors.MismatchedTypeError,
                 .integer => return Errors.MismatchedTypeError,
                 .float => return Errors.MismatchedTypeError,
-                .boolean => unreachable,
+                .boolean => |rhs| {
+                    if (lhs and rhs) {
+                        return .equal;
+                    } else if (!lhs and rhs) {
+                        return .less;
+                    } else if (lhs and !rhs) {
+                        return .greater;
+                    } else if (!lhs and !rhs) {
+                        return .equal;
+                    }
+                },
                 .list => return Errors.MismatchedTypeError,
             },
             .list => |lhs| switch (other.as) {
@@ -149,7 +159,8 @@ pub const Value = struct {
                 },
                 .float, .integer, .boolean, .string => return Errors.MismatchedTypeError,
             },
-        };
+        }
+        unreachable;
     }
 
     pub fn interpolate(self: *const Value, ally: std.mem.Allocator) !*Value {

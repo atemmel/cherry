@@ -24,6 +24,9 @@ const builtins_table = std.StaticStringMap(*const Builtin).initComptime(&.{
     .{ "mul", mul },
     .{ "div", div },
     .{ "eq", equals },
+    .{ "lt", less },
+    .{ "gt", greater },
+    .{ "ne", notEqual },
     .{ "len", len },
     .{ "append", append },
     .{ "get", get },
@@ -34,6 +37,9 @@ const builtins_table = std.StaticStringMap(*const Builtin).initComptime(&.{
     .{ "*", mul },
     .{ "/", div },
     .{ "==", equals },
+    .{ "<", less },
+    .{ ">", greater },
+    .{ "!=", notEqual },
 });
 
 pub fn lookup(str: []const u8) ?*const Builtin {
@@ -84,7 +90,7 @@ fn sum(args: []const *Value) !Result {
 }
 
 fn sub(args: []const *Value) !Result {
-    if (args.len < 1) unreachable;
+    if (args.len < 2) unreachable;
     var diff_value: i64 = switch (args[0].as) {
         .integer => |i| i,
         else => unreachable,
@@ -101,7 +107,7 @@ fn sub(args: []const *Value) !Result {
 }
 
 fn mul(args: []const *Value) !Result {
-    if (args.len < 1) unreachable;
+    if (args.len < 2) unreachable;
     var product_value: i64 = switch (args[0].as) {
         .integer => |i| i,
         else => unreachable,
@@ -118,7 +124,7 @@ fn mul(args: []const *Value) !Result {
 }
 
 fn div(args: []const *Value) !Result {
-    if (args.len < 1) unreachable;
+    if (args.len < 2) unreachable;
     var quotient_value: i64 = switch (args[0].as) {
         .integer => |i| i,
         else => unreachable,
@@ -147,6 +153,57 @@ fn equals(args: []const *Value) !Result {
         switch (order) {
             .equal => {},
             else => return something(try gc.boolean(false)),
+        }
+    }
+    return something(try gc.boolean(true));
+}
+
+fn less(args: []const *Value) !Result {
+    if (args.len < 2) {
+        unreachable;
+    }
+
+    const first = args[0];
+    for (args[1..]) |arg| {
+        //TODO: handle type error
+        const order = first.compare(arg) catch unreachable;
+        switch (order) {
+            .less => {},
+            else => return something(try gc.boolean(false)),
+        }
+    }
+    return something(try gc.boolean(true));
+}
+
+fn greater(args: []const *Value) !Result {
+    if (args.len < 2) {
+        unreachable;
+    }
+
+    const first = args[0];
+    for (args[1..]) |arg| {
+        //TODO: handle type error
+        const order = first.compare(arg) catch unreachable;
+        switch (order) {
+            .greater => {},
+            else => return something(try gc.boolean(false)),
+        }
+    }
+    return something(try gc.boolean(true));
+}
+
+fn notEqual(args: []const *Value) !Result {
+    if (args.len < 2) {
+        return something(try gc.boolean(true));
+    }
+
+    const first = args[0];
+    for (args[1..]) |arg| {
+        //TODO: handle type error
+        const order = first.compare(arg) catch unreachable;
+        switch (order) {
+            .equal => return something(try gc.boolean(false)),
+            else => {},
         }
     }
     return something(try gc.boolean(true));

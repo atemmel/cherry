@@ -1,0 +1,17 @@
+# eq, for lists, queries equality on all elements
+assert (== 0 0)
+assert (== true true true)
+assert (== false false)
+assert (== 0)
+assert (==)
+
+# lt, for lists, queries rising order
+assert (< 1 2 3)
+
+# gt, for lists, queries falling order
+assert (> 3 2 1)
+
+# ne, for lists, queries uniqueness on all elements
+assert (!= 3 2 1)
+assert (!= true false)
+assert (!= 3)
