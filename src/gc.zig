@@ -1,8 +1,8 @@
 const std = @import("std");
-const Value = @import("value.zig").Value;
+const values = @import("value.zig");
 const symtable = @import("symtable.zig");
 
-const Stack = std.ArrayList(*Value);
+const Stack = std.ArrayList(*values.Value);
 
 var stack: Stack = undefined;
 var backing_allocator: std.mem.Allocator = undefined;
@@ -21,15 +21,8 @@ pub fn deinit() void {
     }
 }
 
-fn get(idx: usize) *Value {
+fn get(idx: usize) *values.Value {
     return stack.items[idx];
-}
-
-fn mark() void {
-    var it = symtable.iterator();
-    while (it.next()) |entry| {
-        entry.value_ptr.*.mark();
-    }
 }
 
 fn sweep() void {
@@ -43,7 +36,7 @@ fn sweep() void {
         } else { // collect
             ptr.deinit(backing_allocator);
             backing_allocator.destroy(ptr);
-            _ = stack.swapRemove(i);
+            _ = stack.swapRemove(i - 1);
             // retry index
             i -= 1;
             // lose an allocation
@@ -53,7 +46,7 @@ fn sweep() void {
 }
 
 pub fn collect() void {
-    mark();
+    symtable.mark();
     sweep();
 }
 
@@ -61,18 +54,18 @@ fn shouldCollect() bool {
     return n_allocs > 100;
 }
 
-fn push(value: Value) !*Value {
+fn push(value: values.Value) !*values.Value {
     n_allocs += 1;
     if (shouldCollect()) {
         collect();
     }
-    const ptr = try backing_allocator.create(Value);
+    const ptr = try backing_allocator.create(values.Value);
     try stack.append(ptr);
     ptr.* = value;
     return ptr;
 }
 
-pub fn integer(i: i64) !*Value {
+pub fn integer(i: i64) !*values.Value {
     return push(.{
         .as = .{
             .integer = i,
@@ -80,7 +73,15 @@ pub fn integer(i: i64) !*Value {
     });
 }
 
-pub fn string(s: []const u8) !*Value {
+pub fn floating(f: f64) !*values.Value {
+    return push(.{
+        .as = .{
+            .float = f,
+        },
+    });
+}
+
+pub fn string(s: []const u8) !*values.Value {
     return push(.{
         .as = .{
             .string = try backing_allocator.dupe(u8, s),
@@ -88,7 +89,7 @@ pub fn string(s: []const u8) !*Value {
     });
 }
 
-pub fn allocedString(s: []const u8) !*Value {
+pub fn allocedString(s: []const u8) !*values.Value {
     return push(.{
         .as = .{
             .string = s,
@@ -96,10 +97,34 @@ pub fn allocedString(s: []const u8) !*Value {
     });
 }
 
-pub fn boolean(b: bool) !*Value {
+pub fn boolean(b: bool) !*values.Value {
     return push(.{
         .as = .{
             .boolean = b,
         },
     });
+}
+
+pub fn list(l: values.List) !*values.Value {
+    return push(.{
+        .as = .{
+            .list = l,
+        },
+    });
+}
+
+pub fn emptyList() !*values.Value {
+    return list(values.List.init(backing_allocator));
+}
+
+pub fn cloneOrReference(origin: *values.Value) !*values.Value {
+    return switch (origin.as) {
+        // clone
+        .string => |s| try string(s),
+        .integer => |i| try integer(i),
+        .float => |f| try floating(f),
+        .boolean => |b| try boolean(b),
+        // reference
+        .list => origin,
+    };
 }

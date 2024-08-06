@@ -19,10 +19,14 @@ const builtins_table = std.StaticStringMap(*const Builtin).initComptime(&.{
     .{ "say", say },
     // operations
     .{ "sum", add },
-    .{ "+", add },
     .{ "eq", equals },
-    .{ "==", equals },
     .{ "len", len },
+    .{ "append", append },
+    .{ "get", get },
+    .{ "put", put },
+    // operations (symbols)
+    .{ "+", add },
+    .{ "==", equals },
 });
 
 pub fn lookup(str: []const u8) ?*const Builtin {
@@ -95,7 +99,70 @@ fn len(args: []const *Value) !Result {
         switch (arg.as) {
             .string => |s| sum += @intCast(s.len),
             .integer, .float, .boolean => unreachable, //TODO: this
+            .list => |l| sum += @intCast(l.items.len),
         }
     }
     return something(try gc.integer(sum));
+}
+
+fn append(args: []const *Value) !Result {
+    if (args.len == 0) {
+        unreachable;
+    }
+
+    switch (args[0].as) {
+        .list => |*l| {
+            for (args[1..]) |arg| {
+                try l.append(arg);
+            }
+        },
+        .integer, .boolean, .float, .string => unreachable,
+    }
+
+    return something(args[0]);
+}
+
+fn get(args: []const *Value) !Result {
+    if (args.len != 2) {
+        unreachable;
+    }
+
+    const index = switch (args[1].as) {
+        .integer => |i| i,
+        .float, .boolean, .list, .string => unreachable,
+    };
+
+    return switch (args[0].as) {
+        //TODO: range check
+        .list => |l| something(l.items[@intCast(index)]),
+        //TODO: This should be possible
+        .string => unreachable,
+        .integer, .boolean, .float => unreachable,
+    };
+}
+
+fn put(args: []const *Value) !Result {
+    if (args.len != 3) {
+        unreachable;
+    }
+
+    const index = switch (args[1].as) {
+        .integer => |i| i,
+        .float, .boolean, .list, .string => unreachable,
+    };
+
+    const value = args[2];
+
+    switch (args[0].as) {
+        //TODO: handle negative values properly
+        .list => |l| {
+            //TODO: range check
+            l.items[@intCast(index)] = value;
+        },
+        //TODO: This should be possible
+        .string => unreachable,
+        .integer, .boolean, .float => unreachable,
+    }
+
+    return something(args[0]);
 }

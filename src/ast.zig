@@ -20,6 +20,11 @@ pub const BoolLiteral = struct {
     token: *const Token,
 };
 
+pub const ListLiteral = struct {
+    token: *const Token,
+    items: []const Expression,
+};
+
 pub const Variable = struct {
     token: *const Token,
 };
@@ -31,6 +36,7 @@ pub const Expression = union(enum) {
     bool_literal: BoolLiteral,
     variable: Variable,
     capturing_invocation: Invocation,
+    list_literal: ListLiteral,
 };
 
 pub const Invocation = struct {
@@ -43,9 +49,15 @@ pub const VarDecl = struct {
     expression: Expression,
 };
 
+pub const Assignment = struct {
+    token: *const Token, // contains variable
+    expression: Expression,
+};
+
 pub const Statement = union(enum) {
     invocation: Invocation,
     var_decl: VarDecl,
+    assignment: Assignment,
 };
 
 pub const Root = struct {
@@ -107,6 +119,10 @@ fn parseStatement(ctx: *Context) !?Statement {
         return Statement{
             .var_decl = var_decl,
         };
+    } else if (try parseAssignment(ctx)) |assign| {
+        return Statement{
+            .assignment = assign,
+        };
     } else return null;
 }
 
@@ -133,6 +149,26 @@ fn parseVarDeclaration(ctx: *Context) !?VarDecl {
     };
 }
 
+fn parseAssignment(ctx: *Context) !?Assignment {
+    const checkpoint = ctx.idx;
+
+    const variable = ctx.getIf(.Variable) orelse return null;
+    _ = ctx.getIf(.Assign) orelse {
+        ctx.idx = checkpoint;
+        return null;
+    };
+
+    const expr = try parseExpression(ctx) orelse unreachable; // Needs expression
+    //
+    // the assignment must be followed by a terminating newline or eot
+    if (ctx.getIf(.Newline) == null and !ctx.eot()) unreachable;
+
+    return .{
+        .token = variable,
+        .expression = expr,
+    };
+}
+
 fn parseInvocation(ctx: *Context) !?Invocation {
     const token = ctx.getIf(.Bareword);
     if (token == null) {
@@ -155,7 +191,7 @@ fn parseInvocation(ctx: *Context) !?Invocation {
     unreachable;
 }
 
-fn parseCapturingInvocation(ctx: *Context) std.mem.Allocator.Error!?Invocation {
+fn parseCapturingInvocation(ctx: *Context) !?Invocation {
     const left = ctx.getIf(.LParens);
     if (left == null) {
         return null;
@@ -181,7 +217,7 @@ fn parseCapturingInvocation(ctx: *Context) std.mem.Allocator.Error!?Invocation {
     unreachable;
 }
 
-fn parseExpression(ctx: *Context) !?Expression {
+fn parseExpression(ctx: *Context) std.mem.Allocator.Error!?Expression {
     if (try parseCapturingInvocation(ctx)) |capturing_inv| {
         return Expression{
             .capturing_invocation = capturing_inv,
@@ -205,6 +241,10 @@ fn parseExpression(ctx: *Context) !?Expression {
     } else if (parseBoolLiteral(ctx)) |bool_literal| {
         return Expression{
             .bool_literal = bool_literal,
+        };
+    } else if (try parseListLiteral(ctx)) |list| {
+        return Expression{
+            .list_literal = list,
         };
     }
     return null;
@@ -249,6 +289,26 @@ fn parseBoolLiteral(ctx: *Context) ?BoolLiteral {
     }
     return BoolLiteral{
         .token = token.?,
+    };
+}
+
+fn parseListLiteral(ctx: *Context) !?ListLiteral {
+    const token = ctx.getIf(.LBracket) orelse return null;
+
+    var exprs = try std.ArrayList(Expression).initCapacity(ctx.ally, 5);
+    defer exprs.deinit();
+
+    // must have expressions
+    while (try parseExpression(ctx)) |expr| {
+        try exprs.append(expr);
+    }
+
+    // must find closing bracket
+    _ = ctx.getIf(.RBracket) orelse unreachable;
+
+    return ListLiteral{
+        .token = token,
+        .items = try exprs.toOwnedSlice(),
     };
 }
 

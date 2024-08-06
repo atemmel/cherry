@@ -40,6 +40,7 @@ fn dumpStatement(stmnt: ast.Statement) void {
     switch (stmnt) {
         .invocation => |inv| dumpInvocation(inv),
         .var_decl => |var_decl| dumpVarDecl(var_decl),
+        .assignment => |assign| dumpAssign(assign),
     }
 }
 
@@ -47,6 +48,12 @@ fn dumpVarDecl(var_decl: ast.VarDecl) void {
     defer up();
     leaf("Variable declaration: '{s}'\n", .{var_decl.token.value});
     dumpExpression(var_decl.expression);
+}
+
+fn dumpAssign(assign: ast.Assignment) void {
+    defer up();
+    leaf("Assignment to: '{s}'\n", .{assign.token.value});
+    dumpExpression(assign.expression);
 }
 
 fn dumpInvocation(inv: ast.Invocation) void {
@@ -67,6 +74,7 @@ fn dumpExpression(expr: ast.Expression) void {
         .bool_literal => |bl| dumpBoolLiteral(bl),
         .variable => |variable| dumpVariable(variable),
         .capturing_invocation => |inv| dumpInvocation(inv),
+        .list_literal => |list| dumpListLiteral(list),
     }
 }
 
@@ -93,4 +101,12 @@ fn dumpBoolLiteral(bl: ast.BoolLiteral) void {
 fn dumpVariable(variable: ast.Variable) void {
     defer up();
     leaf("Variable: '${s}'\n", .{variable.token.value});
+}
+
+fn dumpListLiteral(list: ast.ListLiteral) void {
+    defer up();
+    leaf("ListLiteral: []\n", .{});
+    for (list.items) |expr| {
+        dumpExpression(expr);
+    }
 }

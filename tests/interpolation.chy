@@ -1,3 +1,5 @@
+# Perform string interpolation with braces
+
 var name = "James"
 
 say "Hello {name}"
@@ -10,5 +12,8 @@ say "You are {age}"
 
 assert (== "You are {age}" "You are 24")
 
-# Escaping interpolations does not work atm
-# assert (== 5 (len "{{age}}"))
+# Escape interpolations with double braces
+
+say "{{age}}"
+
+assert (== 5 (len "{{age}}"))
