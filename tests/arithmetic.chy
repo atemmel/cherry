@@ -1,1 +1,12 @@
+# add/sum
 assert (== 5 (+ 2 3))
+assert (== 6 (+ 1 2 3))
+
+# sub
+assert (== 0 (- 6 1 2 3))
+
+# mul
+assert (== 6 (* 1 2 3))
+
+# div
+assert (== 2 (/ 8 2 2))

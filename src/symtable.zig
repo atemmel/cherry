@@ -9,44 +9,79 @@ pub const SymtableError = error{
 const Root = std.ArrayList(*Value);
 const Symtable = std.StringHashMap(*Value);
 
-var root_values: Root = undefined;
-var symtable: Symtable = undefined;
+const Frame = struct {
+    root_values: Root,
+    symtable: Symtable,
+};
 
-pub fn init(ally: std.mem.Allocator) void {
-    symtable = Symtable.init(ally);
-    root_values = Root.init(ally);
+const Stack = std.ArrayList(Frame);
+
+var stack: Stack = undefined;
+var ally: std.mem.Allocator = undefined;
+
+pub fn init(ally_arg: std.mem.Allocator) void {
+    ally = ally_arg;
+    stack = Stack.init(ally);
 }
 
 pub fn deinit() void {
-    symtable.deinit();
-    root_values.deinit();
+    defer stack.deinit();
+    for (stack.items) |*frame| {
+        frame.symtable.deinit();
+        frame.root_values.deinit();
+    }
+}
+
+fn topFrame() *Frame {
+    return &stack.items[stack.items.len - 1];
+}
+
+pub fn pushFrame() !void {
+    try stack.append(.{
+        .symtable = Symtable.init(ally),
+        .root_values = Root.init(ally),
+    });
+}
+
+pub fn popFrame() void {
+    var old_frame = stack.pop();
+    old_frame.root_values.deinit();
+    old_frame.symtable.deinit();
 }
 
 pub fn get(key: []const u8) ?*Value {
-    return symtable.get(key);
+    for (stack.items) |frame| {
+        if (frame.symtable.get(key)) |symbol| {
+            return symbol;
+        }
+    }
+    return null;
 }
 
 pub fn put(key: []const u8, value: *Value) !void {
-    return try symtable.put(key, value);
+    try topFrame().symtable.put(key, value);
 }
 
 pub fn appendRoot(value: *Value) !void {
-    try root_values.append(value);
+    try topFrame().root_values.append(value);
 }
 
 pub fn mark() void {
-    for (root_values.items) |v| {
-        v.mark();
-    }
-    var it = symtable.iterator();
-    while (it.next()) |entry| {
-        entry.value_ptr.*.mark();
+    for (stack.items) |frame| {
+        for (frame.root_values.items) |v| {
+            v.mark();
+        }
+        var it = frame.symtable.iterator();
+        while (it.next()) |entry| {
+            entry.value_ptr.*.mark();
+        }
     }
 }
 
 pub fn insert(key: []const u8, value: *Value) !void {
-    return if (symtable.get(key) != null)
+    const frame = topFrame();
+    return if (frame.symtable.get(key) != null)
         SymtableError.VariableAlreadyDeclared
     else
-        symtable.put(key, value);
+        frame.symtable.put(key, value);
 }

@@ -5,4 +5,9 @@ var outer = 2
 	assert (== 3 (+ $outer $inner))
 }
 
-say $inner
+# new scope with same identifier
+
+{
+	var inner = 2
+	assert (== 4 (+ $outer $inner))
+}

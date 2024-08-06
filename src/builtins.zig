@@ -18,14 +18,21 @@ const builtins_table = std.StaticStringMap(*const Builtin).initComptime(&.{
     .{ "assert", assert },
     .{ "say", say },
     // operations
-    .{ "sum", add },
+    .{ "add", sum },
+    .{ "sum", sum },
+    .{ "sub", sub },
+    .{ "mul", mul },
+    .{ "div", div },
     .{ "eq", equals },
     .{ "len", len },
     .{ "append", append },
     .{ "get", get },
     .{ "put", put },
     // operations (symbols)
-    .{ "+", add },
+    .{ "+", sum },
+    .{ "-", sub },
+    .{ "*", mul },
+    .{ "/", div },
     .{ "==", equals },
 });
 
@@ -63,7 +70,7 @@ fn assert(args: []const *Value) !Result {
     };
 }
 
-fn add(args: []const *Value) !Result {
+fn sum(args: []const *Value) !Result {
     var sum_value: i64 = 0;
     for (args) |arg| {
         switch (arg.as) {
@@ -74,6 +81,58 @@ fn add(args: []const *Value) !Result {
         }
     }
     return something(try gc.integer(sum_value));
+}
+
+fn sub(args: []const *Value) !Result {
+    if (args.len < 1) unreachable;
+    var diff_value: i64 = switch (args[0].as) {
+        .integer => |i| i,
+        else => unreachable,
+    };
+    for (args[1..]) |arg| {
+        switch (arg.as) {
+            .integer => |i| {
+                diff_value -= i;
+            },
+            else => unreachable, //TODO: hmmm...
+        }
+    }
+    return something(try gc.integer(diff_value));
+}
+
+fn mul(args: []const *Value) !Result {
+    if (args.len < 1) unreachable;
+    var product_value: i64 = switch (args[0].as) {
+        .integer => |i| i,
+        else => unreachable,
+    };
+    for (args[1..]) |arg| {
+        switch (arg.as) {
+            .integer => |i| {
+                product_value *= i;
+            },
+            else => unreachable, //TODO: hmmm...
+        }
+    }
+    return something(try gc.integer(product_value));
+}
+
+fn div(args: []const *Value) !Result {
+    if (args.len < 1) unreachable;
+    var quotient_value: i64 = switch (args[0].as) {
+        .integer => |i| i,
+        else => unreachable,
+    };
+    for (args[1..]) |arg| {
+        switch (arg.as) {
+            .integer => |i| {
+                //TODO: handle division edge cases
+                quotient_value = @divFloor(quotient_value, i);
+            },
+            else => unreachable, //TODO: hmmm...
+        }
+    }
+    return something(try gc.integer(quotient_value));
 }
 
 fn equals(args: []const *Value) !Result {
@@ -94,15 +153,15 @@ fn equals(args: []const *Value) !Result {
 }
 
 fn len(args: []const *Value) !Result {
-    var sum: i64 = 0;
+    var length: i64 = 0;
     for (args) |arg| {
         switch (arg.as) {
-            .string => |s| sum += @intCast(s.len),
+            .string => |s| length += @intCast(s.len),
             .integer, .float, .boolean => unreachable, //TODO: this
-            .list => |l| sum += @intCast(l.items.len),
+            .list => |l| length += @intCast(l.items.len),
         }
     }
-    return something(try gc.integer(sum));
+    return something(try gc.integer(length));
 }
 
 fn append(args: []const *Value) !Result {

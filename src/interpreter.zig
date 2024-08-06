@@ -41,6 +41,8 @@ pub fn interpret(state: *PipelineState) !void {
 }
 
 fn interpretRoot(ctx: *Context) !void {
+    try symtable.pushFrame();
+    defer symtable.popFrame();
     for (ctx.root.statements) |stmnt| {
         try interpretStatement(ctx, stmnt);
     }
@@ -57,7 +59,7 @@ fn interpretStatement(ctx: *Context, stmnt: ast.Statement) StatementError!void {
         .var_decl => |var_decl| try interpretVarDecl(ctx, var_decl),
         .assignment => |assign| try interpretAssign(ctx, assign),
         .branches => |br| try interpretBranches(ctx, br),
-        .scope => |scope| try interpretScope(ctx, scope),
+        .scope => |scope| try interpretScope(ctx, scope, true),
     }
 }
 
@@ -92,6 +94,8 @@ fn interpretAssign(ctx: *Context, assign: ast.Assignment) !void {
 }
 
 fn interpretBranches(ctx: *Context, branches: ast.Branches) !void {
+    try symtable.pushFrame();
+    defer symtable.popFrame();
     for (branches) |branch| {
         if (branch.condition) |expr| {
             const value = try evalExpression(ctx, expr);
@@ -100,7 +104,7 @@ fn interpretBranches(ctx: *Context, branches: ast.Branches) !void {
                     switch (v.as) {
                         .boolean => |b| {
                             if (b) {
-                                try interpretScope(ctx, branch.scope);
+                                try interpretScope(ctx, branch.scope, false);
                                 break;
                             }
                         },
@@ -112,13 +116,15 @@ fn interpretBranches(ctx: *Context, branches: ast.Branches) !void {
                 .nothing => unreachable,
             }
         } else {
-            try interpretScope(ctx, branch.scope);
+            try interpretScope(ctx, branch.scope, false);
             break;
         }
     }
 }
 
-fn interpretScope(ctx: *Context, scope: ast.Scope) !void {
+fn interpretScope(ctx: *Context, scope: ast.Scope, freestanding: bool) !void {
+    if (freestanding) try symtable.pushFrame();
+    defer if (freestanding) symtable.popFrame();
     for (scope) |stmnt| {
         try interpretStatement(ctx, stmnt);
     }
