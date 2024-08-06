@@ -5,7 +5,7 @@ const symtable = @import("symtable.zig");
 const Stack = std.ArrayList(*values.Value);
 
 var stack: Stack = undefined;
-var backing_allocator: std.mem.Allocator = undefined;
+pub var backing_allocator: std.mem.Allocator = undefined;
 var n_allocs: usize = 0;
 
 pub fn init(ally: std.mem.Allocator) !void {

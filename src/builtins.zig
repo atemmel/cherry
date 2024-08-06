@@ -18,8 +18,8 @@ const builtins_table = std.StaticStringMap(*const Builtin).initComptime(&.{
     .{ "assert", assert },
     .{ "say", say },
     // operations
-    .{ "add", sum },
-    .{ "sum", sum },
+    .{ "add", add },
+    .{ "sum", add },
     .{ "sub", sub },
     .{ "mul", mul },
     .{ "div", div },
@@ -32,7 +32,7 @@ const builtins_table = std.StaticStringMap(*const Builtin).initComptime(&.{
     .{ "get", get },
     .{ "put", put },
     // operations (symbols)
-    .{ "+", sum },
+    .{ "+", add },
     .{ "-", sub },
     .{ "*", mul },
     .{ "/", div },
@@ -76,17 +76,41 @@ fn assert(args: []const *Value) !Result {
     };
 }
 
-fn sum(args: []const *Value) !Result {
+fn add(args: []const *Value) !Result {
+    if (args.len < 1) {
+        unreachable;
+    }
+    return something(switch (args[0].as) {
+        .integer => try addIntegers(args),
+        .string => try concatenateStrings(args),
+        else => unreachable,
+    });
+}
+
+fn addIntegers(args: []const *Value) !*Value {
     var sum_value: i64 = 0;
     for (args) |arg| {
         switch (arg.as) {
             .integer => |i| {
                 sum_value += i;
             },
-            else => unreachable, //TODO: hmmm...
+            else => unreachable,
         }
     }
-    return something(try gc.integer(sum_value));
+    return try gc.integer(sum_value);
+}
+
+fn concatenateStrings(args: []const *Value) !*Value {
+    var result = std.ArrayList(u8).init(gc.backing_allocator);
+    for (args) |arg| {
+        switch (arg.as) {
+            .string => |s| {
+                try result.appendSlice(s);
+            },
+            else => unreachable,
+        }
+    }
+    return try gc.allocedString(try result.toOwnedSlice());
 }
 
 fn sub(args: []const *Value) !Result {

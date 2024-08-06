@@ -1,0 +1,7 @@
+# concatenate strings
+
+var greeting = (+ hello guys)
+
+assert (== "helloguys" $greeting)
+
+assert (== 9 (len $greeting))
