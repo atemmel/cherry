@@ -54,10 +54,20 @@ pub const Assignment = struct {
     expression: Expression,
 };
 
+pub const Scope = []const Statement;
+
+pub const Branch = struct {
+    condition: ?Expression,
+    scope: Scope,
+};
+
+pub const Branches = []const Branch;
+
 pub const Statement = union(enum) {
     invocation: Invocation,
     var_decl: VarDecl,
     assignment: Assignment,
+    branches: Branches,
 };
 
 pub const Root = struct {
@@ -110,7 +120,7 @@ pub fn parse(state: *PipelineState) !Root {
     };
 }
 
-fn parseStatement(ctx: *Context) !?Statement {
+fn parseStatement(ctx: *Context) std.mem.Allocator.Error!?Statement {
     if (try parseInvocation(ctx)) |inv| {
         return Statement{
             .invocation = inv,
@@ -122,6 +132,10 @@ fn parseStatement(ctx: *Context) !?Statement {
     } else if (try parseAssignment(ctx)) |assign| {
         return Statement{
             .assignment = assign,
+        };
+    } else if (try parseBranches(ctx)) |branches| {
+        return Statement{
+            .branches = branches,
         };
     } else return null;
 }
@@ -159,7 +173,7 @@ fn parseAssignment(ctx: *Context) !?Assignment {
     };
 
     const expr = try parseExpression(ctx) orelse unreachable; // Needs expression
-    //
+
     // the assignment must be followed by a terminating newline or eot
     if (ctx.getIf(.Newline) == null and !ctx.eot()) unreachable;
 
@@ -167,6 +181,71 @@ fn parseAssignment(ctx: *Context) !?Assignment {
         .token = variable,
         .expression = expr,
     };
+}
+
+fn parseBranches(ctx: *Context) !?Branches {
+    if (ctx.getIf(.If) == null) {
+        return null;
+    }
+
+    var branches = std.ArrayList(Branch).init(ctx.ally);
+    defer branches.deinit();
+
+    const first_expr = try parseExpression(ctx) orelse unreachable;
+    const first_scope = try parseScope(ctx, false) orelse unreachable;
+
+    try branches.append(.{
+        .scope = first_scope,
+        .condition = first_expr,
+    });
+
+    var checkpoint = ctx.idx;
+
+    if (ctx.getIf(.Newline) != null) {
+        return try branches.toOwnedSlice();
+    }
+
+    while (ctx.getIf(.Else) != null and ctx.getIf(.If) != null) {
+        const expr = try parseExpression(ctx) orelse unreachable;
+        const scope = try parseScope(ctx, false) orelse unreachable;
+
+        try branches.append(.{
+            .scope = scope,
+            .condition = expr,
+        });
+        checkpoint = ctx.idx;
+    }
+    ctx.idx = checkpoint;
+
+    if (ctx.getIf(.Else) != null) {
+        const last_scope = try parseScope(ctx, true) orelse unreachable;
+        try branches.append(.{
+            .scope = last_scope,
+            .condition = null,
+        });
+    }
+
+    return try branches.toOwnedSlice();
+}
+
+fn parseScope(ctx: *Context, needsNewline: bool) !?Scope {
+    if (ctx.getIf(.LBrace) == null) {
+        return null;
+    }
+    _ = ctx.getIf(.Newline);
+
+    var statements = std.ArrayList(Statement).init(ctx.ally);
+    defer statements.deinit();
+
+    while (try parseStatement(ctx)) |stmnt| {
+        try statements.append(stmnt);
+    }
+
+    _ = ctx.getIf(.RBrace) orelse unreachable;
+    if (needsNewline and ctx.getIf(.Newline) == null and !ctx.eot()) {
+        unreachable;
+    }
+    return try statements.toOwnedSlice();
 }
 
 fn parseInvocation(ctx: *Context) !?Invocation {

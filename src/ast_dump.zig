@@ -41,6 +41,7 @@ fn dumpStatement(stmnt: ast.Statement) void {
         .invocation => |inv| dumpInvocation(inv),
         .var_decl => |var_decl| dumpVarDecl(var_decl),
         .assignment => |assign| dumpAssign(assign),
+        .branches => |br| dumpBranches(br),
     }
 }
 
@@ -54,6 +55,31 @@ fn dumpAssign(assign: ast.Assignment) void {
     defer up();
     leaf("Assignment to: '{s}'\n", .{assign.token.value});
     dumpExpression(assign.expression);
+}
+
+fn dumpBranches(branches: ast.Branches) void {
+    defer up();
+    leaf("Branches:\n", .{});
+    for (branches) |branch| {
+        dumpBranch(branch);
+    }
+}
+
+fn dumpBranch(branch: ast.Branch) void {
+    defer up();
+    leaf("Branch, condition:\n", .{});
+    if (branch.condition) |c| {
+        dumpExpression(c);
+    }
+    dumpScope(branch.scope);
+}
+
+fn dumpScope(scope: ast.Scope) void {
+    defer up();
+    leaf("Scope:\n", .{});
+    for (scope) |stmnt| {
+        dumpStatement(stmnt);
+    }
 }
 
 fn dumpInvocation(inv: ast.Invocation) void {

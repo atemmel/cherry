@@ -46,7 +46,9 @@ fn interpretRoot(ctx: *Context) !void {
     }
 }
 
-fn interpretStatement(ctx: *Context, stmnt: ast.Statement) !void {
+const StatementError = EvalError || symtable.SymtableError;
+
+fn interpretStatement(ctx: *Context, stmnt: ast.Statement) StatementError!void {
     defer _ = ctx.stmntArena.reset(.retain_capacity);
     switch (stmnt) {
         .invocation => |inv| _ = try evalInvocation(ctx, inv, .{
@@ -54,6 +56,7 @@ fn interpretStatement(ctx: *Context, stmnt: ast.Statement) !void {
         }),
         .var_decl => |var_decl| try interpretVarDecl(ctx, var_decl),
         .assignment => |assign| try interpretAssign(ctx, assign),
+        .branches => |br| try interpretBranches(ctx, br),
     }
 }
 
@@ -85,6 +88,39 @@ fn interpretAssign(ctx: *Context, assign: ast.Assignment) !void {
 
     const value_to_insert = if (was_owned) try gc.cloneOrReference(value) else value;
     try symtable.put(assign.token.value, value_to_insert);
+}
+
+fn interpretBranches(ctx: *Context, branches: ast.Branches) !void {
+    for (branches) |branch| {
+        if (branch.condition) |expr| {
+            const value = try evalExpression(ctx, expr);
+            switch (value) {
+                .value => |v| {
+                    switch (v.as) {
+                        .boolean => |b| {
+                            if (b) {
+                                try interpretScope(ctx, branch.scope);
+                                break;
+                            }
+                        },
+                        // needs boolean
+                        else => unreachable,
+                    }
+                },
+                // needs value
+                .nothing => unreachable,
+            }
+        } else {
+            try interpretScope(ctx, branch.scope);
+            break;
+        }
+    }
+}
+
+fn interpretScope(ctx: *Context, scope: ast.Scope) !void {
+    for (scope) |stmnt| {
+        try interpretStatement(ctx, stmnt);
+    }
 }
 
 const InvocationParams = struct {

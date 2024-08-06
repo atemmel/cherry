@@ -180,15 +180,20 @@ fn lexKeyword(state: *LexState) ?Token {
     const begin = state.idx;
     while (!state.eof() and std.ascii.isAlphabetic(state.get())) : (state.next()) {}
     const end = state.idx;
-    return if (begin == end)
-        null
-    else if (string_keyword_map.get(state.slice(begin, end))) |kind| .{
-        .kind = kind,
-        .value = "",
+    const keyword = state.slice(begin, end);
+    if (begin == end) {
+        return null;
+    }
+    if (string_keyword_map.get(keyword)) |kind| {
+        state.idx -= 1;
+        return Token{
+            .kind = kind,
+            .value = keyword,
+        };
     } else {
         state.idx = begin;
         return null;
-    };
+    }
 }
 
 fn lexStringLiteral(state: *LexState) ?Token {
@@ -461,6 +466,25 @@ test "lex assert str str" {
     try expectEqual(.StringLiteral, tokens[3].kind);
     try expectEqual(.StringLiteral, tokens[4].kind);
     try expectEqual(.RParens, tokens[5].kind);
+}
+
+test "lex x y newline }" {
+    const ally = std.testing.allocator_instance.allocator();
+
+    var state: PipelineState = .{
+        .ally = ally,
+        .arena = ally,
+        .source = "\tassert true\n}",
+    };
+
+    const tokens = try lex(&state);
+    defer ally.free(tokens);
+
+    try expectEqual(4, tokens.len);
+    try expectEqual(.Bareword, tokens[0].kind);
+    try expectEqual(.True, tokens[1].kind);
+    try expectEqual(.Newline, tokens[2].kind);
+    try expectEqual(.RBrace, tokens[3].kind);
 }
 
 test "lex integer" {
