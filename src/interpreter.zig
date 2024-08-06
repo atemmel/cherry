@@ -57,6 +57,7 @@ fn interpretStatement(ctx: *Context, stmnt: ast.Statement) StatementError!void {
         .var_decl => |var_decl| try interpretVarDecl(ctx, var_decl),
         .assignment => |assign| try interpretAssign(ctx, assign),
         .branches => |br| try interpretBranches(ctx, br),
+        .scope => |scope| try interpretScope(ctx, scope),
     }
 }
 

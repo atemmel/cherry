@@ -68,6 +68,7 @@ pub const Statement = union(enum) {
     var_decl: VarDecl,
     assignment: Assignment,
     branches: Branches,
+    scope: Scope,
 };
 
 pub const Root = struct {
@@ -136,6 +137,10 @@ fn parseStatement(ctx: *Context) std.mem.Allocator.Error!?Statement {
     } else if (try parseBranches(ctx)) |branches| {
         return Statement{
             .branches = branches,
+        };
+    } else if (try parseScope(ctx, true)) |scope| {
+        return Statement{
+            .scope = scope,
         };
     } else return null;
 }

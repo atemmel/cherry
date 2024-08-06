@@ -42,6 +42,7 @@ fn dumpStatement(stmnt: ast.Statement) void {
         .var_decl => |var_decl| dumpVarDecl(var_decl),
         .assignment => |assign| dumpAssign(assign),
         .branches => |br| dumpBranches(br),
+        .scope => |scope| dumpScope(scope),
     }
 }
 
