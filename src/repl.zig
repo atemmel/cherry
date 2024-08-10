@@ -3,6 +3,8 @@ const pipeline = @import("pipeline.zig");
 const terminal = @import("term.zig");
 const Term = terminal.Term;
 
+const History = std.ArrayList([]const u8);
+
 /// fmt wrapper that doesn't care if it fails
 fn fmt(writer: anytype, comptime str: []const u8, args: anytype) void {
     std.fmt.format(writer, str, args) catch {};
@@ -20,6 +22,13 @@ fn fmts(writer: anytype, comptime str: []const u8) void {
 // - tab completion
 
 pub fn repl(ally: std.mem.Allocator, arena: std.mem.Allocator) !void {
+    var history = try History.initCapacity(ally, 100);
+    defer {
+        for (history.items) |item| {
+            ally.free(item);
+        }
+        history.deinit();
+    }
     var term = try Term.init();
     defer term.restore() catch unreachable; // no balls
 
@@ -53,15 +62,18 @@ pub fn repl(ally: std.mem.Allocator, arena: std.mem.Allocator) !void {
                             cursor = 0;
                         }
 
+                        const cmd = buffer[0..length];
+
                         var state = pipeline.State{
                             .arena = arena,
                             .ally = ally,
-                            .source = buffer[0..length],
+                            .source = cmd,
                             .verboseCodegen = false,
                             .verboseLexer = false,
                             .verboseParser = false,
                         };
                         try pipeline.run(&state);
+                        try appendHistory(ally, &history, cmd);
                     },
                     else => {
                         std.mem.rotate(u8, buffer[cursor .. length + 1], length - cursor);
@@ -128,4 +140,10 @@ pub fn repl(ally: std.mem.Allocator, arena: std.mem.Allocator) !void {
             .alt, .escape, .insert, .page_down, .page_up, .unknown => {},
         }
     }
+}
+
+fn appendHistory(ally: std.mem.Allocator, hist: *History, cmd: []const u8) !void {
+    const cmd_copy = try ally.dupe(u8, cmd);
+    try hist.append(cmd_copy);
+    //TODO: append to histfile
 }
