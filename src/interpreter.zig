@@ -31,12 +31,6 @@ pub fn interpret(state: *PipelineState) !void {
         .stmntAlly = stmntArena.allocator(),
     };
 
-    try gc.init(ctx.ally);
-    defer gc.deinit();
-
-    symtable.init(ctx.ally);
-    defer symtable.deinit();
-
     try interpretRoot(&ctx);
 }
 

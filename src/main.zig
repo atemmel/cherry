@@ -3,6 +3,8 @@ const tokens = @import("tokens.zig");
 const ast = @import("ast.zig");
 const pipeline = @import("pipeline.zig");
 const repl = @import("repl.zig").repl;
+const symtable = @import("symtable.zig");
+const gc = @import("gc.zig");
 
 const eq = std.mem.eql;
 
@@ -39,8 +41,6 @@ pub fn main() !void {
     var verboseCodegen = false;
     var file: ?[]const u8 = null;
 
-    std.debug.print("args: {s}\n", .{args});
-
     for (args[1..args.len]) |arg| {
         if (in(arg, &.{
             "--help",
@@ -54,13 +54,20 @@ pub fn main() !void {
             verboseLexer = true;
             verboseParser = true;
             verboseCodegen = true;
+            std.debug.print("args: {s}\n", .{args});
         } else {
             file = arg;
         }
     }
 
+    try gc.init(ally);
+    defer gc.deinit();
+
+    symtable.init(ally);
+    defer symtable.deinit();
+
     if (file == null) {
-        return repl();
+        return repl(ally, arena_allocator);
     }
 
     const source = try readfile(arena_allocator, file.?);

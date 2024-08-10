@@ -1,4 +1,5 @@
 const std = @import("std");
+const pipeline = @import("pipeline.zig");
 const terminal = @import("term.zig");
 const Term = terminal.Term;
 
@@ -18,22 +19,24 @@ fn fmts(writer: anytype, comptime str: []const u8) void {
 // - history
 // - tab completion
 
-pub fn repl() !void {
+pub fn repl(ally: std.mem.Allocator, arena: std.mem.Allocator) !void {
     var term = try Term.init();
     defer term.restore() catch unreachable; // no balls
 
+    var cwd_buffer: [1024]u8 = undefined;
     var buffer: [4096]u8 = undefined;
     var length: usize = 0;
     var cursor: usize = 0;
     var buffered_writer = std.io.bufferedWriter(std.io.getStdOut().writer());
     const out = buffered_writer.writer();
-    const prefix = "|> ";
 
     while (true) {
-        terminal.clearLine(out, length + prefix.len + 1);
-        fmts(out, prefix);
+        const cwd = try std.fs.cwd().realpath(".", &cwd_buffer);
+        const prefix_len = cwd.len + 4;
+        terminal.clearLine(out, prefix_len + 1);
+        fmt(out, "{s} |> ", .{cwd});
         fmt(out, "{s}\r", .{buffer[0..length]});
-        terminal.moveRight(out, prefix.len + cursor);
+        terminal.moveRight(out, prefix_len + cursor);
         try buffered_writer.flush();
         const event = try term.readEvent();
         switch (event) {
@@ -41,8 +44,24 @@ pub fn repl() !void {
                 switch (key) {
                     '\n', '\r' => {
                         try out.print("\r\n", .{});
-                        length = 0;
-                        cursor = 0;
+                        terminal.clearLine(out, prefix_len + 1);
+                        try term.restore();
+                        try buffered_writer.flush();
+                        defer {
+                            term = Term.init() catch unreachable;
+                            length = 0;
+                            cursor = 0;
+                        }
+
+                        var state = pipeline.State{
+                            .arena = arena,
+                            .ally = ally,
+                            .source = buffer[0..length],
+                            .verboseCodegen = false,
+                            .verboseLexer = false,
+                            .verboseParser = false,
+                        };
+                        try pipeline.run(&state);
                     },
                     else => {
                         std.mem.rotate(u8, buffer[cursor .. length + 1], length - cursor);
@@ -64,11 +83,12 @@ pub fn repl() !void {
                         cursor = 0;
                     },
                     'u' => {
-                        terminal.clearLine(out, length + prefix.len);
+                        terminal.clearLine(out, length + prefix_len);
                         length = 0;
                         cursor = 0;
                     },
                     'l' => {
+                        terminal.moveCursor(term.tty.writer(), 0, 0);
                         terminal.clear(out);
                     },
                     else => {}, // ignore
