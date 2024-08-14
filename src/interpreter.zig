@@ -20,6 +20,8 @@ const Context = struct {
     root: ast.Root,
 };
 
+pub const Error = error{CommandNotFound};
+
 pub fn interpret(state: *PipelineState) !void {
     var stmntArena = std.heap.ArenaAllocator.init(state.ally);
     defer stmntArena.deinit();
@@ -31,7 +33,12 @@ pub fn interpret(state: *PipelineState) !void {
         .stmntAlly = stmntArena.allocator(),
     };
 
-    try interpretRoot(&ctx);
+    interpretRoot(&ctx) catch |e| {
+        switch (e) {
+            error.FileNotFound => return error.CommandNotFound,
+            else => {}, //TODO: go through these baddies
+        }
+    };
 }
 
 fn interpretRoot(ctx: *Context) !void {
