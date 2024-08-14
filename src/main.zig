@@ -5,6 +5,7 @@ const pipeline = @import("pipeline.zig");
 const repl = @import("repl.zig").repl;
 const symtable = @import("symtable.zig");
 const gc = @import("gc.zig");
+const builtin = @import("builtin");
 
 const eq = std.mem.eql;
 
@@ -24,10 +25,9 @@ fn readfile(ally: std.mem.Allocator, name: []const u8) ![]const u8 {
 }
 
 pub fn main() !void {
-    //TODO: use proper debug/release flag
-    var base_allocator = switch (std.debug.runtime_safety) {
-        true => std.heap.GeneralPurposeAllocator(.{}){},
-        false => std.heap.page_allocator,
+    var base_allocator = switch (builtin.mode) {
+        .Debug => std.heap.GeneralPurposeAllocator(.{}){},
+        else => std.heap.page_allocator,
     };
     defer std.debug.assert(base_allocator.deinit() == .ok);
     const ally = base_allocator.allocator();
