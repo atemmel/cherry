@@ -1,12 +1,13 @@
 const std = @import("std");
-const tokens = @import("tokens.zig");
 const ast = @import("ast.zig");
+const builtin = @import("builtin");
+const gc = @import("gc.zig");
 const pipeline = @import("pipeline.zig");
 const repl = @import("repl.zig").repl;
 const symtable = @import("symtable.zig");
-const gc = @import("gc.zig");
-const builtin = @import("builtin");
+const tokens = @import("tokens.zig");
 
+const assert = std.debug.assert;
 const eq = std.mem.eql;
 
 fn in(needle: []const u8, haystack: []const []const u8) bool {
@@ -29,7 +30,7 @@ pub fn main() !void {
         .Debug => std.heap.GeneralPurposeAllocator(.{}){},
         else => std.heap.page_allocator,
     };
-    defer std.debug.assert(base_allocator.deinit() == .ok);
+    defer assert(base_allocator.deinit() == .ok);
     const ally = base_allocator.allocator();
     var arena = std.heap.ArenaAllocator.init(ally);
     defer arena.deinit();
