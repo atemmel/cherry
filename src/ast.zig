@@ -35,11 +35,11 @@ pub const Expression = union(enum) {
     integer_literal: IntegerLiteral,
     bool_literal: BoolLiteral,
     variable: Variable,
-    capturing_invocation: Invocation,
+    capturing_call: Call,
     list_literal: ListLiteral,
 };
 
-pub const Invocation = struct {
+pub const Call = struct {
     token: *const Token,
     arguments: []Expression,
 };
@@ -64,7 +64,7 @@ pub const Branch = struct {
 pub const Branches = []const Branch;
 
 pub const Statement = union(enum) {
-    invocation: Invocation,
+    call: Call,
     var_decl: VarDecl,
     assignment: Assignment,
     branches: Branches,
@@ -99,6 +99,25 @@ const Context = struct {
         defer c.next();
         return c.peek();
     }
+
+    pub const Pair = struct {
+        first: *const Token,
+        second: *const Token,
+    };
+
+    pub fn getIfBoth(c: *Context, first: Token.Kind, second: Token.Kind) ?Pair {
+        const checkpoint = c.idx;
+
+        const token_0 = c.getIf(first) orelse return null;
+        const token_1 = c.getIf(second) orelse {
+            c.idx = checkpoint;
+            return null;
+        };
+        return .{
+            .first = token_0,
+            .second = token_1,
+        };
+    }
 };
 
 pub fn parse(state: *PipelineState) !Root {
@@ -122,9 +141,9 @@ pub fn parse(state: *PipelineState) !Root {
 }
 
 fn parseStatement(ctx: *Context) std.mem.Allocator.Error!?Statement {
-    if (try parseInvocation(ctx)) |inv| {
+    if (try parseCall(ctx)) |inv| {
         return Statement{
-            .invocation = inv,
+            .call = inv,
         };
     } else if (try parseVarDeclaration(ctx)) |var_decl| {
         return Statement{
@@ -253,7 +272,7 @@ fn parseScope(ctx: *Context, needsNewline: bool) !?Scope {
     return try statements.toOwnedSlice();
 }
 
-fn parseInvocation(ctx: *Context) !?Invocation {
+fn parseCall(ctx: *Context) !?Call {
     const token = ctx.getIf(.Bareword);
     if (token == null) {
         return null;
@@ -266,7 +285,7 @@ fn parseInvocation(ctx: *Context) !?Invocation {
     }
 
     if (ctx.getIf(.Newline) != null or ctx.eot()) {
-        return Invocation{
+        return Call{
             .token = token.?,
             .arguments = try args.toOwnedSlice(),
         };
@@ -275,7 +294,7 @@ fn parseInvocation(ctx: *Context) !?Invocation {
     unreachable;
 }
 
-fn parseCapturingInvocation(ctx: *Context) !?Invocation {
+fn parseCapturingCall(ctx: *Context) !?Call {
     const left = ctx.getIf(.LParens);
     if (left == null) {
         return null;
@@ -293,7 +312,7 @@ fn parseCapturingInvocation(ctx: *Context) !?Invocation {
     }
 
     if (ctx.getIf(.RParens) != null) {
-        return Invocation{
+        return Call{
             .token = token.?,
             .arguments = try args.toOwnedSlice(),
         };
@@ -302,9 +321,9 @@ fn parseCapturingInvocation(ctx: *Context) !?Invocation {
 }
 
 fn parseExpression(ctx: *Context) std.mem.Allocator.Error!?Expression {
-    if (try parseCapturingInvocation(ctx)) |capturing_inv| {
+    if (try parseCapturingCall(ctx)) |capturing_inv| {
         return Expression{
-            .capturing_invocation = capturing_inv,
+            .capturing_call = capturing_inv,
         };
     } else if (parseBareword(ctx)) |bareword| {
         return Expression{

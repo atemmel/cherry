@@ -56,8 +56,8 @@ if ? $exit-code {
 ## tables/records
 ```
 table := [
-    name: james
-    age:  55
+    name = james
+    age  = 55
 ]
 
 $table[name] = bond

@@ -240,6 +240,7 @@ fn len(args: []const *Value) !Result {
             .string => |s| length += @intCast(s.len),
             .integer, .float, .boolean => unreachable, //TODO: this
             .list => |l| length += @intCast(l.items.len),
+            .record => |r| length += @intCast(r.count()),
         }
     }
     return something(try gc.integer(length));
@@ -256,7 +257,7 @@ fn append(args: []const *Value) !Result {
                 try l.append(arg);
             }
         },
-        .integer, .boolean, .float, .string => unreachable,
+        .integer, .boolean, .float, .string, .record => unreachable,
     }
 
     return something(args[0]);
@@ -269,7 +270,7 @@ fn get(args: []const *Value) !Result {
 
     const index = switch (args[1].as) {
         .integer => |i| i,
-        .float, .boolean, .list, .string => unreachable,
+        .float, .boolean, .list, .string, .record => unreachable,
     };
 
     return switch (args[0].as) {
@@ -277,7 +278,7 @@ fn get(args: []const *Value) !Result {
         .list => |l| something(l.items[@intCast(index)]),
         //TODO: This should be possible
         .string => unreachable,
-        .integer, .boolean, .float => unreachable,
+        .integer, .boolean, .float, .record => unreachable,
     };
 }
 
@@ -288,7 +289,7 @@ fn put(args: []const *Value) !Result {
 
     const index = switch (args[1].as) {
         .integer => |i| i,
-        .float, .boolean, .list, .string => unreachable,
+        .float, .boolean, .list, .string, .record => unreachable,
     };
 
     const value = args[2];
@@ -301,7 +302,7 @@ fn put(args: []const *Value) !Result {
         },
         //TODO: This should be possible
         .string => unreachable,
-        .integer, .boolean, .float => unreachable,
+        .integer, .boolean, .float, .record => unreachable,
     }
 
     return something(args[0]);

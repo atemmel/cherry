@@ -54,7 +54,7 @@ const StatementError = EvalError || symtable.SymtableError;
 fn interpretStatement(ctx: *Context, stmnt: ast.Statement) StatementError!void {
     defer _ = ctx.stmntArena.reset(.retain_capacity);
     switch (stmnt) {
-        .invocation => |inv| _ = try evalInvocation(ctx, inv, .{
+        .call => |inv| _ = try evalCall(ctx, inv, .{
             .capturing = false,
         }),
         .var_decl => |var_decl| try interpretVarDecl(ctx, var_decl),
@@ -86,7 +86,7 @@ fn interpretAssign(ctx: *Context, assign: ast.Assignment) !void {
         .bool_literal,
         .integer_literal,
         .string_literal,
-        .capturing_invocation,
+        .capturing_call,
         => false,
     };
 
@@ -131,14 +131,14 @@ fn interpretScope(ctx: *Context, scope: ast.Scope, freestanding: bool) !void {
     }
 }
 
-const InvocationParams = struct {
+const CallParams = struct {
     capturing: bool,
 };
 
-fn evalInvocation(
+fn evalCall(
     ctx: *Context,
-    inv: ast.Invocation,
-    params: InvocationParams,
+    inv: ast.Call,
+    params: CallParams,
 ) !Result {
     _ = params;
     const name = inv.token.value;
@@ -150,7 +150,7 @@ fn evalInvocation(
     };
 }
 
-fn evalBuiltin(ctx: *Context, inv: ast.Invocation, builtin: *const builtins.Builtin) !Result {
+fn evalBuiltin(ctx: *Context, inv: ast.Call, builtin: *const builtins.Builtin) !Result {
     var args = try std.ArrayList(*Value).initCapacity(ctx.stmntAlly, inv.arguments.len);
     defer args.deinit();
     for (inv.arguments) |arg| {
@@ -162,7 +162,7 @@ fn evalBuiltin(ctx: *Context, inv: ast.Invocation, builtin: *const builtins.Buil
     return try builtin(args.items);
 }
 
-fn evalProc(ctx: *Context, inv: ast.Invocation) !void {
+fn evalProc(ctx: *Context, inv: ast.Call) !void {
     const name = inv.token.value;
     var args = try std.ArrayList([]const u8).initCapacity(ctx.stmntAlly, inv.arguments.len);
 
@@ -189,7 +189,7 @@ fn evalExpression(ctx: *Context, expr: ast.Expression) EvalError!Result {
         .integer_literal => |int| something(try evalIntegerLiteral(int)),
         .bool_literal => |bl| something(try evalBoolLiteral(bl)),
         .variable => |variable| something(evalVariable(variable)),
-        .capturing_invocation => |cap_inv| try evalInvocation(ctx, cap_inv, .{
+        .capturing_call => |cap_inv| try evalCall(ctx, cap_inv, .{
             .capturing = true,
         }),
         .list_literal => |list| something(try evalListLiteral(ctx, list)),

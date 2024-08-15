@@ -125,6 +125,6 @@ pub fn cloneOrReference(origin: *values.Value) !*values.Value {
         .float => |f| try floating(f),
         .boolean => |b| try boolean(b),
         // reference
-        .list => origin,
+        .list, .record => origin,
     };
 }
