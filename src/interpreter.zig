@@ -129,6 +129,7 @@ fn interpretScope(ctx: *Context, scope: ast.Scope, freestanding: bool) !void {
     }
 }
 
+//TODO: this only handles external programs
 fn evalPipeline(
     ctx: *Context,
     call: ast.Call,
@@ -137,8 +138,7 @@ fn evalPipeline(
     if (builtins.lookup(name)) |builtin| {
         return try evalBuiltin(ctx, call, builtin);
     } else {
-        try evalProc(ctx, call);
-        return nothing;
+        return try evalProc(ctx, call);
     }
 }
 
@@ -151,11 +151,11 @@ fn evalBuiltin(ctx: *Context, call: ast.Call, builtin: *const builtins.Builtin) 
             .nothing => unreachable, // this construct expects only values
         }
     }
-    //TODO: don't ignore call.pipe
     return try builtin(args.items);
 }
 
-fn evalProc(ctx: *Context, call: ast.Call) !void {
+fn evalProc(ctx: *Context, call: ast.Call) !Result {
+    const capturing = call.capturing_external_cmd;
     var procs = try std.ArrayList(std.process.Child).initCapacity(ctx.stmntAlly, 4);
 
     var ptr: ?*const ast.Call = &call;
@@ -168,7 +168,8 @@ fn evalProc(ctx: *Context, call: ast.Call) !void {
         if (procs.items.len > 1) {
             if (idx > 0) {
                 p.stdin_behavior = .Pipe;
-            } else if (idx + 1 < procs.items.len) {
+            }
+            if (capturing or idx + 1 < procs.items.len) {
                 p.stdout_behavior = .Pipe;
             }
         }
@@ -178,6 +179,9 @@ fn evalProc(ctx: *Context, call: ast.Call) !void {
         try p.spawn();
     }
 
+    var capture: ?[]const u8 = null;
+    errdefer if (capture) |c| ctx.ally.free(c);
+
     if (procs.items.len > 1) {
         var idx: usize = 0;
         while (idx < procs.items.len) : (idx += 1) {
@@ -186,19 +190,27 @@ fn evalProc(ctx: *Context, call: ast.Call) !void {
                 var this = &procs.items[idx];
                 var fifo = std.fifo.LinearFifo(u8, .{ .Static = 1024 }).init();
                 try fifo.pump(prev.stdout.?.reader(), this.stdin.?.writer());
-                _ = try this.stdin.?.write("\x00");
+                if (this.stdin) |in| {
+                    in.close();
+                    this.stdin = null;
+                }
             }
         }
     }
 
+    if (capturing) {
+        capture = try procs.getLast().stdout.?.readToEndAlloc(ctx.ally, std.math.maxInt(u64));
+    }
+
     for (procs.items) |*p| {
-        if (p.stdin) |in| {
-            in.close();
-            p.stdin = null;
-        }
         //TODO: handle term
         _ = try p.wait();
     }
+
+    if (capturing) {
+        return something(try gc.allocedString(capture.?));
+    }
+    return nothing;
 }
 
 fn proc(ctx: *Context, call: *const ast.Call) !std.process.Child {

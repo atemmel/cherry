@@ -43,6 +43,7 @@ pub const Call = struct {
     token: *const Token,
     arguments: []Expression,
     pipe: ?*Call,
+    capturing_external_cmd: bool,
 };
 
 pub const VarDecl = struct {
@@ -274,23 +275,31 @@ fn parseScope(ctx: *Context, needsNewline: bool) !?Scope {
 }
 
 fn parsePipeline(ctx: *Context) !?Call {
-    var pipeline_begin = try parseIndividualCall(ctx) orelse return null;
-
-    if (ctx.getIf(.Pipe) != null) {
-        const next = try parseIndividualCall(ctx) orelse unreachable;
-        const next_ptr = try ctx.ally.create(Call);
-        next_ptr.* = next;
-        pipeline_begin.pipe = next_ptr;
-    }
+    const call = try parseIndividualPipeline(ctx, false);
 
     if (ctx.getIf(.Newline) == null and !ctx.eot()) {
         unreachable;
     }
 
+    return call;
+}
+
+fn parseIndividualPipeline(ctx: *Context, capturing: bool) !?Call {
+    var pipeline_begin = try parseIndividualCall(ctx, capturing) orelse return null;
+
+    var prev_node = &pipeline_begin;
+    while (ctx.getIf(.Pipe) != null) {
+        const next = try parseIndividualCall(ctx, capturing) orelse unreachable;
+        const next_ptr = try ctx.ally.create(Call);
+        next_ptr.* = next;
+        prev_node.pipe = next_ptr;
+        prev_node = next_ptr;
+    }
+
     return pipeline_begin;
 }
 
-fn parseIndividualCall(ctx: *Context) !?Call {
+fn parseIndividualCall(ctx: *Context, capturing: bool) !?Call {
     const token = ctx.getIf(.Bareword);
     if (token == null) {
         return null;
@@ -306,6 +315,7 @@ fn parseIndividualCall(ctx: *Context) !?Call {
         .token = token.?,
         .arguments = try args.toOwnedSlice(),
         .pipe = null,
+        .capturing_external_cmd = capturing,
     };
 }
 
@@ -315,23 +325,10 @@ fn parseCapturingCall(ctx: *Context) !?Call {
         return null;
     }
 
-    const token = ctx.getIf(.Bareword);
-    if (token == null) {
-        return null;
-    }
-
-    var args = std.ArrayList(Expression).init(ctx.ally);
-    defer args.deinit();
-    while (try parseExpression(ctx)) |expr| {
-        try args.append(expr);
-    }
+    const call = parseIndividualPipeline(ctx, true);
 
     if (ctx.getIf(.RParens) != null) {
-        return Call{
-            .token = token.?,
-            .arguments = try args.toOwnedSlice(),
-            .pipe = null,
-        };
+        return call;
     }
     unreachable;
 }

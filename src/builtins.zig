@@ -31,6 +31,7 @@ const builtins_table = std.StaticStringMap(*const Builtin).initComptime(&.{
     .{ "append", append },
     .{ "get", get },
     .{ "put", put },
+    .{ "trim", trim },
     // operations (symbols)
     .{ "+", add },
     .{ "-", sub },
@@ -48,10 +49,25 @@ pub fn lookup(str: []const u8) ?*const Builtin {
 
 fn say(args: []const *Value) !Result {
     const stdout = std.io.getStdOut().writer();
-    for (args) |arg| {
-        try stdout.print("{s} ", .{arg});
+
+    var trailing_newline = false;
+    var i: usize = 0;
+    while (i < args.len) : (i += 1) {
+        const arg = args[i];
+        try stdout.print("{s}", .{arg});
+        if (i + 1 < args.len) {
+            try stdout.print(" ", .{});
+        } else {
+            trailing_newline = switch (arg.as) {
+                .string => |s| s.len > 0 and s[s.len - 1] == '\n',
+                else => false,
+            };
+        }
     }
-    try stdout.print("\n", .{});
+
+    if (!trailing_newline) {
+        try stdout.print("\n", .{});
+    }
     return nothing;
 }
 
@@ -306,4 +322,38 @@ fn put(args: []const *Value) !Result {
     }
 
     return something(args[0]);
+}
+
+//TODO this should be inside a module...
+fn trim(args: []const *Value) !Result {
+    if (args.len != 1) {
+        unreachable;
+    }
+
+    const arg = args[0];
+    const str = switch (arg.as) {
+        .string => |s| s,
+        else => unreachable,
+    };
+
+    if (str.len == 0) {
+        return something(try gc.string(""));
+    }
+
+    var first_real: usize = 0;
+    var last_real = str.len - 1;
+
+    while (first_real < str.len) : (first_real += 1) {
+        if (std.ascii.isWhitespace(str[first_real])) {
+            break;
+        }
+    }
+
+    while (last_real > first_real) : (last_real -= 1) {
+        if (std.ascii.isWhitespace(str[last_real])) {
+            break;
+        }
+    }
+
+    return something(try gc.string(str[first_real..last_real]));
 }

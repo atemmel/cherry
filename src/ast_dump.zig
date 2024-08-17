@@ -89,6 +89,11 @@ fn dumpCall(inv: ast.Call) void {
     for (inv.arguments) |expr| {
         dumpExpression(expr);
     }
+    if (inv.pipe) |pipe| {
+        leaf("|\n", .{});
+        defer up();
+        dumpCall(pipe.*);
+    }
 }
 
 fn dumpExpression(expr: ast.Expression) void {

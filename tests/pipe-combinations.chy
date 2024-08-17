@@ -1,1 +1,5 @@
-ls | wc -w
+cat tests/sample-file | wc -w
+
+cat tests/sample-file | cat | wc -w
+
+say number of words (cat tests/sample-file | wc -w)
