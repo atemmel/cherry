@@ -42,6 +42,7 @@ pub const Expression = union(enum) {
 pub const Call = struct {
     token: *const Token,
     arguments: []Expression,
+    pipe: ?*Call,
 };
 
 pub const VarDecl = struct {
@@ -141,7 +142,7 @@ pub fn parse(state: *PipelineState) !Root {
 }
 
 fn parseStatement(ctx: *Context) std.mem.Allocator.Error!?Statement {
-    if (try parseCall(ctx)) |inv| {
+    if (try parsePipeline(ctx)) |inv| {
         return Statement{
             .call = inv,
         };
@@ -272,7 +273,24 @@ fn parseScope(ctx: *Context, needsNewline: bool) !?Scope {
     return try statements.toOwnedSlice();
 }
 
-fn parseCall(ctx: *Context) !?Call {
+fn parsePipeline(ctx: *Context) !?Call {
+    var pipeline_begin = try parseIndividualCall(ctx) orelse return null;
+
+    if (ctx.getIf(.Pipe) != null) {
+        const next = try parseIndividualCall(ctx) orelse unreachable;
+        const next_ptr = try ctx.ally.create(Call);
+        next_ptr.* = next;
+        pipeline_begin.pipe = next_ptr;
+    }
+
+    if (ctx.getIf(.Newline) == null and !ctx.eot()) {
+        unreachable;
+    }
+
+    return pipeline_begin;
+}
+
+fn parseIndividualCall(ctx: *Context) !?Call {
     const token = ctx.getIf(.Bareword);
     if (token == null) {
         return null;
@@ -284,14 +302,11 @@ fn parseCall(ctx: *Context) !?Call {
         try args.append(expr);
     }
 
-    if (ctx.getIf(.Newline) != null or ctx.eot()) {
-        return Call{
-            .token = token.?,
-            .arguments = try args.toOwnedSlice(),
-        };
-    }
-    std.debug.print("{}\n", .{ctx.peek()});
-    unreachable;
+    return Call{
+        .token = token.?,
+        .arguments = try args.toOwnedSlice(),
+        .pipe = null,
+    };
 }
 
 fn parseCapturingCall(ctx: *Context) !?Call {
@@ -315,6 +330,7 @@ fn parseCapturingCall(ctx: *Context) !?Call {
         return Call{
             .token = token.?,
             .arguments = try args.toOwnedSlice(),
+            .pipe = null,
         };
     }
     unreachable;

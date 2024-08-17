@@ -54,9 +54,7 @@ const StatementError = EvalError || symtable.SymtableError;
 fn interpretStatement(ctx: *Context, stmnt: ast.Statement) StatementError!void {
     defer _ = ctx.stmntArena.reset(.retain_capacity);
     switch (stmnt) {
-        .call => |inv| _ = try evalCall(ctx, inv, .{
-            .capturing = false,
-        }),
+        .call => |call| _ = try evalPipeline(ctx, call),
         .var_decl => |var_decl| try interpretVarDecl(ctx, var_decl),
         .assignment => |assign| try interpretAssign(ctx, assign),
         .branches => |br| try interpretBranches(ctx, br),
@@ -131,53 +129,91 @@ fn interpretScope(ctx: *Context, scope: ast.Scope, freestanding: bool) !void {
     }
 }
 
-const CallParams = struct {
-    capturing: bool,
-};
-
-fn evalCall(
+fn evalPipeline(
     ctx: *Context,
-    inv: ast.Call,
-    params: CallParams,
+    call: ast.Call,
 ) !Result {
-    _ = params;
-    const name = inv.token.value;
-    return if (builtins.lookup(name)) |builtin|
-        try evalBuiltin(ctx, inv, builtin)
-    else blk: {
-        try evalProc(ctx, inv);
-        break :blk nothing;
-    };
+    const name = call.token.value;
+    if (builtins.lookup(name)) |builtin| {
+        return try evalBuiltin(ctx, call, builtin);
+    } else {
+        try evalProc(ctx, call);
+        return nothing;
+    }
 }
 
-fn evalBuiltin(ctx: *Context, inv: ast.Call, builtin: *const builtins.Builtin) !Result {
-    var args = try std.ArrayList(*Value).initCapacity(ctx.stmntAlly, inv.arguments.len);
+fn evalBuiltin(ctx: *Context, call: ast.Call, builtin: *const builtins.Builtin) !Result {
+    var args = try std.ArrayList(*Value).initCapacity(ctx.stmntAlly, call.arguments.len);
     defer args.deinit();
-    for (inv.arguments) |arg| {
+    for (call.arguments) |arg| {
         switch (try evalExpression(ctx, arg)) {
             .value => |value| try args.append(value),
             .nothing => unreachable, // this construct expects only values
         }
     }
+    //TODO: don't ignore call.pipe
     return try builtin(args.items);
 }
 
-fn evalProc(ctx: *Context, inv: ast.Call) !void {
-    const name = inv.token.value;
-    var args = try std.ArrayList([]const u8).initCapacity(ctx.stmntAlly, inv.arguments.len);
+fn evalProc(ctx: *Context, call: ast.Call) !void {
+    var procs = try std.ArrayList(std.process.Child).initCapacity(ctx.stmntAlly, 4);
+
+    var ptr: ?*const ast.Call = &call;
+    while (ptr) |call_ptr| {
+        try procs.append(try proc(ctx, call_ptr));
+        ptr = call_ptr.pipe;
+    }
+
+    for (procs.items, 0..) |*p, idx| {
+        if (procs.items.len > 1) {
+            if (idx > 0) {
+                p.stdin_behavior = .Pipe;
+            } else if (idx + 1 < procs.items.len) {
+                p.stdout_behavior = .Pipe;
+            }
+        }
+    }
+
+    for (procs.items) |*p| {
+        try p.spawn();
+    }
+
+    if (procs.items.len > 1) {
+        var idx: usize = 0;
+        while (idx < procs.items.len) : (idx += 1) {
+            if (idx > 0) {
+                var prev = &procs.items[idx - 1];
+                var this = &procs.items[idx];
+                var fifo = std.fifo.LinearFifo(u8, .{ .Static = 1024 }).init();
+                try fifo.pump(prev.stdout.?.reader(), this.stdin.?.writer());
+                _ = try this.stdin.?.write("\x00");
+            }
+        }
+    }
+
+    for (procs.items) |*p| {
+        if (p.stdin) |in| {
+            in.close();
+            p.stdin = null;
+        }
+        //TODO: handle term
+        _ = try p.wait();
+    }
+}
+
+fn proc(ctx: *Context, call: *const ast.Call) !std.process.Child {
+    const name = call.token.value;
+    var args = try std.ArrayList([]const u8).initCapacity(ctx.stmntAlly, call.arguments.len);
 
     try args.append(name);
-    for (inv.arguments) |arg| {
+    for (call.arguments) |arg| {
         switch (try evalExpression(ctx, arg)) {
             .value => |value| try args.append(try value.asStr(ctx.stmntAlly)),
             .nothing => unreachable, // this construct expects only values
         }
     }
 
-    var proc = std.process.Child.init(args.items, ctx.stmntAlly);
-    const term = try proc.spawnAndWait();
-    //TODO: handle result
-    _ = term;
+    return std.process.Child.init(args.items, ctx.stmntAlly);
 }
 
 pub const EvalError = builtins.BuiltinError || std.process.Child.RunError || values.Errors;
@@ -189,9 +225,7 @@ fn evalExpression(ctx: *Context, expr: ast.Expression) EvalError!Result {
         .integer_literal => |int| something(try evalIntegerLiteral(int)),
         .bool_literal => |bl| something(try evalBoolLiteral(bl)),
         .variable => |variable| something(evalVariable(variable)),
-        .capturing_call => |cap_inv| try evalCall(ctx, cap_inv, .{
-            .capturing = true,
-        }),
+        .capturing_call => |cap_inv| try evalPipeline(ctx, cap_inv),
         .list_literal => |list| something(try evalListLiteral(ctx, list)),
     };
 }
