@@ -344,13 +344,13 @@ fn trim(args: []const *Value) !Result {
     var last_real = str.len - 1;
 
     while (first_real < str.len) : (first_real += 1) {
-        if (std.ascii.isWhitespace(str[first_real])) {
+        if (!std.ascii.isWhitespace(str[first_real])) {
             break;
         }
     }
 
     while (last_real > first_real) : (last_real -= 1) {
-        if (std.ascii.isWhitespace(str[last_real])) {
+        if (!std.ascii.isWhitespace(str[last_real])) {
             break;
         }
     }

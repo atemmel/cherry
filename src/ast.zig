@@ -3,6 +3,8 @@ const Token = @import("tokens.zig").Token;
 const PipelineState = @import("pipeline.zig").State;
 pub const dump = @import("ast_dump.zig").dump;
 
+pub const errors = error{ParseFailed} || std.mem.Allocator.Error;
+
 pub const Bareword = struct {
     token: *const Token,
 };
@@ -81,6 +83,7 @@ const Context = struct {
     tokens: []const Token,
     idx: usize = 0,
     ally: std.mem.Allocator,
+    state: *PipelineState,
 
     pub fn eot(c: Context) bool {
         return c.idx >= c.tokens.len;
@@ -120,12 +123,22 @@ const Context = struct {
             .second = token_1,
         };
     }
+
+    pub fn err(c: *Context, s: struct { error_source: *const Token, msg: []const u8, trailing: bool = false }) errors {
+        c.state.error_report = .{
+            .offending_token = s.error_source,
+            .msg = s.msg,
+            .trailing = s.trailing,
+        };
+        return errors.ParseFailed;
+    }
 };
 
 pub fn parse(state: *PipelineState) !Root {
     var ctx = Context{
         .tokens = state.tokens,
         .ally = state.arena,
+        .state = state,
     };
 
     var statements = std.ArrayList(Statement).init(ctx.ally);
@@ -142,7 +155,7 @@ pub fn parse(state: *PipelineState) !Root {
     };
 }
 
-fn parseStatement(ctx: *Context) std.mem.Allocator.Error!?Statement {
+fn parseStatement(ctx: *Context) errors!?Statement {
     if (try parsePipeline(ctx)) |inv| {
         return Statement{
             .call = inv,
@@ -319,7 +332,7 @@ fn parseIndividualCall(ctx: *Context, capturing: bool) !?Call {
     };
 }
 
-fn parseCapturingCall(ctx: *Context) !?Call {
+fn parseCapturingCall(ctx: *Context) errors!?Call {
     const left = ctx.getIf(.LParens);
     if (left == null) {
         return null;
@@ -330,10 +343,15 @@ fn parseCapturingCall(ctx: *Context) !?Call {
     if (ctx.getIf(.RParens) != null) {
         return call;
     }
-    unreachable;
+    // missing rparens
+    return ctx.err(.{
+        .error_source = left.?,
+        .msg = "expected closing ')'",
+        .trailing = true,
+    });
 }
 
-fn parseExpression(ctx: *Context) std.mem.Allocator.Error!?Expression {
+fn parseExpression(ctx: *Context) errors!?Expression {
     if (try parseCapturingCall(ctx)) |capturing_inv| {
         return Expression{
             .capturing_call = capturing_inv,

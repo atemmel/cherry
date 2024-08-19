@@ -73,6 +73,7 @@ pub fn main() !void {
         .verboseCodegen = verboseCodegen,
         .verboseLexer = verboseLexer,
         .verboseParser = verboseParser,
+        .color = std.io.tty.detectConfig(std.io.getStdOut()),
     };
 
     if (file == null) {
