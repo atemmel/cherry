@@ -27,6 +27,18 @@ pub const ListLiteral = struct {
     items: []const Expression,
 };
 
+pub const RecordLiteral = struct {
+    pub const Pair = struct {
+        key: union(enum) {
+            bareword: Bareword,
+            string: StringLiteral,
+        },
+        value: Expression,
+    };
+    token: *const Token,
+    items: []const Pair,
+};
+
 pub const Variable = struct {
     token: *const Token,
 };
