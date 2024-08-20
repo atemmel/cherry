@@ -149,6 +149,7 @@ pub fn parse(state: *PipelineState) !Root {
     }
 
     // being unable to parse statements without running out of tokens is an error
+    if (!ctx.eot()) unreachable;
 
     return Root{
         .statements = try statements.toOwnedSlice(),
@@ -156,7 +157,11 @@ pub fn parse(state: *PipelineState) !Root {
 }
 
 fn parseStatement(ctx: *Context) errors!?Statement {
-    if (try parsePipeline(ctx)) |inv| {
+    if (try parseVarDeclaration(ctx)) |var_decl| {
+        return Statement{
+            .var_decl = var_decl,
+        };
+    } else if (try parsePipeline(ctx)) |inv| {
         return Statement{
             .call = inv,
         };
@@ -180,21 +185,30 @@ fn parseStatement(ctx: *Context) errors!?Statement {
 }
 
 fn parseVarDeclaration(ctx: *Context) !?VarDecl {
-    if (ctx.getIf(.Var) == null) {
+    const checkpoint = ctx.idx;
+
+    // 'var' MUST be followed by a identifer/bareword
+    const id = ctx.getIf(.Bareword) orelse return null;
+
+    // the identifer must be followed by a walrus operator
+    if (ctx.getIfBoth(.Colon, .Assign) == null) {
+        ctx.idx = checkpoint;
         return null;
     }
 
-    // 'var' MUST be followed by a identifer/bareword
-    const id = ctx.getIf(.Bareword) orelse unreachable;
-
-    // the identifer must be followed by an assignment (as of now)
-    if (ctx.getIf(.Assign) == null) unreachable;
-
     // the assignment operation must be followed by an expression
-    const expr = try parseExpression(ctx) orelse unreachable;
+    const expr = try parseExpression(ctx) orelse
+        return ctx.err(.{
+        .error_source = ctx.peek(),
+        .msg = "expected expression",
+    });
 
     // the assignment must be followed by a terminating newline or eot
-    if (ctx.getIf(.Newline) == null and !ctx.eot()) unreachable;
+    if (ctx.getIf(.Newline) == null and !ctx.eot())
+        return ctx.err(.{
+            .error_source = ctx.peek(),
+            .msg = "expected newline (\\n)",
+        });
 
     return VarDecl{
         .token = id,

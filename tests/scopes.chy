@@ -1,13 +1,13 @@
-var outer = 2
+outer := 2
 
 {
-	var inner = 1
+	inner := 1
 	assert (== 3 (+ $outer $inner))
 }
 
 # new scope with same identifier
 
 {
-	var inner = 2
+	inner := 2
 	assert (== 4 (+ $outer $inner))
 }

@@ -1,6 +1,6 @@
 assert true
 
-var x = true
+x := true
 
 assert $x
 
