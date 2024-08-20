@@ -210,11 +210,19 @@ fn parseAssignment(ctx: *Context) !?Assignment {
         ctx.idx = checkpoint;
         return null;
     };
-
-    const expr = try parseExpression(ctx) orelse unreachable; // Needs expression
+    // Needs expression
+    const expr = try parseExpression(ctx) orelse
+        return ctx.err(.{
+        .error_source = ctx.peek(),
+        .msg = "expected expression",
+    });
 
     // the assignment must be followed by a terminating newline or eot
-    if (ctx.getIf(.Newline) == null and !ctx.eot()) unreachable;
+    if (ctx.getIf(.Newline) == null and !ctx.eot())
+        return ctx.err(.{
+            .error_source = ctx.peek(),
+            .msg = "expected newline (\\n)",
+        });
 
     return .{
         .token = variable,
@@ -230,8 +238,16 @@ fn parseBranches(ctx: *Context) !?Branches {
     var branches = std.ArrayList(Branch).init(ctx.ally);
     defer branches.deinit();
 
-    const first_expr = try parseExpression(ctx) orelse unreachable;
-    const first_scope = try parseScope(ctx, false) orelse unreachable;
+    const first_expr = try parseExpression(ctx) orelse
+        return ctx.err(.{
+        .error_source = ctx.peek(),
+        .msg = "expected expression",
+    });
+    const first_scope = try parseScope(ctx, false) orelse
+        return ctx.err(.{
+        .error_source = ctx.peek(),
+        .msg = "expected '{'",
+    });
 
     try branches.append(.{
         .scope = first_scope,
@@ -245,8 +261,16 @@ fn parseBranches(ctx: *Context) !?Branches {
     }
 
     while (ctx.getIf(.Else) != null and ctx.getIf(.If) != null) {
-        const expr = try parseExpression(ctx) orelse unreachable;
-        const scope = try parseScope(ctx, false) orelse unreachable;
+        const expr = try parseExpression(ctx) orelse
+            return ctx.err(.{
+            .error_source = ctx.peek(),
+            .msg = "expected expression",
+        });
+        const scope = try parseScope(ctx, false) orelse
+            return ctx.err(.{
+            .error_source = ctx.peek(),
+            .msg = "expected '{'",
+        });
 
         try branches.append(.{
             .scope = scope,
@@ -257,7 +281,11 @@ fn parseBranches(ctx: *Context) !?Branches {
     ctx.idx = checkpoint;
 
     if (ctx.getIf(.Else) != null) {
-        const last_scope = try parseScope(ctx, true) orelse unreachable;
+        const last_scope = try parseScope(ctx, true) orelse
+            return ctx.err(.{
+            .error_source = ctx.peek(),
+            .msg = "expected '{'",
+        });
         try branches.append(.{
             .scope = last_scope,
             .condition = null,
@@ -268,6 +296,7 @@ fn parseBranches(ctx: *Context) !?Branches {
 }
 
 fn parseScope(ctx: *Context, needsNewline: bool) !?Scope {
+    const lbrace = ctx.getIf(.LBrace);
     if (ctx.getIf(.LBrace) == null) {
         return null;
     }
@@ -280,9 +309,17 @@ fn parseScope(ctx: *Context, needsNewline: bool) !?Scope {
         try statements.append(stmnt);
     }
 
-    _ = ctx.getIf(.RBrace) orelse unreachable;
+    _ = ctx.getIf(.RBrace) orelse
+        return ctx.err(.{
+        .error_source = lbrace.?,
+        .msg = "expected closing '}'",
+        .trailing = true,
+    });
     if (needsNewline and ctx.getIf(.Newline) == null and !ctx.eot()) {
-        unreachable;
+        return ctx.err(.{
+            .error_source = ctx.peek(),
+            .msg = "expected newline (\\n)",
+        });
     }
     return try statements.toOwnedSlice();
 }
@@ -291,7 +328,10 @@ fn parsePipeline(ctx: *Context) !?Call {
     const call = try parseIndividualPipeline(ctx, false);
 
     if (ctx.getIf(.Newline) == null and !ctx.eot()) {
-        unreachable;
+        return ctx.err(.{
+            .error_source = ctx.peek(),
+            .msg = "expected newline (\\n)",
+        });
     }
 
     return call;
@@ -302,7 +342,11 @@ fn parseIndividualPipeline(ctx: *Context, capturing: bool) !?Call {
 
     var prev_node = &pipeline_begin;
     while (ctx.getIf(.Pipe) != null) {
-        const next = try parseIndividualCall(ctx, capturing) orelse unreachable;
+        const next = try parseIndividualCall(ctx, capturing) orelse
+            return ctx.err(.{
+            .error_source = ctx.peek(),
+            .msg = "expected function call",
+        });
         const next_ptr = try ctx.ally.create(Call);
         next_ptr.* = next;
         prev_node.pipe = next_ptr;
@@ -438,7 +482,12 @@ fn parseListLiteral(ctx: *Context) !?ListLiteral {
     }
 
     // must find closing bracket
-    _ = ctx.getIf(.RBracket) orelse unreachable;
+    _ = ctx.getIf(.RBracket) orelse
+        return ctx.err(.{
+        .error_source = token,
+        .msg = "expected closing '}'",
+        .trailing = true,
+    });
 
     return ListLiteral{
         .token = token,
