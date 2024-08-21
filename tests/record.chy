@@ -1,0 +1,13 @@
+record := [=]
+
+#say $record
+
+#$record:name = bond
+
+#say $record
+
+#say $record:name
+
+#$record[foo] = baz
+
+#say $record[foo]

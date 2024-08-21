@@ -1,12 +1,12 @@
 # Perform string interpolation with braces
 
-var name = "James"
+name := "James"
 
 say "Hello {name}"
 
 assert (== "Hello {name}" "Hello James")
 
-var age = 24
+age := 24
 
 say "You are {age}"
 

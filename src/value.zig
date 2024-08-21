@@ -231,6 +231,7 @@ test "interpolate single value" {
     symtable.init(ally);
     defer gc.deinit();
     defer symtable.deinit();
+    try symtable.pushFrame();
 
     try symtable.insert("y", try gc.string("x"));
 
@@ -247,6 +248,7 @@ test "interpolate multiple values" {
     symtable.init(ally);
     defer gc.deinit();
     defer symtable.deinit();
+    try symtable.pushFrame();
 
     try symtable.insert("y", try gc.string("x"));
 

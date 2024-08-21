@@ -19,7 +19,7 @@ pub const State = struct {
     verboseLexer: bool = false,
     verboseParser: bool = false,
     verboseCodegen: bool = false,
-    color: std.io.tty.Config,
+    color: std.io.tty.Config = std.io.tty.Config.no_color,
     error_report: ?struct {
         offending_token: *const Token,
         msg: []const u8,
