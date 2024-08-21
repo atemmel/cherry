@@ -73,3 +73,35 @@ $table[0] = bond
 
 $table:0  = bond    # unsure
 ```
+
+## typing syntax
+```
+
+# variable declarations should ideally *not* require types
+
+x := "my str"
+y := 0
+
+# function declarations should (perhaps always) require types
+
+fn add-person person-to-add: Person list-of-persons: []Person -> []Person {
+    ...
+}
+
+# type declarations can mainly be done using records or enums
+
+# enum
+type Relation = "family" | "friend" | "colleague"
+
+# record
+type Person record {
+    name string
+    age     int
+    height  float
+    hobbies []string
+    circle  [=]string Relation
+}
+
+# to consider
+# * nillability
+```
