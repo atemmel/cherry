@@ -31,6 +31,7 @@ const builtins_table = std.StaticStringMap(*const Builtin).initComptime(&.{
     .{ "append", append },
     .{ "get", get },
     .{ "put", put },
+    .{ "trim", trim },
     // operations (symbols)
     .{ "+", add },
     .{ "-", sub },
@@ -48,10 +49,25 @@ pub fn lookup(str: []const u8) ?*const Builtin {
 
 fn say(args: []const *Value) !Result {
     const stdout = std.io.getStdOut().writer();
-    for (args) |arg| {
-        try stdout.print("{s} ", .{arg});
+
+    var trailing_newline = false;
+    var i: usize = 0;
+    while (i < args.len) : (i += 1) {
+        const arg = args[i];
+        try stdout.print("{s}", .{arg});
+        if (i + 1 < args.len) {
+            try stdout.print(" ", .{});
+        } else {
+            trailing_newline = switch (arg.as) {
+                .string => |s| s.len > 0 and s[s.len - 1] == '\n',
+                else => false,
+            };
+        }
     }
-    try stdout.print("\n", .{});
+
+    if (!trailing_newline) {
+        try stdout.print("\n", .{});
+    }
     return nothing;
 }
 
@@ -240,6 +256,7 @@ fn len(args: []const *Value) !Result {
             .string => |s| length += @intCast(s.len),
             .integer, .float, .boolean => unreachable, //TODO: this
             .list => |l| length += @intCast(l.items.len),
+            .record => |r| length += @intCast(r.count()),
         }
     }
     return something(try gc.integer(length));
@@ -256,7 +273,7 @@ fn append(args: []const *Value) !Result {
                 try l.append(arg);
             }
         },
-        .integer, .boolean, .float, .string => unreachable,
+        .integer, .boolean, .float, .string, .record => unreachable,
     }
 
     return something(args[0]);
@@ -269,7 +286,7 @@ fn get(args: []const *Value) !Result {
 
     const index = switch (args[1].as) {
         .integer => |i| i,
-        .float, .boolean, .list, .string => unreachable,
+        .float, .boolean, .list, .string, .record => unreachable,
     };
 
     return switch (args[0].as) {
@@ -277,7 +294,7 @@ fn get(args: []const *Value) !Result {
         .list => |l| something(l.items[@intCast(index)]),
         //TODO: This should be possible
         .string => unreachable,
-        .integer, .boolean, .float => unreachable,
+        .integer, .boolean, .float, .record => unreachable,
     };
 }
 
@@ -288,7 +305,7 @@ fn put(args: []const *Value) !Result {
 
     const index = switch (args[1].as) {
         .integer => |i| i,
-        .float, .boolean, .list, .string => unreachable,
+        .float, .boolean, .list, .string, .record => unreachable,
     };
 
     const value = args[2];
@@ -301,8 +318,42 @@ fn put(args: []const *Value) !Result {
         },
         //TODO: This should be possible
         .string => unreachable,
-        .integer, .boolean, .float => unreachable,
+        .integer, .boolean, .float, .record => unreachable,
     }
 
     return something(args[0]);
+}
+
+//TODO this should be inside a module...
+fn trim(args: []const *Value) !Result {
+    if (args.len != 1) {
+        unreachable;
+    }
+
+    const arg = args[0];
+    const str = switch (arg.as) {
+        .string => |s| s,
+        else => unreachable,
+    };
+
+    if (str.len == 0) {
+        return something(try gc.string(""));
+    }
+
+    var first_real: usize = 0;
+    var last_real = str.len - 1;
+
+    while (first_real < str.len) : (first_real += 1) {
+        if (!std.ascii.isWhitespace(str[first_real])) {
+            break;
+        }
+    }
+
+    while (last_real > first_real) : (last_real -= 1) {
+        if (!std.ascii.isWhitespace(str[last_real])) {
+            break;
+        }
+    }
+
+    return something(try gc.string(str[first_real..last_real]));
 }

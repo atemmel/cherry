@@ -12,6 +12,7 @@ pub const Token = struct {
         // Significant whitespace
         Newline,
         // Symbols
+        Colon,
         Assign,
         Pipe,
         LParens,
@@ -21,7 +22,6 @@ pub const Token = struct {
         LBracket,
         RBracket,
         // Keywords
-        Var,
         If,
         Else,
         While,
@@ -35,7 +35,6 @@ pub const Token = struct {
 };
 
 const string_keyword_map = std.StaticStringMap(Token.Kind).initComptime(&.{
-    .{ "var", .Var },
     .{ "if", .If },
     .{ "else", .Else },
     .{ "while", .While },
@@ -63,7 +62,7 @@ const LexState = struct {
 
     pub fn isSymbolChar(self: LexState) bool {
         return switch (self.get()) {
-            '=', '|', '(', ')', '{', '}', '[', ']' => true,
+            ':', '=', '|', '(', ')', '{', '}', '[', ']' => true,
             else => false,
         };
     }
@@ -75,7 +74,7 @@ const LexState = struct {
     pub fn isUnallowedBarewordChar(self: LexState) bool {
         // chars that are never allowed to appear in the middle of a bareword
         return switch (self.get()) {
-            '|', '(', ')', '{', '}', '[', ']', ' ', '\n', '\t', '\r', '#', '"' => true,
+            ':', '|', '(', ')', '{', '}', '[', ']', ' ', '\n', '\t', '\r', '#', '"' => true,
             else => false,
         };
     }
@@ -143,6 +142,7 @@ fn lexSymbol(state: *LexState) ?Token {
                 },
             };
         },
+        ':' => .Colon,
         '|' => .Pipe,
         '(' => .LParens,
         ')' => .RParens,
@@ -356,15 +356,15 @@ test "lex var declaration" {
     var state: PipelineState = .{
         .ally = ally,
         .arena = ally,
-        .source = "var x = \"hello\"",
+        .source = "x := \"hello\"",
     };
 
     const tokens = try lex(&state);
     defer ally.free(tokens);
 
     try expectEqual(4, tokens.len);
-    try expectEqual(Token.Kind.Var, tokens[0].kind);
-    try expectEqual(Token.Kind.Bareword, tokens[1].kind);
+    try expectEqual(Token.Kind.Bareword, tokens[0].kind);
+    try expectEqual(Token.Kind.Colon, tokens[1].kind);
     try expectEqual(Token.Kind.Assign, tokens[2].kind);
     try expectEqual(Token.Kind.StringLiteral, tokens[3].kind);
 }

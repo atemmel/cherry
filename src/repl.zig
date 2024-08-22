@@ -21,11 +21,11 @@ fn fmts(writer: anytype, comptime str: []const u8) void {
 // - history
 // - tab completion
 
-pub fn repl(ally: std.mem.Allocator, arena: std.mem.Allocator) !void {
-    var history = try History.initCapacity(ally, 100);
+pub fn repl(state: *pipeline.State) !void {
+    var history = try History.initCapacity(state.ally, 100);
     defer {
         for (history.items) |item| {
-            ally.free(item);
+            state.ally.free(item);
         }
         history.deinit();
     }
@@ -42,7 +42,7 @@ pub fn repl(ally: std.mem.Allocator, arena: std.mem.Allocator) !void {
     while (true) {
         const cwd = try std.fs.cwd().realpath(".", &cwd_buffer);
         const prefix_len = cwd.len + 4;
-        terminal.clearLine(out, prefix_len + 1);
+        terminal.clearLine(out, prefix_len + 7);
         fmt(out, "{s} |> ", .{cwd});
         fmt(out, "{s}\r", .{buffer[0..length]});
         terminal.moveRight(out, prefix_len + cursor);
@@ -53,7 +53,7 @@ pub fn repl(ally: std.mem.Allocator, arena: std.mem.Allocator) !void {
                 switch (key) {
                     '\n', '\r' => {
                         try out.print("\r\n", .{});
-                        terminal.clearLine(out, prefix_len + 1);
+                        terminal.clearLine(out, prefix_len);
                         try term.restore();
                         try buffered_writer.flush();
                         defer {
@@ -64,16 +64,17 @@ pub fn repl(ally: std.mem.Allocator, arena: std.mem.Allocator) !void {
 
                         const cmd = buffer[0..length];
 
-                        var state = pipeline.State{
-                            .arena = arena,
-                            .ally = ally,
-                            .source = cmd,
-                            .verboseCodegen = false,
-                            .verboseLexer = false,
-                            .verboseParser = false,
+                        state.source = cmd;
+                        pipeline.run(state) catch |e| {
+                            switch (e) {
+                                //TODO: error should not be handled here,
+                                error.CommandNotFound => {
+                                    _ = try out.write("Could not find command in system\r\n");
+                                },
+                                else => unreachable,
+                            }
                         };
-                        try pipeline.run(&state);
-                        try appendHistory(ally, &history, cmd);
+                        try appendHistory(state.ally, &history, cmd);
                     },
                     else => {
                         std.mem.rotate(u8, buffer[cursor .. length + 1], length - cursor);

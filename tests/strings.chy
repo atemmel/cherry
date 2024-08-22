@@ -1,6 +1,6 @@
 # concatenate strings
 
-var greeting = (+ hello guys)
+greeting := (+ hello guys)
 
 assert (== "helloguys" $greeting)
 

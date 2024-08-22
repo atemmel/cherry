@@ -1,4 +1,4 @@
-var x = "hello"
+x := "hello"
 
 say $x
 

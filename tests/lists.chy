@@ -1,4 +1,4 @@
-var l = [1 2 3]
+l := [1 2 3]
 
 say x $l
 
@@ -23,7 +23,7 @@ say list is now $l
 assert (== [4 2 6] $l)
 
 # lists are references
-var s = $l
+s := $l
 
 # mutating s changes l
 

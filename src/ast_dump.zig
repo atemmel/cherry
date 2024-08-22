@@ -38,7 +38,7 @@ fn dumpStatement(stmnt: ast.Statement) void {
     defer up();
     leaf("Statement:\n", .{});
     switch (stmnt) {
-        .invocation => |inv| dumpInvocation(inv),
+        .call => |inv| dumpCall(inv),
         .var_decl => |var_decl| dumpVarDecl(var_decl),
         .assignment => |assign| dumpAssign(assign),
         .branches => |br| dumpBranches(br),
@@ -83,11 +83,16 @@ fn dumpScope(scope: ast.Scope) void {
     }
 }
 
-fn dumpInvocation(inv: ast.Invocation) void {
+fn dumpCall(inv: ast.Call) void {
     defer up();
-    leaf("Invocation: '{s}'\n", .{inv.token.value});
+    leaf("Call: '{s}'\n", .{inv.token.value});
     for (inv.arguments) |expr| {
         dumpExpression(expr);
+    }
+    if (inv.pipe) |pipe| {
+        leaf("|\n", .{});
+        defer up();
+        dumpCall(pipe.*);
     }
 }
 
@@ -100,7 +105,7 @@ fn dumpExpression(expr: ast.Expression) void {
         .integer_literal => |int| dumpIntegerLiteral(int),
         .bool_literal => |bl| dumpBoolLiteral(bl),
         .variable => |variable| dumpVariable(variable),
-        .capturing_invocation => |inv| dumpInvocation(inv),
+        .capturing_call => |inv| dumpCall(inv),
         .list_literal => |list| dumpListLiteral(list),
     }
 }

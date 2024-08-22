@@ -67,20 +67,21 @@ pub fn main() !void {
     symtable.init(ally);
     defer symtable.deinit();
 
-    if (file == null) {
-        return repl(ally, arena_allocator);
-    }
-
-    const source = try readfile(arena_allocator, file.?);
-
     var state = pipeline.State{
         .arena = arena_allocator,
         .ally = ally,
-        .source = source,
+        .source = "",
         .verboseCodegen = verboseCodegen,
         .verboseLexer = verboseLexer,
         .verboseParser = verboseParser,
+        .color = std.io.tty.detectConfig(std.io.getStdOut()),
     };
+
+    if (file == null) {
+        return repl(&state);
+    }
+
+    state.source = try readfile(arena_allocator, file.?);
 
     try pipeline.run(&state);
 }

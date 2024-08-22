@@ -6,6 +6,7 @@ const indexOfPos = std.mem.indexOfPos;
 pub const Errors = error{ MismatchedTypeError, MismatchedBraces, BadLookup };
 
 pub const List = std.ArrayList(*Value);
+pub const Record = std.StringHashMap(*Value);
 
 pub const Value = struct {
     as: union(enum) {
@@ -16,6 +17,7 @@ pub const Value = struct {
         float: f64,
         boolean: bool,
         list: List,
+        record: Record,
     },
     marked: bool = false,
 
@@ -30,6 +32,12 @@ pub const Value = struct {
             .list => |l| {
                 for (l.items) |i| {
                     i.mark();
+                }
+            },
+            .record => |r| {
+                var it = r.valueIterator();
+                while (it.next()) |val| {
+                    val.*.mark();
                 }
             },
         }
@@ -47,6 +55,9 @@ pub const Value = struct {
             },
             .list => |l| {
                 l.deinit();
+            },
+            .record => |*r| {
+                r.deinit();
             },
         }
     }
@@ -72,6 +83,7 @@ pub const Value = struct {
                 }
                 try writer.print("]", .{});
             },
+            .record => unreachable,
         }
     }
 
@@ -82,6 +94,7 @@ pub const Value = struct {
             .float => |f| try std.fmt.allocPrint(ally, "{}", .{f}),
             .boolean => |b| try ally.dupe(u8, if (b) "true" else "false"),
             .list => |l| try std.fmt.allocPrint(ally, "[{any}]", .{l.items}),
+            .record => unreachable,
         };
     }
 
@@ -103,13 +116,9 @@ pub const Value = struct {
                         .eq => .equal,
                     };
                 },
-                .integer => return Errors.MismatchedTypeError,
-                .float => return Errors.MismatchedTypeError,
-                .boolean => return Errors.MismatchedTypeError,
-                .list => return Errors.MismatchedTypeError,
+                .integer, .float, .boolean, .list, .record => return Errors.MismatchedTypeError,
             },
             .integer => |lhs| switch (other.as) {
-                .string => return Errors.MismatchedTypeError,
                 .integer => |rhs| {
                     if (lhs < rhs) {
                         return .less;
@@ -118,15 +127,10 @@ pub const Value = struct {
                     }
                     return .equal;
                 },
-                .float => return Errors.MismatchedTypeError,
-                .boolean => return Errors.MismatchedTypeError,
-                .list => return Errors.MismatchedTypeError,
+                .string, .float, .boolean, .list, .record => return Errors.MismatchedTypeError,
             },
             .float => unreachable,
             .boolean => |lhs| switch (other.as) {
-                .string => return Errors.MismatchedTypeError,
-                .integer => return Errors.MismatchedTypeError,
-                .float => return Errors.MismatchedTypeError,
                 .boolean => |rhs| {
                     if (lhs and rhs) {
                         return .equal;
@@ -138,7 +142,7 @@ pub const Value = struct {
                         return .equal;
                     }
                 },
-                .list => return Errors.MismatchedTypeError,
+                .string, .float, .integer, .list, .record => return Errors.MismatchedTypeError,
             },
             .list => |lhs| switch (other.as) {
                 .list => |rhs| {
@@ -157,8 +161,9 @@ pub const Value = struct {
                     }
                     return .equal;
                 },
-                .float, .integer, .boolean, .string => return Errors.MismatchedTypeError,
+                .float, .integer, .boolean, .string, .record => return Errors.MismatchedTypeError,
             },
+            .record => unreachable,
         }
         unreachable;
     }
@@ -226,6 +231,7 @@ test "interpolate single value" {
     symtable.init(ally);
     defer gc.deinit();
     defer symtable.deinit();
+    try symtable.pushFrame();
 
     try symtable.insert("y", try gc.string("x"));
 
@@ -242,6 +248,7 @@ test "interpolate multiple values" {
     symtable.init(ally);
     defer gc.deinit();
     defer symtable.deinit();
+    try symtable.pushFrame();
 
     try symtable.insert("y", try gc.string("x"));
 

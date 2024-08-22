@@ -3,6 +3,8 @@ const Token = @import("tokens.zig").Token;
 const PipelineState = @import("pipeline.zig").State;
 pub const dump = @import("ast_dump.zig").dump;
 
+pub const errors = error{ParseFailed} || std.mem.Allocator.Error;
+
 pub const Bareword = struct {
     token: *const Token,
 };
@@ -25,6 +27,18 @@ pub const ListLiteral = struct {
     items: []const Expression,
 };
 
+pub const RecordLiteral = struct {
+    pub const Pair = struct {
+        key: union(enum) {
+            bareword: Bareword,
+            string: StringLiteral,
+        },
+        value: Expression,
+    };
+    token: *const Token,
+    items: []const Pair,
+};
+
 pub const Variable = struct {
     token: *const Token,
 };
@@ -35,13 +49,15 @@ pub const Expression = union(enum) {
     integer_literal: IntegerLiteral,
     bool_literal: BoolLiteral,
     variable: Variable,
-    capturing_invocation: Invocation,
+    capturing_call: Call,
     list_literal: ListLiteral,
 };
 
-pub const Invocation = struct {
+pub const Call = struct {
     token: *const Token,
     arguments: []Expression,
+    pipe: ?*Call,
+    capturing_external_cmd: bool,
 };
 
 pub const VarDecl = struct {
@@ -64,7 +80,7 @@ pub const Branch = struct {
 pub const Branches = []const Branch;
 
 pub const Statement = union(enum) {
-    invocation: Invocation,
+    call: Call,
     var_decl: VarDecl,
     assignment: Assignment,
     branches: Branches,
@@ -79,6 +95,7 @@ const Context = struct {
     tokens: []const Token,
     idx: usize = 0,
     ally: std.mem.Allocator,
+    state: *PipelineState,
 
     pub fn eot(c: Context) bool {
         return c.idx >= c.tokens.len;
@@ -99,12 +116,41 @@ const Context = struct {
         defer c.next();
         return c.peek();
     }
+
+    pub const Pair = struct {
+        first: *const Token,
+        second: *const Token,
+    };
+
+    pub fn getIfBoth(c: *Context, first: Token.Kind, second: Token.Kind) ?Pair {
+        const checkpoint = c.idx;
+
+        const token_0 = c.getIf(first) orelse return null;
+        const token_1 = c.getIf(second) orelse {
+            c.idx = checkpoint;
+            return null;
+        };
+        return .{
+            .first = token_0,
+            .second = token_1,
+        };
+    }
+
+    pub fn err(c: *Context, s: struct { error_source: *const Token, msg: []const u8, trailing: bool = false }) errors {
+        c.state.error_report = .{
+            .offending_token = s.error_source,
+            .msg = s.msg,
+            .trailing = s.trailing,
+        };
+        return errors.ParseFailed;
+    }
 };
 
 pub fn parse(state: *PipelineState) !Root {
     var ctx = Context{
         .tokens = state.tokens,
         .ally = state.arena,
+        .state = state,
     };
 
     var statements = std.ArrayList(Statement).init(ctx.ally);
@@ -115,16 +161,21 @@ pub fn parse(state: *PipelineState) !Root {
     }
 
     // being unable to parse statements without running out of tokens is an error
+    if (!ctx.eot()) unreachable;
 
     return Root{
         .statements = try statements.toOwnedSlice(),
     };
 }
 
-fn parseStatement(ctx: *Context) std.mem.Allocator.Error!?Statement {
-    if (try parseInvocation(ctx)) |inv| {
+fn parseStatement(ctx: *Context) errors!?Statement {
+    if (try parseVarDeclaration(ctx)) |var_decl| {
         return Statement{
-            .invocation = inv,
+            .var_decl = var_decl,
+        };
+    } else if (try parsePipeline(ctx)) |inv| {
+        return Statement{
+            .call = inv,
         };
     } else if (try parseVarDeclaration(ctx)) |var_decl| {
         return Statement{
@@ -146,21 +197,30 @@ fn parseStatement(ctx: *Context) std.mem.Allocator.Error!?Statement {
 }
 
 fn parseVarDeclaration(ctx: *Context) !?VarDecl {
-    if (ctx.getIf(.Var) == null) {
+    const checkpoint = ctx.idx;
+
+    // 'var' MUST be followed by a identifer/bareword
+    const id = ctx.getIf(.Bareword) orelse return null;
+
+    // the identifer must be followed by a walrus operator
+    if (ctx.getIfBoth(.Colon, .Assign) == null) {
+        ctx.idx = checkpoint;
         return null;
     }
 
-    // 'var' MUST be followed by a identifer/bareword
-    const id = ctx.getIf(.Bareword) orelse unreachable;
-
-    // the identifer must be followed by an assignment (as of now)
-    if (ctx.getIf(.Assign) == null) unreachable;
-
     // the assignment operation must be followed by an expression
-    const expr = try parseExpression(ctx) orelse unreachable;
+    const expr = try parseExpression(ctx) orelse
+        return ctx.err(.{
+        .error_source = ctx.peek(),
+        .msg = "expected expression",
+    });
 
     // the assignment must be followed by a terminating newline or eot
-    if (ctx.getIf(.Newline) == null and !ctx.eot()) unreachable;
+    if (ctx.getIf(.Newline) == null and !ctx.eot())
+        return ctx.err(.{
+            .error_source = ctx.peek(),
+            .msg = "expected newline (\\n)",
+        });
 
     return VarDecl{
         .token = id,
@@ -176,11 +236,19 @@ fn parseAssignment(ctx: *Context) !?Assignment {
         ctx.idx = checkpoint;
         return null;
     };
-
-    const expr = try parseExpression(ctx) orelse unreachable; // Needs expression
+    // Needs expression
+    const expr = try parseExpression(ctx) orelse
+        return ctx.err(.{
+        .error_source = ctx.peek(),
+        .msg = "expected expression",
+    });
 
     // the assignment must be followed by a terminating newline or eot
-    if (ctx.getIf(.Newline) == null and !ctx.eot()) unreachable;
+    if (ctx.getIf(.Newline) == null and !ctx.eot())
+        return ctx.err(.{
+            .error_source = ctx.peek(),
+            .msg = "expected newline (\\n)",
+        });
 
     return .{
         .token = variable,
@@ -196,8 +264,16 @@ fn parseBranches(ctx: *Context) !?Branches {
     var branches = std.ArrayList(Branch).init(ctx.ally);
     defer branches.deinit();
 
-    const first_expr = try parseExpression(ctx) orelse unreachable;
-    const first_scope = try parseScope(ctx, false) orelse unreachable;
+    const first_expr = try parseExpression(ctx) orelse
+        return ctx.err(.{
+        .error_source = ctx.peek(),
+        .msg = "expected expression",
+    });
+    const first_scope = try parseScope(ctx, false) orelse
+        return ctx.err(.{
+        .error_source = ctx.peek(),
+        .msg = "expected '{'",
+    });
 
     try branches.append(.{
         .scope = first_scope,
@@ -211,8 +287,16 @@ fn parseBranches(ctx: *Context) !?Branches {
     }
 
     while (ctx.getIf(.Else) != null and ctx.getIf(.If) != null) {
-        const expr = try parseExpression(ctx) orelse unreachable;
-        const scope = try parseScope(ctx, false) orelse unreachable;
+        const expr = try parseExpression(ctx) orelse
+            return ctx.err(.{
+            .error_source = ctx.peek(),
+            .msg = "expected expression",
+        });
+        const scope = try parseScope(ctx, false) orelse
+            return ctx.err(.{
+            .error_source = ctx.peek(),
+            .msg = "expected '{'",
+        });
 
         try branches.append(.{
             .scope = scope,
@@ -223,7 +307,11 @@ fn parseBranches(ctx: *Context) !?Branches {
     ctx.idx = checkpoint;
 
     if (ctx.getIf(.Else) != null) {
-        const last_scope = try parseScope(ctx, true) orelse unreachable;
+        const last_scope = try parseScope(ctx, true) orelse
+            return ctx.err(.{
+            .error_source = ctx.peek(),
+            .msg = "expected '{'",
+        });
         try branches.append(.{
             .scope = last_scope,
             .condition = null,
@@ -234,6 +322,7 @@ fn parseBranches(ctx: *Context) !?Branches {
 }
 
 fn parseScope(ctx: *Context, needsNewline: bool) !?Scope {
+    const lbrace = ctx.getIf(.LBrace);
     if (ctx.getIf(.LBrace) == null) {
         return null;
     }
@@ -246,14 +335,54 @@ fn parseScope(ctx: *Context, needsNewline: bool) !?Scope {
         try statements.append(stmnt);
     }
 
-    _ = ctx.getIf(.RBrace) orelse unreachable;
+    _ = ctx.getIf(.RBrace) orelse
+        return ctx.err(.{
+        .error_source = lbrace.?,
+        .msg = "expected closing '}'",
+        .trailing = true,
+    });
     if (needsNewline and ctx.getIf(.Newline) == null and !ctx.eot()) {
-        unreachable;
+        return ctx.err(.{
+            .error_source = ctx.peek(),
+            .msg = "expected newline (\\n)",
+        });
     }
     return try statements.toOwnedSlice();
 }
 
-fn parseInvocation(ctx: *Context) !?Invocation {
+fn parsePipeline(ctx: *Context) !?Call {
+    const call = try parseIndividualPipeline(ctx, false);
+
+    if (ctx.getIf(.Newline) == null and !ctx.eot()) {
+        return ctx.err(.{
+            .error_source = ctx.peek(),
+            .msg = "expected newline (\\n)",
+        });
+    }
+
+    return call;
+}
+
+fn parseIndividualPipeline(ctx: *Context, capturing: bool) !?Call {
+    var pipeline_begin = try parseIndividualCall(ctx, capturing) orelse return null;
+
+    var prev_node = &pipeline_begin;
+    while (ctx.getIf(.Pipe) != null) {
+        const next = try parseIndividualCall(ctx, capturing) orelse
+            return ctx.err(.{
+            .error_source = ctx.peek(),
+            .msg = "expected function call",
+        });
+        const next_ptr = try ctx.ally.create(Call);
+        next_ptr.* = next;
+        prev_node.pipe = next_ptr;
+        prev_node = next_ptr;
+    }
+
+    return pipeline_begin;
+}
+
+fn parseIndividualCall(ctx: *Context, capturing: bool) !?Call {
     const token = ctx.getIf(.Bareword);
     if (token == null) {
         return null;
@@ -265,46 +394,37 @@ fn parseInvocation(ctx: *Context) !?Invocation {
         try args.append(expr);
     }
 
-    if (ctx.getIf(.Newline) != null or ctx.eot()) {
-        return Invocation{
-            .token = token.?,
-            .arguments = try args.toOwnedSlice(),
-        };
-    }
-    std.debug.print("{}\n", .{ctx.peek()});
-    unreachable;
+    return Call{
+        .token = token.?,
+        .arguments = try args.toOwnedSlice(),
+        .pipe = null,
+        .capturing_external_cmd = capturing,
+    };
 }
 
-fn parseCapturingInvocation(ctx: *Context) !?Invocation {
+fn parseCapturingCall(ctx: *Context) errors!?Call {
     const left = ctx.getIf(.LParens);
     if (left == null) {
         return null;
     }
 
-    const token = ctx.getIf(.Bareword);
-    if (token == null) {
-        return null;
-    }
-
-    var args = std.ArrayList(Expression).init(ctx.ally);
-    defer args.deinit();
-    while (try parseExpression(ctx)) |expr| {
-        try args.append(expr);
-    }
+    const call = parseIndividualPipeline(ctx, true);
 
     if (ctx.getIf(.RParens) != null) {
-        return Invocation{
-            .token = token.?,
-            .arguments = try args.toOwnedSlice(),
-        };
+        return call;
     }
-    unreachable;
+    // missing rparens
+    return ctx.err(.{
+        .error_source = left.?,
+        .msg = "expected closing ')'",
+        .trailing = true,
+    });
 }
 
-fn parseExpression(ctx: *Context) std.mem.Allocator.Error!?Expression {
-    if (try parseCapturingInvocation(ctx)) |capturing_inv| {
+fn parseExpression(ctx: *Context) errors!?Expression {
+    if (try parseCapturingCall(ctx)) |capturing_inv| {
         return Expression{
-            .capturing_invocation = capturing_inv,
+            .capturing_call = capturing_inv,
         };
     } else if (parseBareword(ctx)) |bareword| {
         return Expression{
@@ -388,7 +508,12 @@ fn parseListLiteral(ctx: *Context) !?ListLiteral {
     }
 
     // must find closing bracket
-    _ = ctx.getIf(.RBracket) orelse unreachable;
+    _ = ctx.getIf(.RBracket) orelse
+        return ctx.err(.{
+        .error_source = token,
+        .msg = "expected closing '}'",
+        .trailing = true,
+    });
 
     return ListLiteral{
         .token = token,
