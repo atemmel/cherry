@@ -5,6 +5,62 @@ const Term = terminal.Term;
 
 const History = std.ArrayList([]const u8);
 
+const State = struct {
+    pipeline_state: *pipeline.State,
+    ally: std.mem.Allocator,
+    writer: std.io.BufferedWriter,
+    history: History,
+    cwd_buffer: [1024]u8 = undefined,
+    cwd: []const u8 = "",
+    buffer: [4096]u8 = undefined,
+    length: usize = 0,
+    cursor: usize = 0,
+    term: Term,
+
+    pub fn deinit(self: *State) void {
+        for (self.history.items) |item| {
+            self.ally.free(item);
+        }
+        self.history.deinit();
+        self.term.restore() catch unreachable; // no balls
+    }
+
+    pub fn line(self: *State) []const u8 {
+        return self.buffer[0..self.length];
+    }
+
+    pub fn calcCwd(self: *State) ![]const u8 {
+        self.cwd = try std.fs.cwd().realpath(".", &self.cwd_buffer);
+        return self.cwd;
+    }
+
+    pub fn writeKeyAtCursor(self: *State, key: u8) void {
+        std.mem.rotate(u8, self.buffer[self.cursor .. self.length + 1], self.length - self.cursor);
+        self.buffer[self.cursor] = key;
+        self.cursor += 1;
+        self.length += 1;
+    }
+
+    pub fn removeKeyAtCursor(self: *State) void {
+        if (self.cursor > 0) {
+            std.mem.rotate(u8, self.buffer[self.cursor - 1 .. self.length], self.length - self.cursor);
+            self.cursor -= 1;
+            self.length -= 1;
+        }
+    }
+
+    pub fn removeKeyBehindCursor(self: *State) void {
+        if (self.cursor < self.length) {
+            std.mem.rotate(u8, self.buffer[self.cursor..self.length], self.length - self.cursor);
+            self.length -= 1;
+        }
+    }
+
+    pub fn prefixLen(self: *State) usize {
+        return self.cwd.len + 4;
+    }
+};
+
 /// fmt wrapper that doesn't care if it fails
 fn fmt(writer: anytype, comptime str: []const u8, args: anytype) void {
     std.fmt.format(writer, str, args) catch {};
@@ -16,72 +72,39 @@ fn fmts(writer: anytype, comptime str: []const u8) void {
 }
 
 //TODO
-// - run actual commands
 // - display commands in a nice way (colors, etc)
 // - history
 // - tab completion
 
-pub fn repl(state: *pipeline.State) !void {
-    var history = try History.initCapacity(state.ally, 100);
-    defer {
-        for (history.items) |item| {
-            state.ally.free(item);
-        }
-        history.deinit();
-    }
-    var term = try Term.init();
-    defer term.restore() catch unreachable; // no balls
+pub fn repl(pipeline_state: *pipeline.State) !void {
+    var state = State{
+        .ally = pipeline_state.ally,
+        .history = try History.initCapacity(pipeline_state.ally, 100),
+        .writer = std.io.bufferedWriter(std.io.getStdOut().writer()),
+        .pipeline_state = pipeline_state,
+        .term = try Term.init(),
+    };
+    defer state.deinit();
 
-    var cwd_buffer: [1024]u8 = undefined;
-    var buffer: [4096]u8 = undefined;
-    var length: usize = 0;
-    var cursor: usize = 0;
     var buffered_writer = std.io.bufferedWriter(std.io.getStdOut().writer());
     const out = buffered_writer.writer();
 
     while (true) {
-        const cwd = try std.fs.cwd().realpath(".", &cwd_buffer);
+        const cwd = try std.fs.cwd().realpath(".", &state.cwd_buffer);
         const prefix_len = cwd.len + 4;
         terminal.clearLine(out, prefix_len + 7);
         fmt(out, "{s} |> ", .{cwd});
-        fmt(out, "{s}\r", .{buffer[0..length]});
-        terminal.moveRight(out, prefix_len + cursor);
+        fmt(out, "{s}\r", .{state.line()});
+        terminal.moveRight(out, prefix_len + state.cursor);
         try buffered_writer.flush();
-        const event = try term.readEvent();
+        const event = try state.term.readEvent();
         switch (event) {
             .key => |key| {
                 switch (key) {
                     '\n', '\r' => {
-                        try out.print("\r\n", .{});
-                        terminal.clearLine(out, prefix_len);
-                        try term.restore();
-                        try buffered_writer.flush();
-                        defer {
-                            term = Term.init() catch unreachable;
-                            length = 0;
-                            cursor = 0;
-                        }
-
-                        const cmd = buffer[0..length];
-
-                        state.source = cmd;
-                        pipeline.run(state) catch |e| {
-                            switch (e) {
-                                //TODO: error should not be handled here,
-                                error.CommandNotFound => {
-                                    _ = try out.write("Could not find command in system\r\n");
-                                },
-                                else => unreachable,
-                            }
-                        };
-                        try appendHistory(state.ally, &history, cmd);
+                        eval();
                     },
-                    else => {
-                        std.mem.rotate(u8, buffer[cursor .. length + 1], length - cursor);
-                        buffer[cursor] = key;
-                        cursor += 1;
-                        length += 1;
-                    },
+                    else => state.writeKeyAtCursor(key),
                 }
             },
             .ctrl => |ctrl| {
@@ -92,16 +115,16 @@ pub fn repl(state: *pipeline.State) !void {
                     },
                     'c' => {
                         fmts(out, "^C\n\r");
-                        length = 0;
-                        cursor = 0;
+                        state.length = 0;
+                        state.cursor = 0;
                     },
                     'u' => {
-                        terminal.clearLine(out, length + prefix_len);
-                        length = 0;
-                        cursor = 0;
+                        terminal.clearLine(out, state.length + state.prefixLen());
+                        state.length = 0;
+                        state.cursor = 0;
                     },
                     'l' => {
-                        terminal.moveCursor(term.tty.writer(), 0, 0);
+                        terminal.moveCursor(state.term.tty.writer(), 0, 0);
                         terminal.clear(out);
                     },
                     else => {}, // ignore
@@ -110,41 +133,56 @@ pub fn repl(state: *pipeline.State) !void {
             .arrow_down => {},
             .arrow_up => {},
             .arrow_left => {
-                if (cursor > 0) {
-                    cursor -= 1;
+                if (state.cursor > 0) {
+                    state.cursor -= 1;
                 }
             },
             .arrow_right => {
-                if (cursor < length) {
-                    cursor += 1;
+                if (state.cursor < state.length) {
+                    state.cursor += 1;
                 }
             },
-            .backspace => {
-                if (cursor > 0) {
-                    std.mem.rotate(u8, buffer[cursor - 1 .. length], length - cursor);
-                    cursor -= 1;
-                    length -= 1;
-                }
-            },
-            .delete => {
-                if (cursor < length) {
-                    std.mem.rotate(u8, buffer[cursor..length], length - cursor);
-                    length -= 1;
-                }
-            },
+            .backspace => state.removeKeyAtCursor(),
+            .delete => state.removeKeyBehindCursor(),
             .home => {
-                cursor = 0;
+                state.cursor = 0;
             },
             .end => {
-                cursor = length;
+                state.cursor = state.length;
             },
             .alt, .escape, .insert, .page_down, .page_up, .unknown => {},
         }
     }
 }
 
-fn appendHistory(ally: std.mem.Allocator, hist: *History, cmd: []const u8) !void {
-    const cmd_copy = try ally.dupe(u8, cmd);
-    try hist.append(cmd_copy);
+fn eval(state: *State) void {
+    try state.writer.print("\r\n", .{});
+    terminal.clearLine(state.writer, state.prefixLen());
+    try state.term.restore();
+    try state.buffered_writer.flush();
+    defer {
+        state.term = Term.init() catch unreachable;
+        state.length = 0;
+        state.cursor = 0;
+    }
+
+    const cmd = state.line();
+
+    state.source = cmd;
+    pipeline.run(state) catch |e| {
+        switch (e) {
+            //TODO: error should not be handled here,
+            error.CommandNotFound => {
+                _ = try state.writer.write("Could not find command in system\r\n");
+            },
+            else => unreachable,
+        }
+    };
+    try appendHistory(state);
+}
+
+fn appendHistory(state: *State) !void {
+    const cmd_copy = try state.ally.dupe(u8, state.line());
+    try state.history.append(cmd_copy);
     //TODO: append to histfile
 }
