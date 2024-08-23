@@ -8,7 +8,7 @@ const History = std.ArrayList([]const u8);
 const State = struct {
     pipeline_state: *pipeline.State,
     ally: std.mem.Allocator,
-    writer: std.io.BufferedWriter,
+    out_writer: std.io.BufferedWriter(4096, std.fs.File.Writer),
     history: History,
     cwd_buffer: [1024]u8 = undefined,
     cwd: []const u8 = "",
@@ -23,6 +23,10 @@ const State = struct {
         }
         self.history.deinit();
         self.term.restore() catch unreachable; // no balls
+    }
+
+    pub fn writer(self: *State) @TypeOf(self.out_writer.writer()) {
+        return self.out_writer.writer();
     }
 
     pub fn line(self: *State) []const u8 {
@@ -80,7 +84,7 @@ pub fn repl(pipeline_state: *pipeline.State) !void {
     var state = State{
         .ally = pipeline_state.ally,
         .history = try History.initCapacity(pipeline_state.ally, 100),
-        .writer = std.io.bufferedWriter(std.io.getStdOut().writer()),
+        .out_writer = std.io.bufferedWriter(std.io.getStdOut().writer()),
         .pipeline_state = pipeline_state,
         .term = try Term.init(),
     };
@@ -101,9 +105,7 @@ pub fn repl(pipeline_state: *pipeline.State) !void {
         switch (event) {
             .key => |key| {
                 switch (key) {
-                    '\n', '\r' => {
-                        eval();
-                    },
+                    '\n', '\r' => try eval(&state),
                     else => state.writeKeyAtCursor(key),
                 }
             },
@@ -155,11 +157,11 @@ pub fn repl(pipeline_state: *pipeline.State) !void {
     }
 }
 
-fn eval(state: *State) void {
-    try state.writer.print("\r\n", .{});
-    terminal.clearLine(state.writer, state.prefixLen());
+fn eval(state: *State) !void {
+    try state.writer().print("\r\n", .{});
+    terminal.clearLine(state.writer(), state.prefixLen());
     try state.term.restore();
-    try state.buffered_writer.flush();
+    try state.out_writer.flush();
     defer {
         state.term = Term.init() catch unreachable;
         state.length = 0;
@@ -168,16 +170,15 @@ fn eval(state: *State) void {
 
     const cmd = state.line();
 
-    state.source = cmd;
-    pipeline.run(state) catch |e| {
+    state.pipeline_state.source = cmd;
+    pipeline.run(state.pipeline_state) catch |e| {
         switch (e) {
             //TODO: error should not be handled here,
-            error.CommandNotFound => {
-                _ = try state.writer.write("Could not find command in system\r\n");
-            },
+            error.CommandNotFound => try state.writer().print("Could not find command in system\r\n", .{}),
             else => unreachable,
         }
     };
+    try state.out_writer.flush();
     try appendHistory(state);
 }
 
