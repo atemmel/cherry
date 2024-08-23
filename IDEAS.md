@@ -75,6 +75,9 @@ $table:0  = bond    # unsure
 ```
 
 ## typing syntax
+
+note: I'm not sure types will do great in this context, at least not yet
+
 ```
 
 # variable declarations should ideally *not* require types
@@ -103,5 +106,6 @@ type Person record {
 }
 
 # to consider
+# type unions
 # * nillability
 ```
