@@ -16,12 +16,16 @@ const State = struct {
     length: usize = 0,
     cursor: usize = 0,
     term: Term,
+    home: []const u8 = "",
+    histfile_path: []const u8 = "",
 
     pub fn deinit(self: *State) void {
         for (self.history.items) |item| {
             self.ally.free(item);
         }
         self.history.deinit();
+        self.ally.free(self.home);
+        self.ally.free(self.histfile_path);
         self.term.restore() catch unreachable; // no balls
     }
 
@@ -87,8 +91,11 @@ pub fn repl(pipeline_state: *pipeline.State) !void {
         .out_writer = std.io.bufferedWriter(std.io.getStdOut().writer()),
         .pipeline_state = pipeline_state,
         .term = try Term.init(),
+        .home = try std.process.getEnvVarOwned(pipeline_state.ally, "HOME"),
     };
     defer state.deinit();
+
+    state.histfile_path = try std.fs.path.join(state.ally, &.{ state.home, ".yash-hist" });
 
     try readHistory(&state);
 
@@ -187,25 +194,24 @@ fn eval(state: *State) !void {
 fn appendHistory(state: *State) !void {
     const cmd_copy = try state.ally.dupe(u8, state.line());
     try state.history.append(cmd_copy);
-    //TODO: append to histfile
+
+    var file = try std.fs.cwd().openFile(state.histfile_path, .{ .mode = .read_write });
+    defer file.close();
+    const stat = try file.stat();
+    try file.seekTo(stat.size);
+    try file.writeAll(cmd_copy);
+    try file.writeAll("\n");
 }
 
 fn readHistory(state: *State) !void {
-    const ally = state.ally;
-    const filename = ".yash-hist";
-    const home_dir = try std.process.getEnvVarOwned(ally, "HOME");
-    defer ally.free(home_dir);
-    const histfile_path = std.fs.path.join(ally, &.{ home_dir, filename }) catch @panic("OOM");
-    defer ally.free(histfile_path);
-
-    const file = std.fs.cwd().openFile(histfile_path, .{}) catch |e|
+    const file = std.fs.cwd().openFile(state.histfile_path, .{}) catch |e|
         switch (e) {
         error.FileNotFound => return,
         else => {
             fmt(
                 state.writer(),
                 "Could not open histfile at {s}, error: {}\r\n",
-                .{ histfile_path, e },
+                .{ state.histfile_path, e },
             );
             try state.out_writer.flush();
             return;
@@ -217,7 +223,7 @@ fn readHistory(state: *State) !void {
     var buffered_reader = std.io.bufferedReader(underlying_reader);
     const reader = buffered_reader.reader();
     while (true) {
-        const line = reader.readUntilDelimiter(&state.buffer, '\n') catch return;
+        const line = reader.readUntilDelimiterAlloc(state.ally, '\n', 1_000_000) catch return;
         try state.history.append(line);
     }
 }
