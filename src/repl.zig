@@ -83,12 +83,14 @@ fn fmts(writer: anytype, comptime str: []const u8) void {
 pub fn repl(pipeline_state: *pipeline.State) !void {
     var state = State{
         .ally = pipeline_state.ally,
-        .history = try History.initCapacity(pipeline_state.ally, 100),
+        .history = try History.initCapacity(pipeline_state.ally, 512),
         .out_writer = std.io.bufferedWriter(std.io.getStdOut().writer()),
         .pipeline_state = pipeline_state,
         .term = try Term.init(),
     };
     defer state.deinit();
+
+    try readHistory(&state);
 
     var buffered_writer = std.io.bufferedWriter(std.io.getStdOut().writer());
     const out = buffered_writer.writer();
@@ -186,4 +188,36 @@ fn appendHistory(state: *State) !void {
     const cmd_copy = try state.ally.dupe(u8, state.line());
     try state.history.append(cmd_copy);
     //TODO: append to histfile
+}
+
+fn readHistory(state: *State) !void {
+    const ally = state.ally;
+    const filename = ".yash-hist";
+    const home_dir = try std.process.getEnvVarOwned(ally, "HOME");
+    defer ally.free(home_dir);
+    const histfile_path = std.fs.path.join(ally, &.{ home_dir, filename }) catch @panic("OOM");
+    defer ally.free(histfile_path);
+
+    const file = std.fs.cwd().openFile(histfile_path, .{}) catch |e|
+        switch (e) {
+        error.FileNotFound => return,
+        else => {
+            fmt(
+                state.writer(),
+                "Could not open histfile at {s}, error: {}\r\n",
+                .{ histfile_path, e },
+            );
+            try state.out_writer.flush();
+            return;
+        },
+    };
+    defer file.close();
+
+    const underlying_reader = file.reader();
+    var buffered_reader = std.io.bufferedReader(underlying_reader);
+    const reader = buffered_reader.reader();
+    while (true) {
+        const line = reader.readUntilDelimiter(&state.buffer, '\n') catch return;
+        try state.history.append(line);
+    }
 }

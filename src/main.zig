@@ -28,10 +28,19 @@ fn readfile(ally: std.mem.Allocator, name: []const u8) ![]const u8 {
 pub fn main() !void {
     var base_allocator = switch (builtin.mode) {
         .Debug => std.heap.GeneralPurposeAllocator(.{}){},
+        else => .{},
+    };
+
+    defer switch (builtin.mode) {
+        .Debug => assert(base_allocator.deinit() == .ok),
+        else => {},
+    };
+
+    const ally = switch (builtin.mode) {
+        .Debug => base_allocator.allocator(),
         else => std.heap.page_allocator,
     };
-    defer assert(base_allocator.deinit() == .ok);
-    const ally = base_allocator.allocator();
+
     var arena = std.heap.ArenaAllocator.init(ally);
     defer arena.deinit();
     const arena_allocator = arena.allocator();
