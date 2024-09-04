@@ -43,6 +43,7 @@ fn dumpStatement(stmnt: ast.Statement) void {
         .assignment => |assign| dumpAssign(assign),
         .branches => |br| dumpBranches(br),
         .scope => |scope| dumpScope(scope),
+        .func => |func| dumpFunc(func),
     }
 }
 
@@ -81,6 +82,17 @@ fn dumpScope(scope: ast.Scope) void {
     for (scope) |stmnt| {
         dumpStatement(stmnt);
     }
+}
+
+fn dumpFunc(func: ast.Func) void {
+    defer up();
+    leaf("Func: {s}\n", .{func.token.value});
+    leaf("Params:\n", .{});
+    for (func.params) |param| {
+        dumpBareword(param);
+    }
+    up();
+    dumpScope(func.scope);
 }
 
 fn dumpCall(inv: ast.Call) void {

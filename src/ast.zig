@@ -78,6 +78,12 @@ pub const Branch = struct {
     scope: Scope,
 };
 
+pub const Func = struct {
+    token: *const Token, // contains identifier
+    params: []const Bareword,
+    scope: Scope,
+};
+
 pub const Branches = []const Branch;
 
 pub const Statement = union(enum) {
@@ -86,10 +92,12 @@ pub const Statement = union(enum) {
     assignment: Assignment,
     branches: Branches,
     scope: Scope,
+    func: Func,
 };
 
 pub const Root = struct {
     statements: []Statement,
+    functions: std.StringHashMap(Func),
 };
 
 const Context = struct {
@@ -162,9 +170,14 @@ pub fn parse(state: *PipelineState) !Root {
 
     var statements = std.ArrayList(Statement).init(ctx.ally);
     defer statements.deinit();
+    var functions = std.StringHashMap(Func).init(ctx.ally);
+    defer functions.deinit();
 
     while (try parseStatement(&ctx)) |stmnt| {
-        try statements.append(stmnt);
+        switch (stmnt) {
+            .func => |f| try functions.put(f.token.value, f),
+            else => try statements.append(stmnt),
+        }
     }
 
     // being unable to parse statements without running out of tokens is an error
@@ -172,6 +185,7 @@ pub fn parse(state: *PipelineState) !Root {
 
     return Root{
         .statements = try statements.toOwnedSlice(),
+        .functions = functions.move(),
     };
 }
 
@@ -195,6 +209,10 @@ fn parseStatement(ctx: *Context) errors!?Statement {
     } else if (try parseBranches(ctx)) |branches| {
         return Statement{
             .branches = branches,
+        };
+    } else if (try parseFunc(ctx)) |func| {
+        return Statement{
+            .func = func,
         };
     } else if (try parseScope(ctx, true)) |scope| {
         return Statement{
@@ -339,7 +357,7 @@ fn parseBranches(ctx: *Context) !?Branches {
 
 fn parseScope(ctx: *Context, needsNewline: bool) !?Scope {
     const lbrace = ctx.getIf(.LBrace);
-    if (ctx.getIf(.LBrace) == null) {
+    if (lbrace == null) {
         return null;
     }
     _ = ctx.getIf(.Newline);
@@ -367,8 +385,43 @@ fn parseScope(ctx: *Context, needsNewline: bool) !?Scope {
     return try statements.toOwnedSlice();
 }
 
+fn parseFunc(ctx: *Context) !?Func {
+    if (ctx.getIf(.Fn) == null) {
+        return null;
+    }
+
+    const token = ctx.getIf(.Bareword) orelse {
+        return ctx.err(.{
+            .error_source = ctx.peek(),
+            .msg = "expected function name",
+        });
+    };
+
+    var params = std.ArrayList(Bareword).init(ctx.ally);
+    defer params.deinit();
+
+    while (parseBareword(ctx)) |bw| {
+        try params.append(bw);
+    }
+
+    const scope = try parseScope(ctx, true) orelse {
+        return ctx.err(.{
+            .error_source = ctx.peek(),
+            .msg = "expected name of args or '{'",
+        });
+    };
+
+    return Func{
+        .token = token,
+        .scope = scope,
+        .params = try params.toOwnedSlice(),
+    };
+}
+
 fn parsePipeline(ctx: *Context) !?Call {
-    const call = try parseIndividualPipeline(ctx, false);
+    const call = try parseIndividualPipeline(ctx, false) orelse {
+        return null;
+    };
 
     if (ctx.getIf(.Newline) == null and !ctx.eot()) {
         return ctx.err(.{
@@ -381,7 +434,9 @@ fn parsePipeline(ctx: *Context) !?Call {
 }
 
 fn parseIndividualPipeline(ctx: *Context, capturing: bool) !?Call {
-    var pipeline_begin = try parseIndividualCall(ctx, capturing) orelse return null;
+    var pipeline_begin = try parseIndividualCall(ctx, capturing) orelse {
+        return null;
+    };
 
     var prev_node = &pipeline_begin;
     while (ctx.getIf(.Pipe) != null) {
