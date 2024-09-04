@@ -28,6 +28,7 @@ pub const Token = struct {
         While,
         For,
         Fn,
+        Return,
         True,
         False,
     };
@@ -42,6 +43,7 @@ const string_keyword_map = std.StaticStringMap(Token.Kind).initComptime(&.{
     .{ "while", .While },
     .{ "for", .For },
     .{ "fn", .Fn },
+    .{ "return", .Return },
     .{ "true", .True },
     .{ "false", .False },
 });

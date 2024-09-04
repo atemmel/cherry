@@ -13,35 +13,37 @@ pub const BuiltinError = error{
 
 pub const Builtin = fn (args: []const *Value) BuiltinError!Result;
 
-const builtins_table = std.StaticStringMap(*const Builtin).initComptime(&.{
-    // general
-    .{ "assert", assert },
-    .{ "say", say },
-    // operations
-    .{ "add", add },
-    .{ "sum", add },
-    .{ "sub", sub },
-    .{ "mul", mul },
-    .{ "div", div },
-    .{ "eq", equals },
-    .{ "lt", less },
-    .{ "gt", greater },
-    .{ "ne", notEqual },
-    .{ "len", len },
-    .{ "append", append },
-    .{ "get", get },
-    .{ "put", put },
-    .{ "trim", trim },
-    // operations (symbols)
-    .{ "+", add },
-    .{ "-", sub },
-    .{ "*", mul },
-    .{ "/", div },
-    .{ "==", equals },
-    .{ "<", less },
-    .{ ">", greater },
-    .{ "!=", notEqual },
-});
+const builtins_table = std.StaticStringMap(*const Builtin).initComptime(
+    &.{
+        // general
+        .{ "assert", assert },
+        .{ "say", say },
+        // operations
+        .{ "add", add },
+        .{ "sum", add },
+        .{ "sub", sub },
+        .{ "mul", mul },
+        .{ "div", div },
+        .{ "eq", equals },
+        .{ "lt", less },
+        .{ "gt", greater },
+        .{ "ne", notEqual },
+        .{ "len", len },
+        .{ "append", append },
+        .{ "get", get },
+        .{ "put", put },
+        .{ "trim", trim },
+        // operations (symbols)
+        .{ "+", add },
+        .{ "-", sub },
+        .{ "*", mul },
+        .{ "/", div },
+        .{ "==", equals },
+        .{ "<", less },
+        .{ ">", greater },
+        .{ "!=", notEqual },
+    },
+);
 
 pub fn lookup(str: []const u8) ?*const Builtin {
     return builtins_table.get(str);

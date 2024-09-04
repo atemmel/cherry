@@ -29,6 +29,12 @@ fn leaf(comptime str: []const u8, args: anytype) void {
 pub fn dump(root: ast.Root) void {
     defer up();
     leaf("Root:\n", .{});
+
+    var it = root.functions.valueIterator();
+    while (it.next()) |func| {
+        dumpFunc(func.*);
+    }
+
     for (root.statements) |stmnt| {
         dumpStatement(stmnt);
     }
@@ -44,6 +50,7 @@ fn dumpStatement(stmnt: ast.Statement) void {
         .branches => |br| dumpBranches(br),
         .scope => |scope| dumpScope(scope),
         .func => |func| dumpFunc(func),
+        .ret => |ret| dumpReturn(ret),
     }
 }
 
@@ -93,6 +100,14 @@ fn dumpFunc(func: ast.Func) void {
     }
     up();
     dumpScope(func.scope);
+}
+
+fn dumpReturn(ret: ast.Return) void {
+    defer up();
+    leaf("Return\n", .{});
+    if (ret.expression) |expr| {
+        dumpExpression(expr);
+    }
 }
 
 fn dumpCall(inv: ast.Call) void {

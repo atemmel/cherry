@@ -5,6 +5,7 @@ const symtable = @import("symtable.zig");
 const gc = @import("gc.zig");
 const builtins = @import("builtins.zig");
 const values = @import("value.zig");
+
 const Value = values.Value;
 const Result = values.Result;
 
@@ -45,13 +46,13 @@ fn interpretRoot(ctx: *Context) !void {
     try symtable.pushFrame();
     defer symtable.popFrame();
     for (ctx.root.statements) |stmnt| {
-        try interpretStatement(ctx, stmnt);
+        _ = try interpretStatement(ctx, stmnt);
     }
 }
 
 const StatementError = EvalError || symtable.SymtableError;
 
-fn interpretStatement(ctx: *Context, stmnt: ast.Statement) StatementError!void {
+fn interpretStatement(ctx: *Context, stmnt: ast.Statement) StatementError!Result {
     defer _ = ctx.stmntArena.reset(.retain_capacity);
     switch (stmnt) {
         .call => |call| _ = try evalPipeline(ctx, call),
@@ -60,7 +61,11 @@ fn interpretStatement(ctx: *Context, stmnt: ast.Statement) StatementError!void {
         .branches => |br| try interpretBranches(ctx, br),
         .scope => |scope| try interpretScope(ctx, scope),
         .func => unreachable,
+        .ret => |ret| {
+            return try evalReturn(ctx, ret);
+        },
     }
+    return nothing;
 }
 
 fn interpretVarDecl(ctx: *Context, var_decl: ast.VarDecl) !void {
@@ -126,15 +131,19 @@ fn interpretScope(ctx: *Context, scope: ast.Scope) !void {
     try symtable.pushFrame();
     defer symtable.popFrame();
     for (scope) |stmnt| {
-        try interpretStatement(ctx, stmnt);
+        _ = try interpretStatement(ctx, stmnt);
     }
 }
 
+fn evalReturn(ctx: *Context, ret: ast.Return) !Result {
+    if (ret.expression) |expr| {
+        return try evalExpression(ctx, expr);
+    }
+    return nothing;
+}
+
 //TODO: this only handles external programs
-fn evalPipeline(
-    ctx: *Context,
-    call: ast.Call,
-) !Result {
+fn evalPipeline(ctx: *Context, call: ast.Call) !Result {
     const name = call.token.value;
     if (builtins.lookup(name)) |builtin| {
         return try evalBuiltin(ctx, call, builtin);
@@ -165,7 +174,16 @@ fn evalFunctionCall(ctx: *Context, func: ast.Func, call: ast.Call) !Result {
     }
 
     for (func.scope) |stmnt| {
-        try interpretStatement(ctx, stmnt);
+        const result = try interpretStatement(ctx, stmnt);
+        switch (result) {
+            .nothing => {
+                switch (stmnt) {
+                    .ret => return nothing,
+                    else => {},
+                }
+            },
+            .value => |val| return something(val),
+        }
     }
     return nothing;
 }
