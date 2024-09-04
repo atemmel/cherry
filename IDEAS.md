@@ -21,9 +21,9 @@ import the-module
 import a-folder/the-module
 import the-website.com/the-module
 
-the-module:the-fn
+the-module::the-fn
 
-$the-module:the-var
+$the-module::the-var
 
 # export things in modules with `pub`
 ```
@@ -62,7 +62,7 @@ table := [
 
 $table[name] = bond
 
-$table:name  = bond
+$table::name  = bond
 ```
 
 ## lists
@@ -71,7 +71,7 @@ table := [ james jimmy jones ]
 
 $table[0] = bond
 
-$table:0  = bond    # unsure
+$table::0  = bond    # unsure
 ```
 
 ## typing syntax

@@ -21,6 +21,7 @@ pub const Token = struct {
         RBrace,
         LBracket,
         RBracket,
+        EmptyRecord, // [=]
         // Keywords
         If,
         Else,

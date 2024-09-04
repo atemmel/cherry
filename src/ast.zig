@@ -1,4 +1,5 @@
 const std = @import("std");
+const builtin = @import("builtin");
 const Token = @import("tokens.zig").Token;
 const PipelineState = @import("pipeline.zig").State;
 pub const dump = @import("ast_dump.zig").dump;
@@ -137,6 +138,12 @@ const Context = struct {
     }
 
     pub fn err(c: *Context, s: struct { error_source: *const Token, msg: []const u8, trailing: bool = false }) errors {
+        if (builtin.mode == .Debug) {
+            const bar = "===============================================";
+            std.debug.print("Encountered an error while parsing the ast:\n\n{s}\n\n", .{bar});
+            std.debug.dumpCurrentStackTrace(null);
+            std.debug.print("\n{s}\n\nThe actual error message produced is as follows:\n\n", .{bar});
+        }
         c.state.error_report = .{
             .offending_token = s.error_source,
             .msg = s.msg,
@@ -209,18 +216,20 @@ fn parseVarDeclaration(ctx: *Context) !?VarDecl {
     }
 
     // the assignment operation must be followed by an expression
-    const expr = try parseExpression(ctx) orelse
+    const expr = try parseExpression(ctx) orelse {
         return ctx.err(.{
-        .error_source = ctx.peek(),
-        .msg = "expected expression",
-    });
+            .error_source = ctx.peek(),
+            .msg = "expected expression",
+        });
+    };
 
     // the assignment must be followed by a terminating newline or eot
-    if (ctx.getIf(.Newline) == null and !ctx.eot())
+    if (ctx.getIf(.Newline) == null and !ctx.eot()) {
         return ctx.err(.{
             .error_source = ctx.peek(),
             .msg = "expected newline (\\n)",
         });
+    }
 
     return VarDecl{
         .token = id,
@@ -237,18 +246,20 @@ fn parseAssignment(ctx: *Context) !?Assignment {
         return null;
     };
     // Needs expression
-    const expr = try parseExpression(ctx) orelse
+    const expr = try parseExpression(ctx) orelse {
         return ctx.err(.{
-        .error_source = ctx.peek(),
-        .msg = "expected expression",
-    });
+            .error_source = ctx.peek(),
+            .msg = "expected expression",
+        });
+    };
 
     // the assignment must be followed by a terminating newline or eot
-    if (ctx.getIf(.Newline) == null and !ctx.eot())
+    if (ctx.getIf(.Newline) == null and !ctx.eot()) {
         return ctx.err(.{
             .error_source = ctx.peek(),
             .msg = "expected newline (\\n)",
         });
+    }
 
     return .{
         .token = variable,
@@ -264,16 +275,18 @@ fn parseBranches(ctx: *Context) !?Branches {
     var branches = std.ArrayList(Branch).init(ctx.ally);
     defer branches.deinit();
 
-    const first_expr = try parseExpression(ctx) orelse
+    const first_expr = try parseExpression(ctx) orelse {
         return ctx.err(.{
-        .error_source = ctx.peek(),
-        .msg = "expected expression",
-    });
-    const first_scope = try parseScope(ctx, false) orelse
+            .error_source = ctx.peek(),
+            .msg = "expected expression",
+        });
+    };
+    const first_scope = try parseScope(ctx, false) orelse {
         return ctx.err(.{
-        .error_source = ctx.peek(),
-        .msg = "expected '{'",
-    });
+            .error_source = ctx.peek(),
+            .msg = "expected '{'",
+        });
+    };
 
     try branches.append(.{
         .scope = first_scope,
@@ -287,16 +300,18 @@ fn parseBranches(ctx: *Context) !?Branches {
     }
 
     while (ctx.getIf(.Else) != null and ctx.getIf(.If) != null) {
-        const expr = try parseExpression(ctx) orelse
+        const expr = try parseExpression(ctx) orelse {
             return ctx.err(.{
-            .error_source = ctx.peek(),
-            .msg = "expected expression",
-        });
-        const scope = try parseScope(ctx, false) orelse
+                .error_source = ctx.peek(),
+                .msg = "expected expression",
+            });
+        };
+        const scope = try parseScope(ctx, false) orelse {
             return ctx.err(.{
-            .error_source = ctx.peek(),
-            .msg = "expected '{'",
-        });
+                .error_source = ctx.peek(),
+                .msg = "expected '{'",
+            });
+        };
 
         try branches.append(.{
             .scope = scope,
@@ -307,11 +322,12 @@ fn parseBranches(ctx: *Context) !?Branches {
     ctx.idx = checkpoint;
 
     if (ctx.getIf(.Else) != null) {
-        const last_scope = try parseScope(ctx, true) orelse
+        const last_scope = try parseScope(ctx, true) orelse {
             return ctx.err(.{
-            .error_source = ctx.peek(),
-            .msg = "expected '{'",
-        });
+                .error_source = ctx.peek(),
+                .msg = "expected '{'",
+            });
+        };
         try branches.append(.{
             .scope = last_scope,
             .condition = null,
@@ -335,12 +351,13 @@ fn parseScope(ctx: *Context, needsNewline: bool) !?Scope {
         try statements.append(stmnt);
     }
 
-    _ = ctx.getIf(.RBrace) orelse
+    _ = ctx.getIf(.RBrace) orelse {
         return ctx.err(.{
-        .error_source = lbrace.?,
-        .msg = "expected closing '}'",
-        .trailing = true,
-    });
+            .error_source = lbrace.?,
+            .msg = "expected closing '}'",
+            .trailing = true,
+        });
+    };
     if (needsNewline and ctx.getIf(.Newline) == null and !ctx.eot()) {
         return ctx.err(.{
             .error_source = ctx.peek(),
@@ -368,11 +385,12 @@ fn parseIndividualPipeline(ctx: *Context, capturing: bool) !?Call {
 
     var prev_node = &pipeline_begin;
     while (ctx.getIf(.Pipe) != null) {
-        const next = try parseIndividualCall(ctx, capturing) orelse
+        const next = try parseIndividualCall(ctx, capturing) orelse {
             return ctx.err(.{
-            .error_source = ctx.peek(),
-            .msg = "expected function call",
-        });
+                .error_source = ctx.peek(),
+                .msg = "expected function call",
+            });
+        };
         const next_ptr = try ctx.ally.create(Call);
         next_ptr.* = next;
         prev_node.pipe = next_ptr;
@@ -508,12 +526,13 @@ fn parseListLiteral(ctx: *Context) !?ListLiteral {
     }
 
     // must find closing bracket
-    _ = ctx.getIf(.RBracket) orelse
+    _ = ctx.getIf(.RBracket) orelse {
         return ctx.err(.{
-        .error_source = token,
-        .msg = "expected closing '}'",
-        .trailing = true,
-    });
+            .error_source = token,
+            .msg = "expected one or more expresions, followed by a closing ']'",
+            .trailing = true,
+        });
+    };
 
     return ListLiteral{
         .token = token,
