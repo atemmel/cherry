@@ -107,5 +107,29 @@ type Person record {
 
 # to consider
 # type unions
-# * nillability
+# * nilability
 ```
+
+## redirection operations
+
+consider the follwing operations:
+
+```
+command-writing-logs > log.txt
+
+jq < my-file.json
+```
+
+how do they translate?
+
+as builtins they risk loosing their streaminess
+
+`<` and `>` are not intended to be reserved symbols
+
+```
+command-writing-logs |> log.txt
+
+jq <| my-file.json
+```
+
+maybe the above are fine for now

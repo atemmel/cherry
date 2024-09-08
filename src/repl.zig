@@ -187,15 +187,19 @@ fn eval(state: *State) !void {
             else => unreachable,
         }
     };
+    appendHistory(state) catch |e| {
+        try state.writer().print("Could not write history, {any}\r\n", .{e});
+    };
     try state.out_writer.flush();
-    try appendHistory(state);
 }
 
 fn appendHistory(state: *State) !void {
     const cmd_copy = try state.ally.dupe(u8, state.line());
     try state.history.append(cmd_copy);
 
-    var file = try std.fs.cwd().openFile(state.histfile_path, .{ .mode = .read_write });
+    var file = try std.fs.cwd().createFile(state.histfile_path, .{
+        .truncate = false,
+    });
     defer file.close();
     const stat = try file.stat();
     try file.seekTo(stat.size);

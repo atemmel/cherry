@@ -22,6 +22,8 @@ pub const Token = struct {
         LBracket,
         RBracket,
         EmptyRecord, // [=]
+        RedirectOut, // |>
+        RedirectIn, // <|
         // Keywords
         If,
         Else,
@@ -510,3 +512,11 @@ test "lex integer" {
     try expectEqual(.IntegerLiteral, tokens[1].kind);
     try expectEqualStrings("5", tokens[1].value);
 }
+
+// maybe something like so?
+// #{
+//
+// #}
+//
+test "lex block comment" {}
+test "lex nested block comment" {}
