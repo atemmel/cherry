@@ -21,11 +21,16 @@ pub const Token = struct {
         RBrace,
         LBracket,
         RBracket,
+        EmptyRecord, // [=]
+        RedirectOut, // |>
+        RedirectIn, // <|
         // Keywords
         If,
         Else,
         While,
         For,
+        Fn,
+        Return,
         True,
         False,
     };
@@ -39,6 +44,8 @@ const string_keyword_map = std.StaticStringMap(Token.Kind).initComptime(&.{
     .{ "else", .Else },
     .{ "while", .While },
     .{ "for", .For },
+    .{ "fn", .Fn },
+    .{ "return", .Return },
     .{ "true", .True },
     .{ "false", .False },
 });
@@ -505,3 +512,11 @@ test "lex integer" {
     try expectEqual(.IntegerLiteral, tokens[1].kind);
     try expectEqualStrings("5", tokens[1].value);
 }
+
+// maybe something like so?
+// #{
+//
+// #}
+//
+test "lex block comment" {}
+test "lex nested block comment" {}

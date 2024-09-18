@@ -1,6 +1,6 @@
 record := [=]
 
-#say $record
+say $record
 
 #$record:name = bond
 

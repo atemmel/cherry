@@ -15,6 +15,7 @@ pub const State = struct {
     tokens: []Token = &.{},
     root: ast.Root = .{
         .statements = &.{},
+        .functions = undefined,
     },
     verboseLexer: bool = false,
     verboseParser: bool = false,
@@ -54,6 +55,10 @@ pub const State = struct {
             last_left_newline = i;
         }
 
+        if (last_left_newline > 0) {
+            last_left_newline += 1;
+        }
+
         for (right_slice, 0..) |c, i| {
             if (c != '\n') continue;
             first_right_newline = src_offset + i;
@@ -63,8 +68,8 @@ pub const State = struct {
         return .{
             .col = src_offset - last_left_newline,
             .row = n_newlines_until_left_newline + 1,
-            .row_str = state.source[last_left_newline + 1 .. first_right_newline],
-            .row_error_token_idx = src_offset - last_left_newline - 1,
+            .row_str = state.source[last_left_newline..first_right_newline],
+            .row_error_token_idx = src_offset - last_left_newline,
             .msg = report.msg,
             .trailing_error = report.trailing,
         };

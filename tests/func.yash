@@ -1,0 +1,11 @@
+fn my-func {
+    say I'm in the func
+}
+
+my-func
+
+my-other-func James
+
+fn my-other-func who {
+    say $who is in the func
+}

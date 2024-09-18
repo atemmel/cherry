@@ -5,6 +5,7 @@ const symtable = @import("symtable.zig");
 const gc = @import("gc.zig");
 const builtins = @import("builtins.zig");
 const values = @import("value.zig");
+
 const Value = values.Value;
 const Result = values.Result;
 
@@ -45,21 +46,26 @@ fn interpretRoot(ctx: *Context) !void {
     try symtable.pushFrame();
     defer symtable.popFrame();
     for (ctx.root.statements) |stmnt| {
-        try interpretStatement(ctx, stmnt);
+        _ = try interpretStatement(ctx, stmnt);
     }
 }
 
 const StatementError = EvalError || symtable.SymtableError;
 
-fn interpretStatement(ctx: *Context, stmnt: ast.Statement) StatementError!void {
+fn interpretStatement(ctx: *Context, stmnt: ast.Statement) StatementError!Result {
     defer _ = ctx.stmntArena.reset(.retain_capacity);
     switch (stmnt) {
         .call => |call| _ = try evalPipeline(ctx, call),
         .var_decl => |var_decl| try interpretVarDecl(ctx, var_decl),
         .assignment => |assign| try interpretAssign(ctx, assign),
         .branches => |br| try interpretBranches(ctx, br),
-        .scope => |scope| try interpretScope(ctx, scope, true),
+        .scope => |scope| try interpretScope(ctx, scope),
+        .func => unreachable,
+        .ret => |ret| {
+            return try evalReturn(ctx, ret);
+        },
     }
+    return nothing;
 }
 
 fn interpretVarDecl(ctx: *Context, var_decl: ast.VarDecl) !void {
@@ -103,7 +109,7 @@ fn interpretBranches(ctx: *Context, branches: ast.Branches) !void {
                     switch (v.as) {
                         .boolean => |b| {
                             if (b) {
-                                try interpretScope(ctx, branch.scope, false);
+                                try interpretScope(ctx, branch.scope);
                                 break;
                             }
                         },
@@ -115,43 +121,71 @@ fn interpretBranches(ctx: *Context, branches: ast.Branches) !void {
                 .nothing => unreachable,
             }
         } else {
-            try interpretScope(ctx, branch.scope, false);
+            try interpretScope(ctx, branch.scope);
             break;
         }
     }
 }
 
-fn interpretScope(ctx: *Context, scope: ast.Scope, freestanding: bool) !void {
-    if (freestanding) try symtable.pushFrame();
-    defer if (freestanding) symtable.popFrame();
+fn interpretScope(ctx: *Context, scope: ast.Scope) !void {
+    try symtable.pushFrame();
+    defer symtable.popFrame();
     for (scope) |stmnt| {
-        try interpretStatement(ctx, stmnt);
+        _ = try interpretStatement(ctx, stmnt);
     }
 }
 
+fn evalReturn(ctx: *Context, ret: ast.Return) !Result {
+    if (ret.expression) |expr| {
+        return try evalExpression(ctx, expr);
+    }
+    return nothing;
+}
+
 //TODO: this only handles external programs
-fn evalPipeline(
-    ctx: *Context,
-    call: ast.Call,
-) !Result {
+fn evalPipeline(ctx: *Context, call: ast.Call) !Result {
     const name = call.token.value;
     if (builtins.lookup(name)) |builtin| {
         return try evalBuiltin(ctx, call, builtin);
+    } else if (ctx.root.functions.getPtr(name)) |func| {
+        return try evalFunctionCall(ctx, func.*, call);
     } else {
         return try evalProc(ctx, call);
     }
 }
 
 fn evalBuiltin(ctx: *Context, call: ast.Call, builtin: *const builtins.Builtin) !Result {
-    var args = try std.ArrayList(*Value).initCapacity(ctx.stmntAlly, call.arguments.len);
+    var args = try evalArgs(ctx, call.arguments);
     defer args.deinit();
-    for (call.arguments) |arg| {
-        switch (try evalExpression(ctx, arg)) {
-            .value => |value| try args.append(value),
-            .nothing => unreachable, // this construct expects only values
+    return try builtin(args.items);
+}
+
+fn evalFunctionCall(ctx: *Context, func: ast.Func, call: ast.Call) !Result {
+    try symtable.pushFrame();
+    defer symtable.popFrame();
+
+    var args = try evalArgs(ctx, call.arguments);
+    defer args.deinit();
+
+    std.debug.assert(func.params.len == args.items.len);
+
+    for (func.params, args.items) |par, arg| {
+        try symtable.put(par.token.value, arg);
+    }
+
+    for (func.scope) |stmnt| {
+        const result = try interpretStatement(ctx, stmnt);
+        switch (result) {
+            .nothing => {
+                switch (stmnt) {
+                    .ret => return nothing,
+                    else => {},
+                }
+            },
+            .value => |val| return something(val),
         }
     }
-    return try builtin(args.items);
+    return nothing;
 }
 
 fn evalProc(ctx: *Context, call: ast.Call) !Result {
@@ -228,7 +262,18 @@ fn proc(ctx: *Context, call: *const ast.Call) !std.process.Child {
     return std.process.Child.init(args.items, ctx.stmntAlly);
 }
 
-pub const EvalError = builtins.BuiltinError || std.process.Child.RunError || values.Errors;
+fn evalArgs(ctx: *Context, arguments: []const ast.Expression) !std.ArrayList(*Value) {
+    var args = try std.ArrayList(*Value).initCapacity(ctx.stmntAlly, arguments.len);
+    for (arguments) |arg| {
+        switch (try evalExpression(ctx, arg)) {
+            .value => |value| try args.append(value),
+            .nothing => unreachable, // this construct expects only values
+        }
+    }
+    return args;
+}
+
+pub const EvalError = builtins.BuiltinError || std.process.Child.RunError || values.Errors || symtable.SymtableError;
 
 fn evalExpression(ctx: *Context, expr: ast.Expression) EvalError!Result {
     return switch (expr) {
