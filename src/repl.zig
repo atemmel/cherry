@@ -18,6 +18,7 @@ const State = struct {
     term: Term,
     home: []const u8 = "",
     histfile_path: []const u8 = "",
+    history_scroll_idx: usize,
 
     pub fn deinit(self: *State) void {
         for (self.history.items) |item| {
@@ -31,6 +32,10 @@ const State = struct {
 
     pub fn writer(self: *State) @TypeOf(self.out_writer.writer()) {
         return self.out_writer.writer();
+    }
+
+    pub fn flush(self: *State) !void {
+        try self.out_writer.flush();
     }
 
     pub fn line(self: *State) []const u8 {
@@ -92,24 +97,24 @@ pub fn repl(pipeline_state: *pipeline.State) !void {
         .pipeline_state = pipeline_state,
         .term = try Term.init(),
         .home = try std.process.getEnvVarOwned(pipeline_state.ally, "HOME"),
+        .history_scroll_idx = 0,
     };
     defer state.deinit();
 
     state.histfile_path = try std.fs.path.join(state.ally, &.{ state.home, ".yash-hist" });
 
     try readHistory(&state);
+    state.history_scroll_idx = state.history.items.len;
 
-    var buffered_writer = std.io.bufferedWriter(std.io.getStdOut().writer());
-    const out = buffered_writer.writer();
+    const out = state.writer();
 
     while (true) {
-        const cwd = try std.fs.cwd().realpath(".", &state.cwd_buffer);
-        const prefix_len = cwd.len + 4;
-        terminal.clearLine(out, prefix_len + 7);
+        const cwd = try state.calcCwd();
+        terminal.clearLine(out, state.prefixLen() + 7 + state.length);
         fmt(out, "{s} |> ", .{cwd});
         fmt(out, "{s}\r", .{state.line()});
-        terminal.moveRight(out, prefix_len + state.cursor);
-        try buffered_writer.flush();
+        terminal.moveRight(out, state.prefixLen() + state.cursor);
+        try state.flush();
         const event = try state.term.readEvent();
         switch (event) {
             .key => |key| {
@@ -122,10 +127,12 @@ pub fn repl(pipeline_state: *pipeline.State) !void {
                 switch (ctrl) {
                     'd' => {
                         fmts(out, "exit");
+                        try state.flush();
                         return;
                     },
                     'c' => {
                         fmts(out, "^C\n\r");
+                        try state.flush();
                         state.length = 0;
                         state.cursor = 0;
                     },
@@ -141,8 +148,12 @@ pub fn repl(pipeline_state: *pipeline.State) !void {
                     else => {}, // ignore
                 }
             },
-            .arrow_down => {},
-            .arrow_up => {},
+            .arrow_down => {
+                nextCommand(&state);
+            },
+            .arrow_up => {
+                previousCommand(&state);
+            },
             .arrow_left => {
                 if (state.cursor > 0) {
                     state.cursor -= 1;
@@ -170,7 +181,7 @@ fn eval(state: *State) !void {
     try state.writer().print("\r\n", .{});
     terminal.clearLine(state.writer(), state.prefixLen());
     try state.term.restore();
-    try state.out_writer.flush();
+    try state.flush();
     defer {
         state.term = Term.init() catch unreachable;
         state.length = 0;
@@ -187,11 +198,15 @@ fn eval(state: *State) !void {
             else => unreachable,
         }
     };
-    try state.out_writer.flush();
+    try state.flush();
     try appendHistory(state);
+    state.history_scroll_idx = state.history.items.len;
 }
 
 fn appendHistory(state: *State) !void {
+    if (state.line().len == 0) {
+        return;
+    }
     const cmd_copy = try state.ally.dupe(u8, state.line());
     try state.history.append(cmd_copy);
 
@@ -213,7 +228,7 @@ fn readHistory(state: *State) !void {
                 "Could not open histfile at {s}, error: {}\r\n",
                 .{ state.histfile_path, e },
             );
-            try state.out_writer.flush();
+            try state.flush();
             return;
         },
     };
@@ -223,7 +238,33 @@ fn readHistory(state: *State) !void {
     var buffered_reader = std.io.bufferedReader(underlying_reader);
     const reader = buffered_reader.reader();
     while (true) {
-        const line = reader.readUntilDelimiterAlloc(state.ally, '\n', 1_000_000) catch return;
+        const line = reader.readUntilDelimiterAlloc(state.ally, '\n', state.buffer.len) catch return;
         try state.history.append(line);
     }
+}
+
+fn previousCommand(state: *State) void {
+    if (state.history_scroll_idx == 0) {
+        return;
+    }
+    state.history_scroll_idx -= 1;
+    const cmd_slice = state.history.items[state.history_scroll_idx];
+    replaceCommand(state, cmd_slice);
+}
+
+fn nextCommand(state: *State) void {
+    if (state.history_scroll_idx == state.history.items.len - 1) {
+        return;
+    }
+    state.history_scroll_idx += 1;
+    const cmd_slice = state.history.items[state.history_scroll_idx];
+    replaceCommand(state, cmd_slice);
+}
+
+fn replaceCommand(state: *State, cmd: []const u8) void {
+    terminal.clearLine(state.writer(), state.prefixLen() + 7 + state.length);
+    @memset(&state.buffer, 0);
+    @memcpy(state.buffer[0..cmd.len], cmd);
+    state.cursor = cmd.len;
+    state.length = cmd.len;
 }
