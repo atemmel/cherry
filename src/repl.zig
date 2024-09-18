@@ -145,6 +145,9 @@ pub fn repl(pipeline_state: *pipeline.State) !void {
                         terminal.moveCursor(state.term.tty.writer(), 0, 0);
                         terminal.clear(out);
                     },
+                    'r' => {
+                        try searchCommand(&state);
+                    },
                     else => {}, // ignore
                 }
             },
@@ -390,5 +393,64 @@ fn tryAutocompletePath(state: *State) !void {
         _ = try std.fmt.bufPrint(state.buffer[state.length - offset ..], "{s}", .{slice});
         state.length += slice.len - offset;
         state.cursor += slice.len - offset;
+    }
+}
+
+fn searchCommand(state: *State) !void {
+    const out = state.writer();
+    while (true) {
+        terminal.clearLine(out, state.prefixLen() + 7 + state.length);
+        fmt(out, "(reverse-search) {s}\r", .{state.line()});
+        terminal.moveRight(out, state.prefixLen() + state.cursor);
+        try state.flush();
+        const event = try state.term.readEvent();
+        switch (event) {
+            .key => |key| {
+                switch (key) {
+                    '\n', '\r' => {},
+                    else => {},
+                }
+            },
+            .ctrl => |ctrl| {
+                switch (ctrl) {
+                    'c' => {
+                        fmts(out, "^C\n\r");
+                        try state.flush();
+                        state.length = 0;
+                        state.cursor = 0;
+                        break;
+                    },
+                    'u' => {
+                        terminal.clearLine(out, state.length + state.prefixLen());
+                        state.length = 0;
+                        state.cursor = 0;
+                    },
+                    'r' => {},
+                    else => {}, // ignore
+                }
+            },
+            .arrow_down => {},
+            .arrow_up => {},
+            .arrow_left => {
+                if (state.cursor > 0) {
+                    state.cursor -= 1;
+                }
+            },
+            .arrow_right => {
+                if (state.cursor < state.length) {
+                    state.cursor += 1;
+                }
+            },
+            .backspace => state.removeKeyAtCursor(),
+            .delete => state.removeKeyBehindCursor(),
+            .home => {
+                state.cursor = 0;
+            },
+            .end => {
+                state.cursor = state.length;
+            },
+            .tab => {},
+            .alt, .escape, .insert, .page_down, .page_up, .unknown => {},
+        }
     }
 }
