@@ -2,6 +2,7 @@ const std = @import("std");
 const pipeline = @import("pipeline.zig");
 const terminal = @import("term.zig");
 const Term = terminal.Term;
+const utils = @import("utils.zig");
 
 const History = std.ArrayList([]const u8);
 
@@ -86,8 +87,7 @@ fn fmts(writer: anytype, comptime str: []const u8) void {
 
 //TODO
 // - display commands in a nice way (colors, etc)
-// - history
-// - tab completion
+// - history search
 
 pub fn repl(pipeline_state: *pipeline.State) !void {
     var state = State{
@@ -171,6 +171,9 @@ pub fn repl(pipeline_state: *pipeline.State) !void {
             },
             .end => {
                 state.cursor = state.length;
+            },
+            .tab => {
+                try tryAutocomplete(&state);
             },
             .alt, .escape, .insert, .page_down, .page_up, .unknown => {},
         }
@@ -274,4 +277,118 @@ fn replaceCommand(state: *State, cmd: []const u8) void {
     @memcpy(state.buffer[0..cmd.len], cmd);
     state.cursor = cmd.len;
     state.length = cmd.len;
+}
+
+fn tryAutocomplete(state: *State) !void {
+    const has_spaces = std.mem.indexOfScalar(u8, state.line(), ' ') != null;
+
+    if (has_spaces) {
+        try tryAutocompletePath(state);
+    } else {
+        try tryAutocompleteCmd(state);
+    }
+}
+
+fn tryAutocompleteCmd(state: *State) !void {
+    if (state.length == 0) {
+        return;
+    }
+    const path = utils.env.get("PATH") orelse {
+        return;
+    };
+
+    var n_hits: usize = 0;
+    var buf: [128]u8 = undefined;
+    var slice: []const u8 = "";
+
+    var it = std.mem.tokenize(u8, path, ":");
+    const out = state.writer();
+    while (it.next()) |p| {
+        var dir = std.fs.cwd().openDir(p, .{ .iterate = true }) catch {
+            continue;
+        };
+        defer dir.close();
+        var dir_it = dir.iterate();
+        while (try dir_it.next()) |entry| {
+            if (entry.kind != .file and entry.kind != .sym_link) {
+                continue;
+            }
+
+            const stat = dir.statFile(entry.name) catch {
+                continue;
+            };
+
+            if (stat.mode & 0b1 == 0) {
+                continue;
+            }
+
+            if (std.mem.startsWith(u8, entry.name, state.line())) {
+                n_hits += 1;
+                if (n_hits == 1) {
+                    slice = try std.fmt.bufPrint(&buf, "{s}", .{entry.name});
+                } else if (n_hits == 2) {
+                    fmt(out, "\r\n{s} ", .{slice});
+                }
+
+                if (n_hits > 1) {
+                    fmt(out, "\r\n{s} ", .{entry.name});
+                }
+            }
+        }
+    }
+    if (n_hits > 1) {
+        fmts(out, "\r\n");
+        try state.flush();
+    }
+
+    if (n_hits == 1) {
+        _ = try std.fmt.bufPrint(&state.buffer, "{s}", .{slice});
+        state.length = slice.len;
+        state.cursor = slice.len;
+    }
+}
+
+fn tryAutocompletePath(state: *State) !void {
+    var n_hits: usize = 0;
+    var buf: [128]u8 = undefined;
+    var slice: []const u8 = "";
+
+    const line = state.line();
+
+    var last_cmd_begin = std.mem.lastIndexOfScalar(u8, line, ' ') orelse line.len;
+    if (last_cmd_begin < line.len) {
+        last_cmd_begin += 1;
+    }
+    const last_cmd = line[last_cmd_begin..];
+
+    const out = state.writer();
+    var dir = try std.fs.cwd().openDir(".", .{ .iterate = true });
+    defer dir.close();
+    var dir_it = dir.iterate();
+    while (try dir_it.next()) |entry| {
+        if (std.mem.startsWith(u8, entry.name, last_cmd)) {
+            n_hits += 1;
+            if (n_hits == 1) {
+                slice = try std.fmt.bufPrint(&buf, "{s}", .{entry.name});
+            } else if (n_hits == 2) {
+                fmt(out, "\r\n{s} ", .{slice});
+            }
+
+            if (n_hits > 1) {
+                fmt(out, "\r\n{s} ", .{entry.name});
+            }
+        }
+    }
+
+    if (n_hits > 1) {
+        fmts(out, "\r\n");
+        try state.flush();
+    }
+
+    if (n_hits == 1) {
+        const offset = line.len - last_cmd_begin;
+        _ = try std.fmt.bufPrint(state.buffer[state.length - offset ..], "{s}", .{slice});
+        state.length += slice.len - offset;
+        state.cursor += slice.len - offset;
+    }
 }

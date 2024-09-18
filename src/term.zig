@@ -33,6 +33,7 @@ pub const Term = struct {
         page_down: void,
         page_up: void,
         unknown: void,
+        tab: void,
     };
 
     pub fn init() !Term {
@@ -155,7 +156,8 @@ pub const Term = struct {
             'f' & '\x1F' => Event{ .ctrl = 'f' },
             'g' & '\x1F' => Event{ .ctrl = 'g' },
             'h' & '\x1F' => Event{ .ctrl = 'h' },
-            'i' & '\x1F' => Event{ .ctrl = 'i' },
+            // Duplicate
+            //'i' & '\x1F' => Event{ .ctrl = 'i' },
             // Duplicate
             //'j' & '\x1F' => Event{ .ctrl = 'j' },
             'k' & '\x1F' => Event{ .ctrl = 'k' },
@@ -175,6 +177,7 @@ pub const Term = struct {
             'x' & '\x1F' => Event{ .ctrl = 'x' },
             'y' & '\x1F' => Event{ .ctrl = 'y' },
             'z' & '\x1F' => Event{ .ctrl = 'z' },
+            9 => .tab,
             127 => .backspace,
             else => Event{ .key = byte },
         };
