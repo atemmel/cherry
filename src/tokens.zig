@@ -155,7 +155,20 @@ fn lexSymbol(state: *LexState) ?Token {
         ')' => .RParens,
         '{' => .LBrace,
         '}' => .RBrace,
-        '[' => .LBracket,
+        '[' => blk: {
+            state.next();
+            if (state.eof() or state.get() != '=') {
+                state.idx -= 1;
+                break :blk .LBracket;
+            }
+
+            state.next();
+            if (state.eof() or state.get() != ']') {
+                state.idx -= 2;
+                break :blk .LBracket;
+            }
+            break :blk .EmptyRecord;
+        },
         ']' => .RBracket,
         else => unreachable,
     };

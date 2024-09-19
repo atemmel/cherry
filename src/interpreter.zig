@@ -86,6 +86,7 @@ fn interpretAssign(ctx: *Context, assign: ast.Assignment) !void {
     const was_owned = switch (assign.expression) {
         .variable => true,
         .list_literal,
+        .record_literal,
         .bareword,
         .bool_literal,
         .integer_literal,
@@ -284,6 +285,7 @@ fn evalExpression(ctx: *Context, expr: ast.Expression) EvalError!Result {
         .variable => |variable| something(evalVariable(variable)),
         .capturing_call => |cap_inv| try evalPipeline(ctx, cap_inv),
         .list_literal => |list| something(try evalListLiteral(ctx, list)),
+        .record_literal => |record| something(try evalRecordLiteral(ctx, record)),
     };
 }
 
@@ -342,4 +344,10 @@ fn evalListLiteral(ctx: *Context, list_literal: ast.ListLiteral) !*Value {
     const value = try gc.list(list);
     try symtable.appendRoot(value);
     return value;
+}
+
+fn evalRecordLiteral(ctx: *Context, record_literal: ast.RecordLiteral) !*Value {
+    _ = ctx; // autofix
+    _ = record_literal; // autofix
+    return gc.emptyRecord();
 }

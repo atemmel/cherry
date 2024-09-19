@@ -52,6 +52,7 @@ pub const Expression = union(enum) {
     variable: Variable,
     capturing_call: Call,
     list_literal: ListLiteral,
+    record_literal: RecordLiteral,
 };
 
 pub const Call = struct {
@@ -540,6 +541,10 @@ fn parseExpression(ctx: *Context) errors!?Expression {
         return Expression{
             .list_literal = list,
         };
+    } else if (try parseRecordLiteral(ctx)) |record| {
+        return Expression{
+            .record_literal = record,
+        };
     }
     return null;
 }
@@ -608,6 +613,14 @@ fn parseListLiteral(ctx: *Context) !?ListLiteral {
     return ListLiteral{
         .token = token,
         .items = try exprs.toOwnedSlice(),
+    };
+}
+
+fn parseRecordLiteral(ctx: *Context) !?RecordLiteral {
+    const token = ctx.getIf(.EmptyRecord) orelse return null;
+    return RecordLiteral{
+        .token = token,
+        .items = &.{},
     };
 }
 

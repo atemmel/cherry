@@ -117,6 +117,18 @@ pub fn emptyList() !*values.Value {
     return list(values.List.init(backing_allocator));
 }
 
+pub fn record(r: values.Record) !*values.Value {
+    return push(.{
+        .as = .{
+            .record = r,
+        },
+    });
+}
+
+pub fn emptyRecord() !*values.Value {
+    return record(values.Record.init(backing_allocator));
+}
+
 pub fn cloneOrReference(origin: *values.Value) !*values.Value {
     return switch (origin.as) {
         // clone

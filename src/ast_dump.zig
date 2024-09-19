@@ -134,6 +134,7 @@ fn dumpExpression(expr: ast.Expression) void {
         .variable => |variable| dumpVariable(variable),
         .capturing_call => |inv| dumpCall(inv),
         .list_literal => |list| dumpListLiteral(list),
+        .record_literal => |record| dumpRecordLiteral(record),
     }
 }
 
@@ -167,5 +168,19 @@ fn dumpListLiteral(list: ast.ListLiteral) void {
     leaf("ListLiteral: []\n", .{});
     for (list.items) |expr| {
         dumpExpression(expr);
+    }
+}
+
+fn dumpRecordLiteral(record: ast.RecordLiteral) void {
+    leaf("RecordLiteral: [=]\n", .{});
+    defer up();
+    for (record.items) |pair| {
+        leaf("Key: ", .{});
+        defer up();
+        switch (pair.key) {
+            .string => |str| dumpStringLiteral(str),
+            .bareword => |bw| dumpBareword(bw),
+        }
+        dumpExpression(pair.value);
     }
 }
