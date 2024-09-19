@@ -83,7 +83,19 @@ pub const Value = struct {
                 }
                 try writer.print("]", .{});
             },
-            .record => unreachable,
+            .record => |r| {
+                try writer.print("[", .{});
+                var it = r.iterator();
+                var entered = false;
+                while (it.next()) |pair| {
+                    try writer.print(" {s} = {any} ", .{ pair.key_ptr.*, pair.value_ptr.* });
+                    entered = true;
+                }
+                if (!entered) {
+                    try writer.print("=", .{});
+                }
+                try writer.print("]", .{});
+            },
         }
     }
 

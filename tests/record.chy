@@ -2,7 +2,7 @@ record := [=]
 
 say $record
 
-#$record:name = bond
+$record:name = bond
 
 #say $record
 
