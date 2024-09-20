@@ -40,8 +40,14 @@ pub const RecordLiteral = struct {
     items: []const Pair,
 };
 
+pub const Accessor = struct {
+    token: *const Token,
+    child: ?*const Accessor,
+};
+
 pub const Variable = struct {
     token: *const Token,
+    accessor: ?Accessor,
 };
 
 pub const Expression = union(enum) {
@@ -68,7 +74,7 @@ pub const VarDecl = struct {
 };
 
 pub const Assignment = struct {
-    token: *const Token, // contains variable
+    variable: Variable,
     expression: Expression,
 };
 
@@ -193,7 +199,9 @@ pub fn parse(state: *PipelineState) !Root {
     }
 
     // being unable to parse statements without running out of tokens is an error
-    if (!ctx.eot()) unreachable;
+    if (!ctx.eot()) {
+        return ctx.err(.{ .msg = "Expected statement" });
+    }
 
     return Root{
         .statements = try statements.toOwnedSlice(),
@@ -272,7 +280,7 @@ fn parseVarDeclaration(ctx: *Context) !?VarDecl {
 fn parseAssignment(ctx: *Context) !?Assignment {
     const checkpoint = ctx.idx;
 
-    const variable = ctx.getIf(.Variable) orelse return null;
+    const variable = try parseVariable(ctx) orelse return null;
     _ = ctx.getIf(.Assign) orelse {
         ctx.idx = checkpoint;
         return null;
@@ -292,7 +300,7 @@ fn parseAssignment(ctx: *Context) !?Assignment {
     }
 
     return .{
-        .token = variable,
+        .variable = variable,
         .expression = expr,
     };
 }
@@ -525,7 +533,7 @@ fn parseExpression(ctx: *Context) errors!?Expression {
         return Expression{
             .string_literal = string_literal,
         };
-    } else if (parseVariable(ctx)) |variable| {
+    } else if (try parseVariable(ctx)) |variable| {
         return Expression{
             .variable = variable,
         };
@@ -624,12 +632,25 @@ fn parseRecordLiteral(ctx: *Context) !?RecordLiteral {
     };
 }
 
-fn parseVariable(ctx: *Context) ?Variable {
-    const token = ctx.getIf(.Variable);
-    if (token == null) {
-        return null;
-    }
+fn parseVariable(ctx: *Context) !?Variable {
+    const token = ctx.getIf(.Variable) orelse return null;
+
+    _ = ctx.getIfBoth(.Colon, .Colon) orelse {
+        return Variable{
+            .token = token,
+            .accessor = null,
+        };
+    };
+
+    const bareword = ctx.getIf(.Bareword) orelse {
+        return ctx.err(.{ .msg = "expected member name (bareword)" });
+    };
+
     return Variable{
-        .token = token.?,
+        .token = token,
+        .accessor = Accessor{
+            .token = bareword,
+            .child = null, //TODO: nested accessors
+        },
     };
 }

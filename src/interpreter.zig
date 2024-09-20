@@ -77,7 +77,8 @@ fn interpretVarDecl(ctx: *Context, var_decl: ast.VarDecl) !void {
 }
 
 fn interpretAssign(ctx: *Context, assign: ast.Assignment) !void {
-    _ = symtable.get(assign.token.value) orelse unreachable;
+    std.debug.assert(assign.variable.accessor == null); //TODO:
+    _ = symtable.get(assign.variable.token.value) orelse unreachable;
     const value = switch (try evalExpression(ctx, assign.expression)) {
         .value => |v| v,
         .nothing => unreachable, // Requires value
@@ -96,7 +97,7 @@ fn interpretAssign(ctx: *Context, assign: ast.Assignment) !void {
     };
 
     const value_to_insert = if (was_owned) try gc.cloneOrReference(value) else value;
-    try symtable.put(assign.token.value, value_to_insert);
+    try symtable.put(assign.variable.token.value, value_to_insert);
 }
 
 fn interpretBranches(ctx: *Context, branches: ast.Branches) !void {

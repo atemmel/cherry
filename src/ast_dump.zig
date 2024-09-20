@@ -62,7 +62,8 @@ fn dumpVarDecl(var_decl: ast.VarDecl) void {
 
 fn dumpAssign(assign: ast.Assignment) void {
     defer up();
-    leaf("Assignment to: '{s}'\n", .{assign.token.value});
+    leaf("Assignment to: '{s}'\n", .{assign.variable.token.value});
+    std.debug.assert(assign.variable.accessor == null);
     dumpExpression(assign.expression);
 }
 

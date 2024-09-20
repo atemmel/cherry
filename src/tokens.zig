@@ -167,6 +167,7 @@ fn lexSymbol(state: *LexState) ?Token {
                 state.idx -= 2;
                 break :blk .LBracket;
             }
+            state.next();
             break :blk .EmptyRecord;
         },
         ']' => .RBracket,
