@@ -40,25 +40,29 @@ pub const RecordLiteral = struct {
     items: []const Pair,
 };
 
+pub const Member = Bareword;
+
 pub const Accessor = struct {
-    token: *const Token,
+    member: Member,
     child: ?*const Accessor,
 };
 
 pub const Variable = struct {
     token: *const Token,
-    accessor: ?Accessor,
 };
 
-pub const Expression = union(enum) {
-    bareword: Bareword,
-    string_literal: StringLiteral,
-    integer_literal: IntegerLiteral,
-    bool_literal: BoolLiteral,
-    variable: Variable,
-    capturing_call: Call,
-    list_literal: ListLiteral,
-    record_literal: RecordLiteral,
+pub const Expression = struct {
+    as: union(enum) {
+        bareword: Bareword,
+        string_literal: StringLiteral,
+        integer_literal: IntegerLiteral,
+        bool_literal: BoolLiteral,
+        variable: Variable,
+        capturing_call: Call,
+        list_literal: ListLiteral,
+        record_literal: RecordLiteral,
+    },
+    accessor: ?Accessor,
 };
 
 pub const Call = struct {
@@ -75,6 +79,7 @@ pub const VarDecl = struct {
 
 pub const Assignment = struct {
     variable: Variable,
+    accessor: ?Accessor,
     expression: Expression,
 };
 
@@ -285,6 +290,9 @@ fn parseAssignment(ctx: *Context) !?Assignment {
         ctx.idx = checkpoint;
         return null;
     };
+
+    const accessor = try parseAccessorChain(ctx);
+
     // Needs expression
     const expr = try parseExpression(ctx) orelse {
         return ctx.err(.{
@@ -301,6 +309,7 @@ fn parseAssignment(ctx: *Context) !?Assignment {
 
     return .{
         .variable = variable,
+        .accessor = accessor,
         .expression = expr,
     };
 }
@@ -523,35 +532,59 @@ fn parseCapturingCall(ctx: *Context) errors!?Call {
 fn parseExpression(ctx: *Context) errors!?Expression {
     if (try parseCapturingCall(ctx)) |capturing_inv| {
         return Expression{
-            .capturing_call = capturing_inv,
+            .as = .{
+                .capturing_call = capturing_inv,
+            },
+            .accessor = try parseAccessorChain(ctx),
         };
     } else if (parseBareword(ctx)) |bareword| {
         return Expression{
-            .bareword = bareword,
+            .as = .{
+                .bareword = bareword,
+            },
+            .accessor = try parseAccessorChain(ctx),
         };
     } else if (parseStringLiteral(ctx)) |string_literal| {
         return Expression{
-            .string_literal = string_literal,
+            .as = .{
+                .string_literal = string_literal,
+            },
+            .accessor = null,
         };
     } else if (try parseVariable(ctx)) |variable| {
         return Expression{
-            .variable = variable,
+            .as = .{
+                .variable = variable,
+            },
+            .accessor = try parseAccessorChain(ctx),
         };
     } else if (parseIntegerLiteral(ctx)) |integer_literal| {
         return Expression{
-            .integer_literal = integer_literal,
+            .as = .{
+                .integer_literal = integer_literal,
+            },
+            .accessor = null,
         };
     } else if (parseBoolLiteral(ctx)) |bool_literal| {
         return Expression{
-            .bool_literal = bool_literal,
+            .as = .{
+                .bool_literal = bool_literal,
+            },
+            .accessor = null,
         };
     } else if (try parseListLiteral(ctx)) |list| {
         return Expression{
-            .list_literal = list,
+            .as = .{
+                .list_literal = list,
+            },
+            .accessor = null,
         };
     } else if (try parseRecordLiteral(ctx)) |record| {
         return Expression{
-            .record_literal = record,
+            .as = .{
+                .record_literal = record,
+            },
+            .accessor = null,
         };
     }
     return null;
@@ -635,22 +668,38 @@ fn parseRecordLiteral(ctx: *Context) !?RecordLiteral {
 fn parseVariable(ctx: *Context) !?Variable {
     const token = ctx.getIf(.Variable) orelse return null;
 
-    _ = ctx.getIfBoth(.Colon, .Colon) orelse {
-        return Variable{
-            .token = token,
-            .accessor = null,
-        };
-    };
-
-    const bareword = ctx.getIf(.Bareword) orelse {
-        return ctx.err(.{ .msg = "expected member name (bareword)" });
-    };
-
     return Variable{
         .token = token,
-        .accessor = Accessor{
-            .token = bareword,
-            .child = null, //TODO: nested accessors
+    };
+}
+
+fn parseAccessorChain(ctx: *Context) !?Accessor {
+    var first: Accessor = .{
+        .member = try parseMember(ctx) orelse {
+            return null;
         },
+        .child = null,
+    };
+
+    var ptr = &first;
+
+    while (try parseMember(ctx)) |member| {
+        const child = try ctx.ally.create(Accessor);
+        child.member = member;
+
+        ptr.child = child;
+        ptr = child;
+    }
+
+    return first;
+}
+
+fn parseMember(ctx: *Context) !?Member {
+    _ = ctx.getIf(.Colon) orelse {
+        return null;
+    };
+
+    return parseBareword(ctx) orelse {
+        return ctx.err(.{ .msg = "expected member name (bareword)" });
     };
 }

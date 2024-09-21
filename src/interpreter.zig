@@ -77,14 +77,14 @@ fn interpretVarDecl(ctx: *Context, var_decl: ast.VarDecl) !void {
 }
 
 fn interpretAssign(ctx: *Context, assign: ast.Assignment) !void {
-    std.debug.assert(assign.variable.accessor == null); //TODO:
+    std.debug.assert(assign.accessor == null); //TODO:
     _ = symtable.get(assign.variable.token.value) orelse unreachable;
     const value = switch (try evalExpression(ctx, assign.expression)) {
         .value => |v| v,
         .nothing => unreachable, // Requires value
     };
 
-    const was_owned = switch (assign.expression) {
+    const was_owned = switch (assign.expression.as) {
         .variable => true,
         .list_literal,
         .record_literal,
@@ -278,7 +278,7 @@ fn evalArgs(ctx: *Context, arguments: []const ast.Expression) !std.ArrayList(*Va
 pub const EvalError = builtins.BuiltinError || std.process.Child.RunError || values.Errors || symtable.SymtableError;
 
 fn evalExpression(ctx: *Context, expr: ast.Expression) EvalError!Result {
-    return switch (expr) {
+    return switch (expr.as) {
         .bareword => |bw| something(try evalBareword(bw)),
         .string_literal => |str| something(try evalStringLiteral(ctx, str)),
         .integer_literal => |int| something(try evalIntegerLiteral(int)),

@@ -63,7 +63,7 @@ fn dumpVarDecl(var_decl: ast.VarDecl) void {
 fn dumpAssign(assign: ast.Assignment) void {
     defer up();
     leaf("Assignment to: '{s}'\n", .{assign.variable.token.value});
-    std.debug.assert(assign.variable.accessor == null);
+    std.debug.assert(assign.accessor == null);
     dumpExpression(assign.expression);
 }
 
@@ -127,7 +127,7 @@ fn dumpCall(inv: ast.Call) void {
 fn dumpExpression(expr: ast.Expression) void {
     defer up();
     leaf("Expression:\n", .{});
-    switch (expr) {
+    switch (expr.as) {
         .bareword => |bw| dumpBareword(bw),
         .string_literal => |str| dumpStringLiteral(str),
         .integer_literal => |int| dumpIntegerLiteral(int),
