@@ -63,7 +63,9 @@ fn dumpVarDecl(var_decl: ast.VarDecl) void {
 fn dumpAssign(assign: ast.Assignment) void {
     defer up();
     leaf("Assignment to: '{s}'\n", .{assign.variable.token.value});
-    std.debug.assert(assign.accessor == null);
+    if (assign.accessor) |acc| {
+        dumpAccessor(acc);
+    }
     dumpExpression(assign.expression);
 }
 
@@ -137,6 +139,9 @@ fn dumpExpression(expr: ast.Expression) void {
         .list_literal => |list| dumpListLiteral(list),
         .record_literal => |record| dumpRecordLiteral(record),
     }
+    if (expr.accessor) |accessor| {
+        dumpAccessor(accessor);
+    }
 }
 
 fn dumpBareword(bw: ast.Bareword) void {
@@ -183,5 +188,14 @@ fn dumpRecordLiteral(record: ast.RecordLiteral) void {
             .bareword => |bw| dumpBareword(bw),
         }
         dumpExpression(pair.value);
+    }
+}
+
+fn dumpAccessor(acc: ast.Accessor) void {
+    leaf("Accessor:\n", .{});
+    defer up();
+    dumpBareword(acc.member);
+    if (acc.child) |child| {
+        dumpAccessor(child.*);
     }
 }

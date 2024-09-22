@@ -3,10 +3,10 @@ const gc = @import("gc.zig");
 const symtable = @import("symtable.zig");
 const indexOfPos = std.mem.indexOfPos;
 
-pub const Errors = error{ MismatchedTypeError, MismatchedBraces, BadLookup };
+pub const Errors = error{ MismatchedTypeError, MismatchedBraces, BadLookup, MembersNotAllowed };
 
 pub const List = std.ArrayList(*Value);
-pub const Record = std.StringHashMap(*Value);
+pub const Record = std.StringArrayHashMap(*Value);
 
 pub const Value = struct {
     as: union(enum) {
@@ -35,9 +35,9 @@ pub const Value = struct {
                 }
             },
             .record => |r| {
-                var it = r.valueIterator();
-                while (it.next()) |val| {
-                    val.*.mark();
+                var it = r.iterator();
+                while (it.next()) |el| {
+                    el.value_ptr.*.mark();
                 }
             },
         }
@@ -175,9 +175,50 @@ pub const Value = struct {
                 },
                 .float, .integer, .boolean, .string, .record => return Errors.MismatchedTypeError,
             },
-            .record => unreachable,
+            .record => |lhs| switch (other.as) {
+                .record => |rhs| {
+                    const lhs_count = lhs.count();
+                    const rhs_count = rhs.count();
+                    if (lhs_count < rhs_count) {
+                        return .less;
+                    }
+                    if (lhs_count > rhs_count) {
+                        return .greater;
+                    }
+
+                    var lhs_it = lhs.iterator();
+                    var rhs_it = rhs.iterator();
+
+                    while (lhs_it.next()) |a| {
+                        const b = rhs_it.next().?;
+                        const key_order = std.mem.order(u8, a.key_ptr.*, b.key_ptr.*);
+                        switch (key_order) {
+                            .lt => return .less,
+                            .gt => return .greater,
+                            .eq => {},
+                        }
+
+                        const value_order = try a.value_ptr.*.compare(b.value_ptr.*);
+                        switch (value_order) {
+                            .less => return .less,
+                            .greater => return .greater,
+                            .equal => {},
+                        }
+                    }
+
+                    return .equal;
+                },
+                .float, .integer, .boolean, .string, .list => return Errors.MismatchedTypeError,
+            },
         }
         unreachable;
+    }
+
+    pub fn access(self: *const Value) !*Record {
+        return switch (self.as) {
+            .record => |*r| r,
+            else => Errors.MembersNotAllowed,
+        };
     }
 
     pub fn interpolate(self: *const Value, ally: std.mem.Allocator) !*Value {

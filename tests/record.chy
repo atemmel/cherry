@@ -1,13 +1,15 @@
 record := [=]
 
+assert (== [=] $record)
+
 say $record
 
 $record:name = bond
 
-#say $record
+say $record:name
 
-#say $record:name
+assert (== bond $record:name)
 
+# Not sure if I like these two:
 #$record[foo] = baz
-
 #say $record[foo]

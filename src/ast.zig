@@ -286,12 +286,11 @@ fn parseAssignment(ctx: *Context) !?Assignment {
     const checkpoint = ctx.idx;
 
     const variable = try parseVariable(ctx) orelse return null;
+    const accessor = try parseAccessorChain(ctx);
     _ = ctx.getIf(.Assign) orelse {
         ctx.idx = checkpoint;
         return null;
     };
-
-    const accessor = try parseAccessorChain(ctx);
 
     // Needs expression
     const expr = try parseExpression(ctx) orelse {

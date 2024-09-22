@@ -77,8 +77,8 @@ fn interpretVarDecl(ctx: *Context, var_decl: ast.VarDecl) !void {
 }
 
 fn interpretAssign(ctx: *Context, assign: ast.Assignment) !void {
-    std.debug.assert(assign.accessor == null); //TODO:
-    _ = symtable.get(assign.variable.token.value) orelse unreachable;
+    const variable = symtable.get(assign.variable.token.value) orelse unreachable;
+
     const value = switch (try evalExpression(ctx, assign.expression)) {
         .value => |v| v,
         .nothing => unreachable, // Requires value
@@ -97,7 +97,20 @@ fn interpretAssign(ctx: *Context, assign: ast.Assignment) !void {
     };
 
     const value_to_insert = if (was_owned) try gc.cloneOrReference(value) else value;
-    try symtable.put(assign.variable.token.value, value_to_insert);
+    if (assign.accessor) |*accessor| {
+        var current = accessor;
+        var record = variable;
+        while (true) {
+            if (current.child == null) {
+                try record.as.record.put(current.member.token.value, value_to_insert);
+                break;
+            }
+            record = record.as.record.get(current.member.token.value) orelse unreachable;
+            current = current.child.?;
+        }
+    } else {
+        try symtable.put(assign.variable.token.value, value_to_insert);
+    }
 }
 
 fn interpretBranches(ctx: *Context, branches: ast.Branches) !void {
@@ -278,7 +291,7 @@ fn evalArgs(ctx: *Context, arguments: []const ast.Expression) !std.ArrayList(*Va
 pub const EvalError = builtins.BuiltinError || std.process.Child.RunError || values.Errors || symtable.SymtableError;
 
 fn evalExpression(ctx: *Context, expr: ast.Expression) EvalError!Result {
-    return switch (expr.as) {
+    const base_expr = switch (expr.as) {
         .bareword => |bw| something(try evalBareword(bw)),
         .string_literal => |str| something(try evalStringLiteral(ctx, str)),
         .integer_literal => |int| something(try evalIntegerLiteral(int)),
@@ -288,6 +301,19 @@ fn evalExpression(ctx: *Context, expr: ast.Expression) EvalError!Result {
         .list_literal => |list| something(try evalListLiteral(ctx, list)),
         .record_literal => |record| something(try evalRecordLiteral(ctx, record)),
     };
+    if (expr.accessor) |*accessor| {
+        var current = accessor;
+        var record = base_expr.value;
+        while (true) {
+            if (current.child == null) {
+                return something(record.as.record.get(current.member.token.value) orelse unreachable);
+            }
+            record = record.as.record.get(current.member.token.value) orelse unreachable;
+            current = current.child.?;
+        }
+    } else {
+        return base_expr;
+    }
 }
 
 fn evalBareword(bw: ast.Bareword) !*Value {
