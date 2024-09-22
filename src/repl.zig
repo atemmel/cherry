@@ -11,7 +11,7 @@ const State = struct {
     ally: std.mem.Allocator,
     out_writer: std.io.BufferedWriter(4096, std.fs.File.Writer),
     history: History,
-    cwd_buffer: [1024]u8 = undefined,
+    cwd_buffer: [std.fs.max_path_bytes]u8 = undefined,
     cwd: []const u8 = "",
     buffer: [4096]u8 = undefined,
     length: usize = 0,
@@ -20,6 +20,13 @@ const State = struct {
     home: []const u8 = "",
     histfile_path: []const u8 = "",
     history_scroll_idx: usize,
+    search_idx: ?usize = null,
+    search_reached_end: bool = false,
+
+    mode: enum {
+        prompt,
+        search,
+    } = .prompt,
 
     pub fn deinit(self: *State) void {
         for (self.history.items) |item| {
@@ -70,8 +77,44 @@ const State = struct {
         }
     }
 
+    pub fn writePrefix(self: *State) !void {
+        const out = self.writer();
+        terminal.clearLine(out, self.prefixLen() + 7 + self.length);
+        switch (self.mode) {
+            .prompt => {
+                const cwd = try self.calcCwd();
+                fmt(out, "{s} |> {s}\r", .{ cwd, self.line() });
+            },
+            .search => {
+                if (self.search_idx) |idx| {
+                    if (self.search_reached_end) {
+                        fmt(out, "(reverse-search) {s} -> {s} (Search reached end)\r", .{ self.line(), self.history.items[idx] });
+                    } else {
+                        fmt(out, "(reverse-search) {s} -> {s}\r", .{ self.line(), self.history.items[idx] });
+                    }
+                } else {
+                    fmt(out, "(reverse-search) {s}\r", .{self.line()});
+                }
+            },
+        }
+        terminal.moveRight(out, self.prefixLen() + self.cursor);
+        try self.flush();
+    }
+
     pub fn prefixLen(self: *State) usize {
-        return self.cwd.len + 4;
+        return switch (self.mode) {
+            .prompt => self.cwd.len + 4,
+            .search => blk: {
+                var sum = "(reverse-search) ".len;
+                if (self.search_idx) |idx| {
+                    sum += " -> ".len + self.history.items[idx].len;
+                    if (self.search_reached_end) {
+                        sum += " (Search reached end)".len;
+                    }
+                }
+                break :blk sum;
+            },
+        };
     }
 };
 
@@ -87,7 +130,6 @@ fn fmts(writer: anytype, comptime str: []const u8) void {
 
 //TODO
 // - display commands in a nice way (colors, etc)
-// - history search
 // - aliases
 
 pub fn repl(pipeline_state: *pipeline.State) !void {
@@ -110,18 +152,33 @@ pub fn repl(pipeline_state: *pipeline.State) !void {
     const out = state.writer();
 
     while (true) {
-        const cwd = try state.calcCwd();
-        terminal.clearLine(out, state.prefixLen() + 7 + state.length);
-        fmt(out, "{s} |> ", .{cwd});
-        fmt(out, "{s}\r", .{state.line()});
-        terminal.moveRight(out, state.prefixLen() + state.cursor);
-        try state.flush();
+        try state.writePrefix();
         const event = try state.term.readEvent();
         switch (event) {
             .key => |key| {
                 switch (key) {
-                    '\n', '\r' => try eval(&state),
-                    else => state.writeKeyAtCursor(key),
+                    '\r' => switch (state.mode) {
+                        .prompt => try eval(&state),
+                        .search => {
+                            if (state.search_idx) |idx| { // if holds a match from history
+                                try state.flush();
+                                const match = state.history.items[idx];
+                                replaceCommand(&state, match);
+                                state.mode = .prompt;
+                                try state.writePrefix();
+                                try eval(&state);
+                            }
+                            // otherwise, ignore
+                        },
+                    },
+                    '\n' => {},
+                    else => switch (state.mode) {
+                        .prompt => state.writeKeyAtCursor(key),
+                        .search => {
+                            state.writeKeyAtCursor(key);
+                            try reverseSearch(&state, .reset);
+                        },
+                    },
                 }
             },
             .ctrl => |ctrl| {
@@ -136,6 +193,7 @@ pub fn repl(pipeline_state: *pipeline.State) !void {
                         try state.flush();
                         state.length = 0;
                         state.cursor = 0;
+                        state.mode = .prompt;
                     },
                     'u' => {
                         terminal.clearLine(out, state.length + state.prefixLen());
@@ -147,16 +205,32 @@ pub fn repl(pipeline_state: *pipeline.State) !void {
                         terminal.clear(out);
                     },
                     'r' => {
-                        try searchCommand(&state);
+                        switch (state.mode) {
+                            .prompt => {
+                                terminal.clearLine(out, state.length + state.prefixLen());
+                                state.length = 0;
+                                state.cursor = 0;
+                                state.mode = .search;
+                            },
+                            .search => {
+                                try reverseSearch(&state, .forward);
+                            },
+                        }
                     },
                     else => {}, // ignore
                 }
             },
-            .arrow_down => {
-                nextCommand(&state);
+            .arrow_down => switch (state.mode) {
+                .prompt => {
+                    nextCommand(&state);
+                },
+                .search => {},
             },
-            .arrow_up => {
-                previousCommand(&state);
+            .arrow_up => switch (state.mode) {
+                .prompt => {
+                    previousCommand(&state);
+                },
+                .search => {},
             },
             .arrow_left => {
                 if (state.cursor > 0) {
@@ -168,16 +242,29 @@ pub fn repl(pipeline_state: *pipeline.State) !void {
                     state.cursor += 1;
                 }
             },
-            .backspace => state.removeKeyAtCursor(),
-            .delete => state.removeKeyBehindCursor(),
+            .backspace => {
+                state.removeKeyAtCursor();
+                if (state.mode == .search) {
+                    try reverseSearch(&state, .reset);
+                }
+            },
+            .delete => {
+                state.removeKeyBehindCursor();
+                if (state.mode == .search) {
+                    try reverseSearch(&state, .reset);
+                }
+            },
             .home => {
                 state.cursor = 0;
             },
             .end => {
                 state.cursor = state.length;
             },
-            .tab => {
-                try tryAutocomplete(&state);
+            .tab => switch (state.mode) {
+                .prompt => {
+                    try tryAutocomplete(&state);
+                },
+                .search => {},
             },
             .alt, .escape, .insert, .page_down, .page_up, .unknown => {},
         }
@@ -206,7 +293,6 @@ fn eval(state: *State) !void {
         }
     };
     try state.flush();
-    try appendHistory(state);
     state.history_scroll_idx = state.history.items.len;
 
     appendHistory(state) catch |e| {
@@ -219,6 +305,13 @@ fn appendHistory(state: *State) !void {
     if (state.line().len == 0) {
         return;
     }
+
+    if (state.history.getLastOrNull()) |prev| {
+        if (std.mem.eql(u8, prev, state.line())) {
+            return;
+        }
+    }
+
     const cmd_copy = try state.ally.dupe(u8, state.line());
     try state.history.append(cmd_copy);
 
@@ -340,6 +433,7 @@ fn tryAutocompleteCmd(state: *State) !void {
             }
         }
     }
+
     if (n_hits > 1) {
         fmts(out, "\r\n");
         try state.flush();
@@ -397,61 +491,43 @@ fn tryAutocompletePath(state: *State) !void {
     }
 }
 
-fn searchCommand(state: *State) !void {
-    const out = state.writer();
-    while (true) {
-        terminal.clearLine(out, state.prefixLen() + 7 + state.length);
-        fmt(out, "(reverse-search) {s}\r", .{state.line()});
-        terminal.moveRight(out, state.prefixLen() + state.cursor);
-        try state.flush();
-        const event = try state.term.readEvent();
-        switch (event) {
-            .key => |key| {
-                switch (key) {
-                    '\n', '\r' => {},
-                    else => {},
-                }
-            },
-            .ctrl => |ctrl| {
-                switch (ctrl) {
-                    'c' => {
-                        fmts(out, "^C\n\r");
-                        try state.flush();
-                        state.length = 0;
-                        state.cursor = 0;
-                        break;
-                    },
-                    'u' => {
-                        terminal.clearLine(out, state.length + state.prefixLen());
-                        state.length = 0;
-                        state.cursor = 0;
-                    },
-                    'r' => {},
-                    else => {}, // ignore
-                }
-            },
-            .arrow_down => {},
-            .arrow_up => {},
-            .arrow_left => {
-                if (state.cursor > 0) {
-                    state.cursor -= 1;
-                }
-            },
-            .arrow_right => {
-                if (state.cursor < state.length) {
-                    state.cursor += 1;
-                }
-            },
-            .backspace => state.removeKeyAtCursor(),
-            .delete => state.removeKeyBehindCursor(),
-            .home => {
-                state.cursor = 0;
-            },
-            .end => {
-                state.cursor = state.length;
-            },
-            .tab => {},
-            .alt, .escape, .insert, .page_down, .page_up, .unknown => {},
+fn reverseSearch(state: *State, reset: enum { reset, forward }) !void {
+    state.search_reached_end = false;
+
+    if (state.history.items.len == 0) {
+        return;
+    }
+
+    terminal.clearLine(state.writer(), state.prefixLen() + 7 + state.length);
+
+    if (state.line().len == 0) {
+        state.search_idx = null;
+        return;
+    }
+
+    if (reset == .reset) {
+        state.search_idx = null;
+    }
+
+    var start_index = state.search_idx orelse state.history.items.len;
+
+    if (start_index == 0) {
+        state.search_reached_end = true;
+        return;
+    }
+
+    while (true) : (start_index -= 1) {
+        const has_substring = std.mem.indexOfPos(u8, state.history.items[start_index - 1], 0, state.line()) != null;
+        if (has_substring) {
+            state.search_idx = start_index - 1;
+            return;
+        }
+        if (start_index == 1) {
+            state.search_reached_end = true;
+            if (reset == .reset) {
+                state.search_idx = null;
+            }
+            break;
         }
     }
 }
