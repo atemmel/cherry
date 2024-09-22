@@ -22,6 +22,8 @@ const State = struct {
     history_scroll_idx: usize,
     search_idx: ?usize = null,
     search_reached_end: bool = false,
+    rc_path: []const u8 = "",
+    arena: std.heap.ArenaAllocator,
 
     mode: enum {
         prompt,
@@ -33,8 +35,7 @@ const State = struct {
             self.ally.free(item);
         }
         self.history.deinit();
-        self.ally.free(self.home);
-        self.ally.free(self.histfile_path);
+        self.arena.deinit();
         self.term.restore() catch unreachable; // no balls
     }
 
@@ -42,8 +43,8 @@ const State = struct {
         return self.out_writer.writer();
     }
 
-    pub fn flush(self: *State) !void {
-        try self.out_writer.flush();
+    pub fn flush(self: *State) void {
+        self.out_writer.flush() catch {};
     }
 
     pub fn line(self: *State) []const u8 {
@@ -98,7 +99,7 @@ const State = struct {
             },
         }
         terminal.moveRight(out, self.prefixLen() + self.cursor);
-        try self.flush();
+        self.flush();
     }
 
     pub fn prefixLen(self: *State) usize {
@@ -134,21 +135,32 @@ fn fmts(writer: anytype, comptime str: []const u8) void {
 // - aliases
 
 pub fn repl(pipeline_state: *pipeline.State) !void {
+    var arena = std.heap.ArenaAllocator.init(pipeline_state.ally);
     var state = State{
         .ally = pipeline_state.ally,
         .history = try History.initCapacity(pipeline_state.ally, 512),
         .out_writer = std.io.bufferedWriter(std.io.getStdOut().writer()),
         .pipeline_state = pipeline_state,
         .term = try Term.init(),
-        .home = try std.process.getEnvVarOwned(pipeline_state.ally, "HOME"),
+        .home = try std.process.getEnvVarOwned(arena.allocator(), "HOME"),
         .history_scroll_idx = 0,
+        .arena = arena,
     };
     defer state.deinit();
 
-    state.histfile_path = try std.fs.path.join(state.ally, &.{ state.home, ".yash-hist" });
+    state.histfile_path = try std.fs.path.join(
+        state.arena.allocator(),
+        &.{ state.home, ".yash-hist" },
+    );
+    state.rc_path = try std.fs.path.join(
+        state.arena.allocator(),
+        &.{ state.home, ".config/yashrc" },
+    );
 
     try readHistory(&state);
     state.history_scroll_idx = state.history.items.len;
+
+    try readRc(&state);
 
     const out = state.writer();
 
@@ -162,7 +174,7 @@ pub fn repl(pipeline_state: *pipeline.State) !void {
                         .prompt => try eval(&state),
                         .search => {
                             if (state.search_idx) |idx| { // if holds a match from history
-                                try state.flush();
+                                state.flush();
                                 const match = state.history.items[idx];
                                 replaceCommand(&state, match);
                                 state.mode = .prompt;
@@ -186,12 +198,12 @@ pub fn repl(pipeline_state: *pipeline.State) !void {
                 switch (ctrl) {
                     'd' => {
                         fmts(out, "exit");
-                        try state.flush();
+                        state.flush();
                         return;
                     },
                     'c' => {
                         fmts(out, "^C\n\r");
-                        try state.flush();
+                        state.flush();
                         state.length = 0;
                         state.cursor = 0;
                         state.mode = .prompt;
@@ -276,7 +288,7 @@ fn eval(state: *State) !void {
     try state.writer().print("\r\n", .{});
     terminal.clearLine(state.writer(), state.prefixLen());
     try state.term.restore();
-    try state.flush();
+    state.flush();
     defer {
         state.term = Term.init() catch unreachable;
         state.length = 0;
@@ -293,12 +305,12 @@ fn eval(state: *State) !void {
             else => unreachable,
         }
     };
-    try state.flush();
+    state.flush();
     state.history_scroll_idx = state.history.items.len;
 
     appendHistory(state) catch |e| {
         try state.writer().print("Could not write history, {any}\r\n", .{e});
-        try state.flush();
+        state.flush();
     };
 }
 
@@ -336,7 +348,7 @@ fn readHistory(state: *State) !void {
                 "Could not open histfile at {s}, error: {}\r\n",
                 .{ state.histfile_path, e },
             );
-            try state.flush();
+            state.flush();
             return;
         },
     };
@@ -437,7 +449,7 @@ fn tryAutocompleteCmd(state: *State) !void {
 
     if (n_hits > 1) {
         fmts(out, "\r\n");
-        try state.flush();
+        state.flush();
     }
 
     if (n_hits == 1) {
@@ -481,7 +493,7 @@ fn tryAutocompletePath(state: *State) !void {
 
     if (n_hits > 1) {
         fmts(out, "\r\n");
-        try state.flush();
+        state.flush();
     }
 
     if (n_hits == 1) {
@@ -531,4 +543,37 @@ fn reverseSearch(state: *State, reset: enum { reset, forward }) !void {
             break;
         }
     }
+}
+
+fn readRc(state: *State) !void {
+    const file = std.fs.cwd().openFile(state.rc_path, .{}) catch |e|
+        switch (e) {
+        error.FileNotFound => return,
+        else => {
+            fmt(
+                state.writer(),
+                "Could not open histfile at {s}, error: {}\r\n",
+                .{ state.rc_path, e },
+            );
+            state.flush();
+            return;
+        },
+    };
+    defer file.close();
+
+    const rc_src = file.readToEndAlloc(state.arena.allocator(), 1_000_000_000) catch return;
+
+    try state.term.restore();
+    state.flush();
+    defer {
+        state.term = Term.init() catch unreachable;
+        state.length = 0;
+        state.cursor = 0;
+    }
+
+    state.pipeline_state.source = rc_src;
+    pipeline.run(state.pipeline_state) catch |e| {
+        try state.writer().print("Unexpected error when reading .yashrc at {s}: {}\r\n", .{ state.rc_path, e });
+    };
+    state.flush();
 }
