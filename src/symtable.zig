@@ -1,10 +1,8 @@
 const std = @import("std");
 
-pub const Value = @import("value.zig").Value;
+const InterpreterError = @import("interpreter.zig").InterpreterError;
 
-pub const SymtableError = error{
-    VariableAlreadyDeclared,
-};
+const Value = @import("value.zig").Value;
 
 const Root = std.ArrayList(*Value);
 const Symtable = std.StringHashMap(*Value);
@@ -81,7 +79,7 @@ pub fn mark() void {
 pub fn insert(key: []const u8, value: *Value) !void {
     const frame = topFrame();
     return if (frame.symtable.get(key) != null)
-        SymtableError.VariableAlreadyDeclared
+        InterpreterError.VariableAlreadyDeclared
     else
         frame.symtable.put(key, value);
 }

@@ -1,23 +1,23 @@
 const std = @import("std");
 const values = @import("value.zig");
 const gc = @import("gc.zig");
+const interpreter = @import("interpreter.zig");
+const pipeline = @import("pipeline.zig");
+
 const Value = values.Value;
 const Type = values.Type;
 const Result = values.Result;
+const State = pipeline.State;
+const InterpreterError = interpreter.InterpreterError;
 
 const something = values.something;
 const nothing = values.nothing;
-
-pub const InterpreterError = error{
-    ArgsCountMismatch,
-    TypeMismatch,
-};
 
 pub const BuiltinError = error{
     AssertionFailed,
 } || std.mem.Allocator.Error || std.fs.File.WriteError || InterpreterError;
 
-pub const Builtin = fn (args: []const *Value) BuiltinError!Result;
+pub const Builtin = fn (ctx: *State, args: []const *Value) BuiltinError!Result;
 
 const builtins_table = std.StaticStringMap(*const Builtin).initComptime(
     &.{
@@ -55,7 +55,7 @@ pub fn lookup(str: []const u8) ?*const Builtin {
     return builtins_table.get(str);
 }
 
-fn say(args: []const *Value) !Result {
+fn say(_: *State, args: []const *Value) !Result {
     const stdout = std.io.getStdOut().writer();
 
     var trailing_newline = false;
@@ -79,7 +79,7 @@ fn say(args: []const *Value) !Result {
     return nothing;
 }
 
-fn assert(args: []const *Value) !Result {
+fn assert(_: *State, args: []const *Value) !Result {
     const stderr = std.io.getStdErr().writer();
     var all_passed = true;
     for (args, 0..) |arg, idx| {
@@ -100,18 +100,18 @@ fn assert(args: []const *Value) !Result {
     };
 }
 
-fn add(args: []const *Value) !Result {
+fn add(state: *State, args: []const *Value) !Result {
     if (args.len < 1) {
         unreachable;
     }
     return something(switch (args[0].as) {
-        .integer => try addIntegers(args),
-        .string => try concatenateStrings(args),
+        .integer => try addIntegers(state, args),
+        .string => try concatenateStrings(state, args),
         else => unreachable,
     });
 }
 
-fn addIntegers(args: []const *Value) !*Value {
+fn addIntegers(_: *State, args: []const *Value) !*Value {
     var sum_value: i64 = 0;
     for (args) |arg| {
         switch (arg.as) {
@@ -124,7 +124,7 @@ fn addIntegers(args: []const *Value) !*Value {
     return try gc.integer(sum_value);
 }
 
-fn concatenateStrings(args: []const *Value) !*Value {
+fn concatenateStrings(_: *State, args: []const *Value) !*Value {
     var result = std.ArrayList(u8).init(gc.backing_allocator);
     for (args) |arg| {
         switch (arg.as) {
@@ -137,7 +137,7 @@ fn concatenateStrings(args: []const *Value) !*Value {
     return try gc.allocedString(try result.toOwnedSlice());
 }
 
-fn sub(args: []const *Value) !Result {
+fn sub(_: *State, args: []const *Value) !Result {
     if (args.len < 2) unreachable;
     var diff_value: i64 = switch (args[0].as) {
         .integer => |i| i,
@@ -154,7 +154,7 @@ fn sub(args: []const *Value) !Result {
     return something(try gc.integer(diff_value));
 }
 
-fn mul(args: []const *Value) !Result {
+fn mul(_: *State, args: []const *Value) !Result {
     if (args.len < 2) unreachable;
     var product_value: i64 = switch (args[0].as) {
         .integer => |i| i,
@@ -171,7 +171,7 @@ fn mul(args: []const *Value) !Result {
     return something(try gc.integer(product_value));
 }
 
-fn div(args: []const *Value) !Result {
+fn div(_: *State, args: []const *Value) !Result {
     if (args.len < 2) unreachable;
     var quotient_value: i64 = switch (args[0].as) {
         .integer => |i| i,
@@ -189,7 +189,7 @@ fn div(args: []const *Value) !Result {
     return something(try gc.integer(quotient_value));
 }
 
-fn equals(args: []const *Value) !Result {
+fn equals(_: *State, args: []const *Value) !Result {
     if (args.len == 0) {
         return something(try gc.boolean(true));
     }
@@ -206,7 +206,7 @@ fn equals(args: []const *Value) !Result {
     return something(try gc.boolean(true));
 }
 
-fn less(args: []const *Value) !Result {
+fn less(_: *State, args: []const *Value) !Result {
     if (args.len < 2) {
         unreachable;
     }
@@ -223,7 +223,7 @@ fn less(args: []const *Value) !Result {
     return something(try gc.boolean(true));
 }
 
-fn greater(args: []const *Value) !Result {
+fn greater(_: *State, args: []const *Value) !Result {
     if (args.len < 2) {
         unreachable;
     }
@@ -240,7 +240,7 @@ fn greater(args: []const *Value) !Result {
     return something(try gc.boolean(true));
 }
 
-fn notEqual(args: []const *Value) !Result {
+fn notEqual(_: *State, args: []const *Value) !Result {
     if (args.len < 2) {
         return something(try gc.boolean(true));
     }
@@ -257,7 +257,7 @@ fn notEqual(args: []const *Value) !Result {
     return something(try gc.boolean(true));
 }
 
-fn len(args: []const *Value) !Result {
+fn len(_: *State, args: []const *Value) !Result {
     var length: i64 = 0;
     for (args) |arg| {
         switch (arg.as) {
@@ -270,7 +270,7 @@ fn len(args: []const *Value) !Result {
     return something(try gc.integer(length));
 }
 
-fn append(args: []const *Value) !Result {
+fn append(_: *State, args: []const *Value) !Result {
     if (args.len == 0) {
         unreachable;
     }
@@ -287,8 +287,8 @@ fn append(args: []const *Value) !Result {
     return something(args[0]);
 }
 
-fn get(args: []const *Value) !Result {
-    try validateArgsCount(&.{ 2, 3 }, args.len);
+fn get(state: *State, args: []const *Value) !Result {
+    try validateArgsCount(state, &.{ 2, 3 }, args.len);
 
     const index = switch (args[1].as) {
         .integer => |i| i,
@@ -304,16 +304,14 @@ fn get(args: []const *Value) !Result {
     };
 }
 
-fn slice(list_or_string: *Value, from: u64, to: u64) !Result {
+fn slice(_: *State, list_or_string: *Value, from: u64, to: u64) !Result {
     _ = list_or_string; // autofix
     _ = from; // autofix
     _ = to; // autofix
 }
 
-fn put(args: []const *Value) !Result {
-    if (args.len != 3) {
-        unreachable;
-    }
+fn put(state: *State, args: []const *Value) !Result {
+    try validateArgsCount(state, &.{3}, args.len);
 
     const index = switch (args[1].as) {
         .integer => |i| i,
@@ -337,10 +335,8 @@ fn put(args: []const *Value) !Result {
 }
 
 //TODO this should be inside a module...
-fn trim(args: []const *Value) !Result {
-    if (args.len != 1) {
-        unreachable;
-    }
+fn trim(state: *State, args: []const *Value) !Result {
+    try validateArgsCount(state, &.{1}, args.len);
 
     const arg = args[0];
     const str = switch (arg.as) {
@@ -371,6 +367,7 @@ fn trim(args: []const *Value) !Result {
 }
 
 fn validateArgsCount(
+    state: *State,
     accepted_counts: []const usize,
     actual_count: usize,
 ) !void {
@@ -379,5 +376,10 @@ fn validateArgsCount(
             return;
         }
     }
+    state.error_report = .{
+        .msg = try std.fmt.allocPrint(state.arena, "Function expects {any} args, recieved {}", .{ accepted_counts, actual_count }),
+        .offending_token = undefined,
+        .trailing = false,
+    };
     return InterpreterError.ArgsCountMismatch;
 }

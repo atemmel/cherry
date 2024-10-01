@@ -85,6 +85,17 @@ pub fn writeAstError(state: *State, writer: anytype) !void {
     const info = state.errorInfo();
     //TODO: this should not be <somefile>
     try writer.print("<somefile>:{}:{}: syntax error: {s}\n{s}\n", .{ info.row, info.col, info.msg, info.row_str });
+    try writeErrorSource(info, writer);
+}
+
+pub fn writeRuntimeError(state: *State, writer: anytype) !void {
+    const info = state.errorInfo();
+    //TODO: this should not be <somefile>
+    try writer.print("<somefile>:{}:{}: runtime error: {s}\n{s}\n", .{ info.row, info.col, info.msg, info.row_str });
+    try writeErrorSource(info, writer);
+}
+
+fn writeErrorSource(info: State.ErrorInfo, writer: anytype) !void {
     for (info.row_str[0..info.row_error_token_idx]) |_| {
         try writer.print(" ", .{});
     }
@@ -111,7 +122,7 @@ pub fn run(state: *State) !void {
         ast.errors.OutOfMemory => @panic("OOM"),
         ast.errors.ParseFailed => {
             try writeAstError(state, std.io.getStdErr().writer());
-            std.process.exit(1);
+            return e;
         },
     };
     const ast_stop_ms = microTimestamp();
@@ -120,5 +131,65 @@ pub fn run(state: *State) !void {
         ast.dump(state.root);
     }
 
-    try interpret(state);
+    interpret(state) catch |e| {
+        switch (e) {
+            error.ArgsCountMismatch,
+            error.BadVariableLookup,
+            error.CommandNotFound,
+            error.MembersNotAllowed,
+            error.MismatchedBraces,
+            error.TypeMismatch,
+            error.VariableAlreadyDeclared,
+            => {
+                try writeRuntimeError(state, std.io.getStdErr().writer());
+            },
+            error.OutOfMemory,
+            error.FileNotFound,
+            error.AccessDenied,
+            error.NameTooLong,
+            error.InvalidUtf8,
+            error.InvalidWtf8,
+            error.BadPathName,
+            error.Unexpected,
+            error.SymLinkLoop,
+            error.ProcessFdQuotaExceeded,
+            error.SystemFdQuotaExceeded,
+            error.NoDevice,
+            error.SystemResources,
+            error.FileTooBig,
+            error.IsDir,
+            error.NoSpaceLeft,
+            error.NotDir,
+            error.DeviceBusy,
+            error.FileBusy,
+            error.WouldBlock,
+            error.InputOutput,
+            error.OperationAborted,
+            error.BrokenPipe,
+            error.ConnectionResetByPeer,
+            error.ConnectionTimedOut,
+            error.NotOpenForReading,
+            error.SocketNotConnected,
+            error.DiskQuota,
+            error.InvalidArgument,
+            error.NotOpenForWriting,
+            error.LockViolation,
+            error.AssertionFailed,
+            error.CurrentWorkingDirectoryUnlinked,
+            error.InvalidBatchScriptArg,
+            error.InvalidExe,
+            error.FileSystem,
+            error.ResourceLimitReached,
+            error.InvalidUserId,
+            error.PermissionDenied,
+            error.InvalidName,
+            error.InvalidHandle,
+            error.WaitAbandoned,
+            error.WaitTimeOut,
+            error.NetworkSubsystemFailed,
+            error.StdoutStreamTooLong,
+            error.StderrStreamTooLong,
+            => return e,
+        }
+    };
 }

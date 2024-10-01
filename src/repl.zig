@@ -300,9 +300,8 @@ fn eval(state: *State) !void {
     state.pipeline_state.source = cmd;
     pipeline.run(state.pipeline_state) catch |e| {
         switch (e) {
-            //TODO: error should not be handled here,
             error.CommandNotFound => try state.writer().print("Could not find command in system\r\n", .{}),
-            else => unreachable,
+            else => {}, //TODO: handle these
         }
     };
     state.flush();

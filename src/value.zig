@@ -1,9 +1,11 @@
 const std = @import("std");
 const gc = @import("gc.zig");
 const symtable = @import("symtable.zig");
-const indexOfPos = std.mem.indexOfPos;
+const interpreter = @import("interpreter.zig");
 
-pub const Errors = error{ MismatchedTypeError, MismatchedBraces, BadLookup, MembersNotAllowed };
+const InterpreterError = interpreter.InterpreterError;
+
+const indexOfPos = std.mem.indexOfPos;
 
 pub const List = std.ArrayList(*Value);
 pub const Record = std.StringArrayHashMap(*Value);
@@ -137,7 +139,7 @@ pub const Value = struct {
                         .eq => .equal,
                     };
                 },
-                .integer, .float, .boolean, .list, .record => return Errors.MismatchedTypeError,
+                .integer, .float, .boolean, .list, .record => return InterpreterError.TypeMismatch,
             },
             .integer => |lhs| switch (other.as) {
                 .integer => |rhs| {
@@ -148,7 +150,7 @@ pub const Value = struct {
                     }
                     return .equal;
                 },
-                .string, .float, .boolean, .list, .record => return Errors.MismatchedTypeError,
+                .string, .float, .boolean, .list, .record => return InterpreterError.TypeMismatch,
             },
             .float => unreachable,
             .boolean => |lhs| switch (other.as) {
@@ -163,7 +165,7 @@ pub const Value = struct {
                         return .equal;
                     }
                 },
-                .string, .float, .integer, .list, .record => return Errors.MismatchedTypeError,
+                .string, .float, .integer, .list, .record => return InterpreterError.TypeMismatch,
             },
             .list => |lhs| switch (other.as) {
                 .list => |rhs| {
@@ -182,7 +184,7 @@ pub const Value = struct {
                     }
                     return .equal;
                 },
-                .float, .integer, .boolean, .string, .record => return Errors.MismatchedTypeError,
+                .float, .integer, .boolean, .string, .record => return InterpreterError.TypeMismatch,
             },
             .record => |lhs| switch (other.as) {
                 .record => |rhs| {
@@ -217,7 +219,7 @@ pub const Value = struct {
 
                     return .equal;
                 },
-                .float, .integer, .boolean, .string, .list => return Errors.MismatchedTypeError,
+                .float, .integer, .boolean, .string, .list => return InterpreterError.TypeMismatch,
             },
         }
         unreachable;
@@ -226,14 +228,14 @@ pub const Value = struct {
     pub fn access(self: *const Value) !*Record {
         return switch (self.as) {
             .record => |*r| r,
-            else => Errors.MembersNotAllowed,
+            else => InterpreterError.MembersNotAllowed,
         };
     }
 
     pub fn interpolate(self: *const Value, ally: std.mem.Allocator) !*Value {
         const str: []const u8 = switch (self.as) {
             .string => |str| str,
-            else => return Errors.MismatchedTypeError,
+            else => return InterpreterError.TypeMismatch,
         };
 
         var result = try std.ArrayList(u8).initCapacity(ally, str.len * 2);
@@ -249,7 +251,7 @@ pub const Value = struct {
             if (lbrace + 1 < str.len and str[lbrace + 1] == '{') {
                 // found escape sequence
                 const escape_begin = lbrace + 2;
-                const escape_end = indexOfPos(u8, str, lbrace + 1, "}}") orelse return Errors.MismatchedBraces;
+                const escape_end = indexOfPos(u8, str, lbrace + 1, "}}") orelse return InterpreterError.MismatchedBraces;
                 // include the last lbrace
                 try result.appendSlice(str[idx .. lbrace + 1]);
                 // include the first rbrace
@@ -258,10 +260,10 @@ pub const Value = struct {
                 continue;
             }
 
-            const rbrace = indexOfPos(u8, str, lbrace, "}") orelse return Errors.MismatchedBraces;
+            const rbrace = indexOfPos(u8, str, lbrace, "}") orelse return InterpreterError.MismatchedBraces;
 
             const variable_name = str[lbrace + 1 .. rbrace];
-            const variable_value = symtable.get(variable_name) orelse return Errors.BadLookup;
+            const variable_value = symtable.get(variable_name) orelse return InterpreterError.BadVariableLookup;
 
             //TODO: arena allocator candidate
             const variable_string = try variable_value.asStr(ally);

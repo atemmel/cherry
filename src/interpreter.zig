@@ -14,6 +14,7 @@ const nothing = values.nothing;
 const integer = values.integer;
 
 const Context = struct {
+    state: *PipelineState,
     ally: std.mem.Allocator,
     arena: std.mem.Allocator,
     stmntArena: std.heap.ArenaAllocator,
@@ -21,12 +22,21 @@ const Context = struct {
     root: ast.Root,
 };
 
-pub const Error = error{CommandNotFound};
+pub const InterpreterError = error{
+    ArgsCountMismatch,
+    BadVariableLookup,
+    CommandNotFound,
+    MembersNotAllowed,
+    MismatchedBraces,
+    TypeMismatch,
+    VariableAlreadyDeclared,
+};
 
 pub fn interpret(state: *PipelineState) !void {
     var stmntArena = std.heap.ArenaAllocator.init(state.ally);
     defer stmntArena.deinit();
     var ctx = Context{
+        .state = state,
         .ally = state.ally,
         .arena = state.arena,
         .root = state.root,
@@ -34,12 +44,7 @@ pub fn interpret(state: *PipelineState) !void {
         .stmntAlly = stmntArena.allocator(),
     };
 
-    interpretRoot(&ctx) catch |e| {
-        switch (e) {
-            error.FileNotFound => return error.CommandNotFound, //TODO: should not be handled here...
-            else => return e,
-        }
-    };
+    try interpretRoot(&ctx);
 }
 
 fn interpretRoot(ctx: *Context) !void {
@@ -50,9 +55,7 @@ fn interpretRoot(ctx: *Context) !void {
     }
 }
 
-const StatementError = EvalError || symtable.SymtableError;
-
-fn interpretStatement(ctx: *Context, stmnt: ast.Statement) StatementError!Result {
+fn interpretStatement(ctx: *Context, stmnt: ast.Statement) EvalError!Result {
     defer _ = ctx.stmntArena.reset(.retain_capacity);
     switch (stmnt) {
         .call => |call| _ = try evalPipeline(ctx, call),
@@ -171,7 +174,15 @@ fn evalPipeline(ctx: *Context, call: ast.Call) !Result {
 fn evalBuiltin(ctx: *Context, call: ast.Call, builtin: *const builtins.Builtin) !Result {
     var args = try evalArgs(ctx, call.arguments);
     defer args.deinit();
-    return try builtin(args.items);
+    return builtin(ctx.state, args.items) catch |e| {
+        switch (e) {
+            error.TypeMismatch, error.ArgsCountMismatch => {
+                ctx.state.error_report.?.offending_token = call.token;
+            },
+            else => {},
+        }
+        return e;
+    };
 }
 
 fn evalFunctionCall(ctx: *Context, func: ast.Func, call: ast.Call) !Result {
@@ -224,7 +235,20 @@ fn evalProc(ctx: *Context, call: ast.Call) !Result {
     }
 
     for (procs.items) |*p| {
-        try p.spawn();
+        p.spawn() catch |e| {
+            switch (e) {
+                error.FileNotFound => {
+                    ctx.state.error_report = .{
+                        .trailing = false,
+                        .offending_token = call.token,
+                        .msg = try std.fmt.allocPrint(ctx.state.arena, "Could not find command in system", .{}),
+                    };
+                    return error.CommandNotFound;
+                },
+                else => {},
+            }
+            return e;
+        };
     }
 
     var capture: ?[]const u8 = null;
@@ -252,7 +276,20 @@ fn evalProc(ctx: *Context, call: ast.Call) !Result {
 
     for (procs.items) |*p| {
         //TODO: handle term
-        _ = try p.wait();
+        _ = p.wait() catch |e| {
+            switch (e) {
+                error.FileNotFound => {
+                    ctx.state.error_report = .{
+                        .trailing = false,
+                        .offending_token = call.token,
+                        .msg = try std.fmt.allocPrint(ctx.state.arena, "Could not find command in system", .{}),
+                    };
+                    return error.CommandNotFound;
+                },
+                else => {},
+            }
+            return e;
+        };
     }
 
     if (capturing) {
@@ -287,7 +324,7 @@ fn evalArgs(ctx: *Context, arguments: []const ast.Expression) !std.ArrayList(*Va
     return args;
 }
 
-pub const EvalError = builtins.BuiltinError || std.process.Child.RunError || values.Errors || symtable.SymtableError;
+pub const EvalError = builtins.BuiltinError || std.process.Child.RunError;
 
 fn evalExpression(ctx: *Context, expr: ast.Expression) EvalError!Result {
     const base_expr = switch (expr.as) {
