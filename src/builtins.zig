@@ -2,14 +2,20 @@ const std = @import("std");
 const values = @import("value.zig");
 const gc = @import("gc.zig");
 const Value = values.Value;
+const Type = values.Type;
 const Result = values.Result;
 
 const something = values.something;
 const nothing = values.nothing;
 
+pub const InterpreterError = error{
+    ArgsCountMismatch,
+    TypeMismatch,
+};
+
 pub const BuiltinError = error{
     AssertionFailed,
-} || std.mem.Allocator.Error || std.fs.File.WriteError;
+} || std.mem.Allocator.Error || std.fs.File.WriteError || InterpreterError;
 
 pub const Builtin = fn (args: []const *Value) BuiltinError!Result;
 
@@ -282,9 +288,7 @@ fn append(args: []const *Value) !Result {
 }
 
 fn get(args: []const *Value) !Result {
-    if (args.len != 2) {
-        unreachable;
-    }
+    try validateArgsCount(&.{ 2, 3 }, args.len);
 
     const index = switch (args[1].as) {
         .integer => |i| i,
@@ -295,9 +299,15 @@ fn get(args: []const *Value) !Result {
         //TODO: range check
         .list => |l| something(l.items[@intCast(index)]),
         //TODO: This should be possible
-        .string => unreachable,
+        .string => unreachable, //something(try gc.string(s[
         .integer, .boolean, .float, .record => unreachable,
     };
+}
+
+fn slice(list_or_string: *Value, from: u64, to: u64) !Result {
+    _ = list_or_string; // autofix
+    _ = from; // autofix
+    _ = to; // autofix
 }
 
 fn put(args: []const *Value) !Result {
@@ -358,4 +368,16 @@ fn trim(args: []const *Value) !Result {
     }
 
     return something(try gc.string(str[first_real..last_real]));
+}
+
+fn validateArgsCount(
+    accepted_counts: []const usize,
+    actual_count: usize,
+) !void {
+    for (accepted_counts) |count| {
+        if (count == actual_count) {
+            return;
+        }
+    }
+    return InterpreterError.ArgsCountMismatch;
 }

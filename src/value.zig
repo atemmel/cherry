@@ -8,8 +8,17 @@ pub const Errors = error{ MismatchedTypeError, MismatchedBraces, BadLookup, Memb
 pub const List = std.ArrayList(*Value);
 pub const Record = std.StringArrayHashMap(*Value);
 
+pub const Type = enum {
+    string,
+    integer,
+    float,
+    boolean,
+    list,
+    record,
+};
+
 pub const Value = struct {
-    as: union(enum) {
+    as: union(Type) {
         // strings are immutable
         string: []const u8,
         // integer type

@@ -36,8 +36,8 @@ pub fn interpret(state: *PipelineState) !void {
 
     interpretRoot(&ctx) catch |e| {
         switch (e) {
-            error.FileNotFound => return error.CommandNotFound,
-            else => {}, //TODO: go through these baddies
+            error.FileNotFound => return error.CommandNotFound, //TODO: should not be handled here...
+            else => return e,
         }
     };
 }
@@ -157,7 +157,6 @@ fn evalReturn(ctx: *Context, ret: ast.Return) !Result {
     return nothing;
 }
 
-//TODO: this only handles external programs
 fn evalPipeline(ctx: *Context, call: ast.Call) !Result {
     const name = call.token.value;
     if (builtins.lookup(name)) |builtin| {
