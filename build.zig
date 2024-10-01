@@ -16,7 +16,7 @@ pub fn build(b: *std.Build) void {
     const optimize = b.standardOptimizeOption(.{});
 
     const exe = b.addExecutable(.{
-        .name = "yash",
+        .name = "cherry",
         .root_source_file = b.path("src/main.zig"),
         .target = target,
         .optimize = optimize,
@@ -33,13 +33,13 @@ pub fn build(b: *std.Build) void {
     const run_cmd = b.addRunArtifact(exe);
 
     const exe_check = b.addExecutable(.{
-        .name = "yash",
+        .name = "cherry",
         .root_source_file = b.path("src/main.zig"),
         .target = target,
         .optimize = optimize,
     });
 
-    const check = b.step("check", "Check if yash compiles");
+    const check = b.step("check", "Check if cherry compiles");
     check.dependOn(&exe_check.step);
 
     // By making the run step depend on the install step, it will be run from the

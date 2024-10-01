@@ -150,11 +150,11 @@ pub fn repl(pipeline_state: *pipeline.State) !void {
 
     state.histfile_path = try std.fs.path.join(
         state.arena.allocator(),
-        &.{ state.home, ".yash-hist" },
+        &.{ state.home, ".cherry-hist" },
     );
     state.rc_path = try std.fs.path.join(
         state.arena.allocator(),
-        &.{ state.home, ".config/yashrc" },
+        &.{ state.home, ".config/cherryrc" },
     );
 
     try readHistory(&state);
@@ -573,7 +573,7 @@ fn readRc(state: *State) !void {
 
     state.pipeline_state.source = rc_src;
     pipeline.run(state.pipeline_state) catch |e| {
-        try state.writer().print("Unexpected error when reading .yashrc at {s}: {}\r\n", .{ state.rc_path, e });
+        try state.writer().print("Unexpected error when reading .cherryrc at {s}: {}\r\n", .{ state.rc_path, e });
     };
     state.flush();
 }
