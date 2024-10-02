@@ -77,6 +77,7 @@ pub fn main() !void {
     defer symtable.deinit();
 
     var state = pipeline.State{
+        .arena_source = &arena,
         .arena = arena_allocator,
         .ally = ally,
         .source = "",
@@ -84,6 +85,7 @@ pub fn main() !void {
         .verboseLexer = verboseLexer,
         .verboseParser = verboseParser,
         .color = std.io.tty.detectConfig(std.io.getStdOut()),
+        .filename = file orelse "repl",
     };
 
     if (file == null) {
@@ -97,7 +99,6 @@ pub fn main() !void {
 
 comptime {
     const refAllDecls = std.testing.refAllDecls;
-
     refAllDecls(@import("tokens.zig"));
     refAllDecls(@import("ast.zig"));
     refAllDecls(@import("value.zig"));

@@ -9,6 +9,7 @@ const print = std.debug.print;
 const microTimestamp = std.time.microTimestamp;
 
 pub const State = struct {
+    arena_source: *std.heap.ArenaAllocator,
     arena: std.mem.Allocator,
     ally: std.mem.Allocator,
     source: []const u8,
@@ -20,6 +21,7 @@ pub const State = struct {
     verboseLexer: bool = false,
     verboseParser: bool = false,
     verboseCodegen: bool = false,
+    filename: []const u8,
     color: std.io.tty.Config = std.io.tty.Config.no_color,
     error_report: ?struct {
         offending_token: *const Token,
@@ -65,6 +67,10 @@ pub const State = struct {
             break;
         }
 
+        if (first_right_newline == 0) {
+            first_right_newline = state.source.len;
+        }
+
         return .{
             .col = src_offset - last_left_newline,
             .row = n_newlines_until_left_newline + 1,
@@ -83,15 +89,15 @@ fn logTime(comptime prefix: []const u8, start_ms: i64, stop_ms: i64) void {
 
 pub fn writeAstError(state: *State, writer: anytype) !void {
     const info = state.errorInfo();
-    //TODO: this should not be <somefile>
-    try writer.print("<somefile>:{}:{}: syntax error: {s}\n{s}\n", .{ info.row, info.col, info.msg, info.row_str });
+    const file = state.filename;
+    try writer.print("<{s}>:{}:{}: syntax error: {s}\n{s}\n", .{ file, info.row, info.col, info.msg, info.row_str });
     try writeErrorSource(info, writer);
 }
 
 pub fn writeRuntimeError(state: *State, writer: anytype) !void {
     const info = state.errorInfo();
-    //TODO: this should not be <somefile>
-    try writer.print("<somefile>:{}:{}: runtime error: {s}\n{s}\n", .{ info.row, info.col, info.msg, info.row_str });
+    const file = state.filename;
+    try writer.print("<{s}>:{}:{}: runtime error: {s}\n{s}\n", .{ file, info.row, info.col, info.msg, info.row_str });
     try writeErrorSource(info, writer);
 }
 
@@ -109,6 +115,7 @@ fn writeErrorSource(info: State.ErrorInfo, writer: anytype) !void {
 }
 
 pub fn run(state: *State) !void {
+    defer _ = state.arena_source.reset(.retain_capacity);
     const lexer_start_ms = microTimestamp();
     state.tokens = try tokens.lex(state);
     const lexer_stop_ms = microTimestamp();
