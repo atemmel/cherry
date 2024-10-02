@@ -24,6 +24,12 @@ const builtins_table = std.StaticStringMap(*const Builtin).initComptime(
         // general
         .{ "assert", assert },
         .{ "say", say },
+        // collections
+        .{ "append", append },
+        .{ "get", get },
+        .{ "len", len },
+        .{ "put", put },
+        .{ "trim", trim },
         // operations
         .{ "add", add },
         .{ "sum", add },
@@ -34,11 +40,6 @@ const builtins_table = std.StaticStringMap(*const Builtin).initComptime(
         .{ "lt", less },
         .{ "gt", greater },
         .{ "ne", notEqual },
-        .{ "len", len },
-        .{ "append", append },
-        .{ "get", get },
-        .{ "put", put },
-        .{ "trim", trim },
         // operations (symbols)
         .{ "+", add },
         .{ "-", sub },
