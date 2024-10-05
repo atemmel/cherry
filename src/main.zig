@@ -48,7 +48,6 @@ pub fn main() !void {
 
     var verboseLexer = false;
     var verboseParser = false;
-    var verboseCodegen = false;
     var file: ?[]const u8 = null;
 
     for (args[1..args.len]) |arg| {
@@ -63,7 +62,6 @@ pub fn main() !void {
         } else if (eq(u8, "--verbose", arg)) {
             verboseLexer = true;
             verboseParser = true;
-            verboseCodegen = true;
             std.debug.print("args: {s}\n", .{args});
         } else {
             file = arg;
@@ -81,7 +79,6 @@ pub fn main() !void {
         .arena = arena_allocator,
         .ally = ally,
         .source = "",
-        .verboseCodegen = verboseCodegen,
         .verboseLexer = verboseLexer,
         .verboseParser = verboseParser,
         .color = std.io.tty.detectConfig(std.io.getStdOut()),
