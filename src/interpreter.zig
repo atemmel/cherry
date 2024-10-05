@@ -80,7 +80,7 @@ fn interpretVarDecl(ctx: *Context, var_decl: ast.VarDecl) !void {
 }
 
 fn interpretAssign(ctx: *Context, assign: ast.Assignment) !void {
-    const variable = symtable.get(assign.variable.token.value) orelse unreachable;
+    const entry = symtable.getEntry(assign.variable.token.value) orelse unreachable;
 
     const value = switch (try evalExpression(ctx, assign.expression)) {
         .value => |v| v,
@@ -102,7 +102,7 @@ fn interpretAssign(ctx: *Context, assign: ast.Assignment) !void {
     const value_to_insert = if (was_owned) try gc.cloneOrReference(value) else value;
     if (assign.accessor) |*accessor| {
         var current = accessor;
-        var record = variable;
+        var record = entry.value_ptr.*;
         while (true) {
             if (current.child == null) {
                 try record.as.record.put(current.member.token.value, value_to_insert);
@@ -112,7 +112,7 @@ fn interpretAssign(ctx: *Context, assign: ast.Assignment) !void {
             current = current.child.?;
         }
     } else {
-        try symtable.put(assign.variable.token.value, value_to_insert);
+        entry.value_ptr.* = value_to_insert;
     }
 }
 

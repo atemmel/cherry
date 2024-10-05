@@ -9,3 +9,13 @@ my-other-func James
 fn my-other-func who {
     say $who is in the func
 }
+
+x := false
+
+fn good-func {
+    $x = true
+}
+
+good-func
+
+assert (== true $x)

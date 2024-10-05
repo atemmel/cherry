@@ -56,6 +56,15 @@ pub fn get(key: []const u8) ?*Value {
     return null;
 }
 
+pub fn getEntry(key: []const u8) ?Symtable.Entry {
+    for (stack.items) |frame| {
+        if (frame.symtable.getEntry(key)) |entry| {
+            return entry;
+        }
+    }
+    return null;
+}
+
 pub fn put(key: []const u8, value: *Value) !void {
     try topFrame().symtable.put(key, value);
 }
