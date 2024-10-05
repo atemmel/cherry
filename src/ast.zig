@@ -462,7 +462,7 @@ fn parsePipeline(ctx: *Context) !?Call {
 
     if (ctx.getIf(.Newline) == null and !ctx.eot()) {
         return ctx.err(.{
-            .msg = "expected newline (\\n)",
+            .msg = "expected newline (\\n) or additional function arguments",
         });
     }
 

@@ -20,7 +20,6 @@ pub const State = struct {
     },
     verboseLexer: bool = false,
     verboseParser: bool = false,
-    verboseCodegen: bool = false,
     filename: []const u8,
     color: std.io.tty.Config = std.io.tty.Config.no_color,
     error_report: ?struct {
@@ -146,6 +145,7 @@ pub fn run(state: *State) !void {
             error.MembersNotAllowed,
             error.MismatchedBraces,
             error.TypeMismatch,
+            error.ValueRequired,
             error.VariableAlreadyDeclared,
             => {
                 try writeRuntimeError(state, std.io.getStdErr().writer());

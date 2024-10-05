@@ -5,6 +5,7 @@ const symtable = @import("symtable.zig");
 const gc = @import("gc.zig");
 const builtins = @import("builtins.zig");
 const values = @import("value.zig");
+const tokens = @import("tokens.zig");
 
 const Value = values.Value;
 const Result = values.Result;
@@ -29,6 +30,7 @@ pub const InterpreterError = error{
     MembersNotAllowed,
     MismatchedBraces,
     TypeMismatch,
+    ValueRequired,
     VariableAlreadyDeclared,
 };
 
@@ -43,7 +45,6 @@ pub fn interpret(state: *PipelineState) !void {
         .stmntArena = stmntArena,
         .stmntAlly = stmntArena.allocator(),
     };
-
     try interpretRoot(&ctx);
 }
 
@@ -63,7 +64,7 @@ fn interpretStatement(ctx: *Context, stmnt: ast.Statement) EvalError!Result {
         .assignment => |assign| try interpretAssign(ctx, assign),
         .branches => |br| try interpretBranches(ctx, br),
         .scope => |scope| try interpretScope(ctx, scope),
-        .func => unreachable,
+        .func => unreachable, // this should never happen
         .ret => |ret| {
             return try evalReturn(ctx, ret);
         },
@@ -74,17 +75,25 @@ fn interpretStatement(ctx: *Context, stmnt: ast.Statement) EvalError!Result {
 fn interpretVarDecl(ctx: *Context, var_decl: ast.VarDecl) !void {
     const value = switch (try evalExpression(ctx, var_decl.expression)) {
         .value => |value| value,
-        .nothing => unreachable,
+        .nothing => {
+            const ptr = ptrAdd(var_decl.token, 3);
+            return errRequiresValue(ctx, ptr);
+        },
     };
     try symtable.insert(var_decl.token.value, value);
 }
 
 fn interpretAssign(ctx: *Context, assign: ast.Assignment) !void {
-    const entry = symtable.getEntry(assign.variable.token.value) orelse unreachable;
+    const entry = symtable.getEntry(assign.variable.token.value) orelse {
+        return errNeverDeclared(ctx, assign.variable.token);
+    };
 
     const value = switch (try evalExpression(ctx, assign.expression)) {
         .value => |v| v,
-        .nothing => unreachable, // Requires value
+        .nothing => {
+            const ptr = ptrAdd(assign.variable.token, 2);
+            return errRequiresValue(ctx, ptr);
+        },
     };
 
     const was_owned = switch (assign.expression.as) {
@@ -413,4 +422,28 @@ fn evalRecordLiteral(ctx: *Context, record_literal: ast.RecordLiteral) !*Value {
     _ = ctx; // autofix
     _ = record_literal; // autofix
     return gc.emptyRecord();
+}
+
+fn errNeverDeclared(ctx: *Context, token: *const tokens.Token) InterpreterError {
+    ctx.state.error_report = .{
+        .msg = "Variable is used but never declared",
+        .trailing = false,
+        .offending_token = token,
+    };
+    return InterpreterError.BadVariableLookup;
+}
+
+fn errRequiresValue(ctx: *Context, token: *const tokens.Token) InterpreterError {
+    ctx.state.error_report = .{
+        .msg = "Context requires value, but the expression was unable to produce it",
+        .trailing = false,
+        .offending_token = token,
+    };
+    return InterpreterError.ValueRequired;
+}
+
+fn ptrAdd(token: *const tokens.Token, steps: usize) *const tokens.Token {
+    const original_adress = @intFromPtr(token);
+    const offset_adress = original_adress + steps * @sizeOf(tokens.Token);
+    return @ptrFromInt(offset_adress);
 }
