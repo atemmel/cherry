@@ -262,7 +262,9 @@ fn len(_: *State, args: []const *Value) !Result {
     var length: i64 = 0;
     for (args) |arg| {
         switch (arg.as) {
-            .string => |s| length += @intCast(s.len),
+            .string => |s| {
+                length += std.unicode.utf8CountCodepoints(s);
+            },
             .integer, .float, .boolean => unreachable, //TODO: this
             .list => |l| length += @intCast(l.items.len),
             .record => |r| length += @intCast(r.count()),
