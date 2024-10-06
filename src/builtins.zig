@@ -13,9 +13,18 @@ const InterpreterError = interpreter.InterpreterError;
 const something = values.something;
 const nothing = values.nothing;
 
+pub const Utf8Error = error{
+    Utf8ExpectedContinuation,
+    Utf8OverlongEncoding,
+    Utf8EncodesSurrogateHalf,
+    Utf8CodepointTooLarge,
+    Utf8InvalidStartByte,
+    TruncatedInput,
+};
+
 pub const BuiltinError = error{
     AssertionFailed,
-} || std.mem.Allocator.Error || std.fs.File.WriteError || InterpreterError;
+} || std.mem.Allocator.Error || std.fs.File.WriteError || InterpreterError || Utf8Error;
 
 pub const Builtin = fn (ctx: *State, args: []const *Value) BuiltinError!Result;
 
@@ -263,7 +272,16 @@ fn len(_: *State, args: []const *Value) !Result {
     for (args) |arg| {
         switch (arg.as) {
             .string => |s| {
-                length += std.unicode.utf8CountCodepoints(s);
+                length += @intCast(std.unicode.utf8CountCodepoints(s) catch |err| {
+                    return switch (err) {
+                        error.Utf8OverlongEncoding => Utf8Error.Utf8OverlongEncoding,
+                        error.Utf8EncodesSurrogateHalf => Utf8Error.Utf8EncodesSurrogateHalf,
+                        error.Utf8ExpectedContinuation => Utf8Error.Utf8ExpectedContinuation,
+                        error.Utf8CodepointTooLarge => Utf8Error.Utf8CodepointTooLarge,
+                        error.Utf8InvalidStartByte => Utf8Error.Utf8InvalidStartByte,
+                        error.TruncatedInput => Utf8Error.TruncatedInput,
+                    };
+                });
             },
             .integer, .float, .boolean => unreachable, //TODO: this
             .list => |l| length += @intCast(l.items.len),
@@ -302,7 +320,18 @@ fn get(state: *State, args: []const *Value) !Result {
         //TODO: range check
         .list => |l| something(l.items[@intCast(index)]),
         //TODO: This should be possible
-        .string => unreachable, //something(try gc.string(s[
+        .string => |s| {
+            const view = std.unicode.Utf8View.initUnchecked(s);
+            var it = view.iterator();
+            var i: i64 = 0;
+            while (it.nextCodepointSlice()) |str| {
+                if (i == index) {
+                    return something(try gc.string(str));
+                }
+                i += 1;
+            }
+            unreachable;
+        },
         .integer, .boolean, .float, .record => unreachable,
     };
 }

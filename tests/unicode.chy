@@ -1,0 +1,11 @@
+str := "åäö"
+
+assert (== 3 (len str))
+
+$str = "😀🙃😇"
+
+assert (== 3 (len $str))
+
+assert (== "😀" (get $str 0))
+assert (== "🙃" (get $str 1))
+assert (== "😇" (get $str 2))

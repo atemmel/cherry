@@ -22,7 +22,7 @@ pub const Type = enum {
 pub const Value = struct {
     as: union(Type) {
         // strings are immutable
-        string: []const u8,
+        string: []const u8, //TODO: this should be u32 so as to be unicode-compatible
         // integer type
         integer: i64,
         float: f64,

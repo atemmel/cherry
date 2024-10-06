@@ -196,6 +196,12 @@ pub fn run(state: *State) !void {
             error.NetworkSubsystemFailed,
             error.StdoutStreamTooLong,
             error.StderrStreamTooLong,
+            error.Utf8ExpectedContinuation,
+            error.Utf8OverlongEncoding,
+            error.Utf8EncodesSurrogateHalf,
+            error.Utf8CodepointTooLarge,
+            error.Utf8InvalidStartByte,
+            error.TruncatedInput,
             => return e,
         }
     };
