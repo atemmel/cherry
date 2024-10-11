@@ -3,8 +3,14 @@ const pipeline = @import("pipeline.zig");
 const terminal = @import("term.zig");
 const Term = terminal.Term;
 const utils = @import("utils.zig");
+const symtable = @import("symtable.zig");
 
 const History = std.ArrayList([]const u8);
+
+const Mode = enum {
+    prompt,
+    search,
+};
 
 const State = struct {
     pipeline_state: *pipeline.State,
@@ -24,11 +30,7 @@ const State = struct {
     search_reached_end: bool = false,
     rc_path: []const u8 = "",
     arena: std.heap.ArenaAllocator,
-
-    mode: enum {
-        prompt,
-        search,
-    } = .prompt,
+    mode: Mode = .prompt,
 
     pub fn deinit(self: *State) void {
         for (self.history.items) |item| {
@@ -295,7 +297,7 @@ fn eval(state: *State) !void {
         state.cursor = 0;
     }
 
-    const cmd = state.line();
+    const cmd = try aliasLookup(state, state.line());
 
     state.pipeline_state.source = cmd;
     pipeline.run(state.pipeline_state) catch |e| {
@@ -576,4 +578,91 @@ fn readRc(state: *State) !void {
         try state.writer().print("Unexpected error when reading .cherryrc at {s}: {}\r\n", .{ state.rc_path, e });
     };
     state.flush();
+}
+
+fn aliasLookup(state: *State, cmd_arg: []const u8) ![]const u8 {
+    var cmd = cmd_arg;
+
+    const aliases = symtable.aliases.items;
+    if (aliases.len == 0) {
+        return cmd;
+    }
+
+    const static = struct {
+        var replacement_buffer: [4096]u8 = undefined;
+    };
+
+    var it = std.mem.reverseIterator(aliases);
+    while (it.next()) |alias| {
+        if (!std.mem.startsWith(u8, cmd, alias.from)) {
+            continue;
+        }
+        if (cmd.len == alias.from.len or cmd[alias.from.len] == ' ') {
+            cmd = try std.fmt.bufPrint(
+                &static.replacement_buffer,
+                "{s}{s}",
+                .{ alias.to, cmd[alias.from.len..] },
+            );
+            @memcpy(state.buffer[0..cmd.len], static.replacement_buffer[0..cmd.len]);
+            cmd = state.buffer[0..cmd.len];
+        }
+    }
+    return cmd;
+}
+
+const expectEqualStrings = std.testing.expectEqualStrings;
+fn testState() State {
+    return State{
+        .arena = undefined,
+        .ally = undefined,
+        .out_writer = undefined,
+        .history = undefined,
+        .term = undefined,
+        .history_scroll_idx = undefined,
+        .pipeline_state = undefined,
+    };
+}
+
+test "Single alias lookup" {
+    symtable.init(std.testing.allocator);
+    defer symtable.deinit();
+
+    var state = testState();
+
+    const cmd = "ls";
+
+    try expectEqualStrings("ls \"--color=auto\"", try aliasLookup(&state, cmd));
+}
+
+test "Single alias lookup failure" {
+    symtable.init(std.testing.allocator);
+    defer symtable.deinit();
+
+    var state = testState();
+
+    const cmd = "lsblk";
+
+    try expectEqualStrings("lsblk", try aliasLookup(&state, cmd));
+}
+
+test "Single alias lookup success but keeps arg" {
+    symtable.init(std.testing.allocator);
+    defer symtable.deinit();
+
+    var state = testState();
+
+    const cmd = "ls /tmp";
+
+    try expectEqualStrings("ls \"--color=auto\" /tmp", try aliasLookup(&state, cmd));
+}
+
+test "Nested alias lookup success" {
+    symtable.init(std.testing.allocator);
+    defer symtable.deinit();
+
+    var state = testState();
+
+    const cmd = "ll";
+
+    try expectEqualStrings("ls \"--color=auto\" -l", try aliasLookup(&state, cmd));
 }

@@ -338,6 +338,8 @@ test "lex barewords" {
         .ally = ally,
         .arena = ally,
         .source = "ls -l -a",
+        .filename = "",
+        .arena_source = undefined,
     };
 
     const tokens = try lex(&state);
@@ -359,6 +361,8 @@ test "lex string literals" {
         .ally = ally,
         .arena = ally,
         .source = "\"hi\" \"hello\"",
+        .filename = "",
+        .arena_source = undefined,
     };
 
     const tokens = try lex(&state);
@@ -378,6 +382,8 @@ test "lex var declaration" {
         .ally = ally,
         .arena = ally,
         .source = "x := \"hello\"",
+        .filename = "",
+        .arena_source = undefined,
     };
 
     const tokens = try lex(&state);
@@ -397,6 +403,8 @@ test "lex call with variable" {
         .ally = ally,
         .arena = ally,
         .source = "say $x",
+        .filename = "",
+        .arena_source = undefined,
     };
 
     const tokens = try lex(&state);
@@ -415,6 +423,8 @@ test "lex equals" {
         .ally = ally,
         .arena = ally,
         .source = "== 1 2",
+        .filename = "",
+        .arena_source = undefined,
     };
 
     const tokens = try lex(&state);
@@ -436,6 +446,8 @@ test "lex rpar rpar" {
         .ally = ally,
         .arena = ally,
         .source = "3))",
+        .filename = "",
+        .arena_source = undefined,
     };
 
     const tokens = try lex(&state);
@@ -454,6 +466,8 @@ test "lex assert equals rpar" {
         .ally = ally,
         .arena = ally,
         .source = "assert (== \"hello\" $x)",
+        .filename = "",
+        .arena_source = undefined,
     };
 
     const tokens = try lex(&state);
@@ -475,6 +489,8 @@ test "lex assert str str" {
         .ally = ally,
         .arena = ally,
         .source = "assert (== \"H\" \"H\")",
+        .filename = "",
+        .arena_source = undefined,
     };
 
     const tokens = try lex(&state);
@@ -496,6 +512,8 @@ test "lex x y newline }" {
         .ally = ally,
         .arena = ally,
         .source = "\tassert true\n}",
+        .filename = "",
+        .arena_source = undefined,
     };
 
     const tokens = try lex(&state);
@@ -515,6 +533,8 @@ test "lex integer" {
         .ally = ally,
         .arena = ally,
         .source = "3 5",
+        .filename = "",
+        .arena_source = undefined,
     };
 
     const tokens = try lex(&state);
