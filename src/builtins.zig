@@ -33,6 +33,7 @@ const builtins_table = std.StaticStringMap(*const Builtin).initComptime(
         // general
         .{ "assert", assert },
         .{ "say", say },
+        .{ "alias", alias },
         // collections
         .{ "append", append },
         .{ "get", get },
@@ -108,6 +109,11 @@ fn assert(_: *State, args: []const *Value) !Result {
         true => nothing,
         false => BuiltinError.AssertionFailed,
     };
+}
+
+fn alias(state: *State, args: []const *Value) !Result {
+    try validateArgsCount(state, &.{2}, args.len);
+    return nothing;
 }
 
 fn add(state: *State, args: []const *Value) !Result {
@@ -334,12 +340,6 @@ fn get(state: *State, args: []const *Value) !Result {
         },
         .integer, .boolean, .float, .record => unreachable,
     };
-}
-
-fn slice(_: *State, list_or_string: *Value, from: u64, to: u64) !Result {
-    _ = list_or_string; // autofix
-    _ = from; // autofix
-    _ = to; // autofix
 }
 
 fn put(state: *State, args: []const *Value) !Result {
