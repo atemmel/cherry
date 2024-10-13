@@ -81,7 +81,7 @@ const LexState = struct {
     pub fn isUnallowedBarewordChar(self: LexState) bool {
         // chars that are never allowed to appear in the middle of a bareword
         return switch (self.get()) {
-            ':', '|', '(', ')', '{', '}', '[', ']', ' ', '\n', '\t', '\r', '#', '"' => true,
+            ':', '|', '(', ')', '{', '}', '[', ']', ' ', '\n', '\t', '\r', '#', '"', '`' => true,
             else => false,
         };
     }
@@ -218,6 +218,15 @@ fn lexKeyword(state: *LexState) ?Token {
 }
 
 fn lexStringLiteral(state: *LexState) ?Token {
+    if (lexSingleLineStringLiteral(state)) |lit| {
+        return lit;
+    } else if (lexMultiLineStringLiteral(state)) |lit| {
+        return lit;
+    }
+    return null;
+}
+
+fn lexSingleLineStringLiteral(state: *LexState) ?Token {
     if (state.get() != '"') {
         return null;
     }
@@ -228,7 +237,26 @@ fn lexStringLiteral(state: *LexState) ?Token {
             // TODO: handle error
             '\n',
             => unreachable,
-            '"',
+            '"', //TODO: handle escapes
+            => break,
+            else => {},
+        }
+    }
+    return .{
+        .kind = .StringLiteral,
+        .value = state.slice(begin, state.idx),
+    };
+}
+
+fn lexMultiLineStringLiteral(state: *LexState) ?Token {
+    if (state.get() != '`') {
+        return null;
+    }
+    state.next();
+    const begin = state.idx;
+    while (!state.eof()) : (state.next()) {
+        switch (state.get()) {
+            '`', //TODO: handle escapes
             => break,
             else => {},
         }
@@ -545,6 +573,31 @@ test "lex integer" {
     try expectEqualStrings("3", tokens[0].value);
     try expectEqual(.IntegerLiteral, tokens[1].kind);
     try expectEqualStrings("5", tokens[1].value);
+}
+
+test "lex multiline string" {
+    const ally = std.testing.allocator_instance.allocator();
+
+    var state: PipelineState = .{
+        .ally = ally,
+        .arena = ally,
+        .source =
+        \\say `
+        \\
+        \\guys`
+        ,
+        .filename = "",
+        .arena_source = undefined,
+    };
+
+    const tokens = try lex(&state);
+    defer ally.free(tokens);
+
+    try expectEqual(2, tokens.len);
+    try expectEqual(.Bareword, tokens[0].kind);
+    try expectEqualStrings("say", tokens[0].value);
+    try expectEqual(.StringLiteral, tokens[1].kind);
+    try expectEqualStrings("\n\nguys", tokens[1].value);
 }
 
 // maybe something like so?
