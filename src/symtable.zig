@@ -14,22 +14,21 @@ const Frame = struct {
 
 const Stack = std.ArrayList(Frame);
 
-const Alias = struct {
+pub const Alias = struct {
     from: []const u8,
     to: []const u8,
 };
 
+const Aliases = std.ArrayList(Alias);
+
 var stack: Stack = undefined;
-pub var aliases: std.ArrayList(Alias) = undefined;
+pub var aliases: Aliases = undefined;
 var ally: std.mem.Allocator = undefined;
 
 pub fn init(ally_arg: std.mem.Allocator) void {
     ally = ally_arg;
     stack = Stack.init(ally);
-    aliases = std.ArrayList(Alias).init(ally);
-    aliases.append(.{ .from = "ls", .to = "ls \"--color=auto\"" }) catch unreachable;
-    aliases.append(.{ .from = "ll", .to = "ls -l" }) catch unreachable;
-    aliases.append(.{ .from = "la", .to = "ls -la" }) catch unreachable;
+    aliases = Aliases.init(ally);
 }
 
 pub fn deinit() void {

@@ -631,6 +631,11 @@ test "Single alias lookup" {
 
     const cmd = "ls";
 
+    try symtable.aliases.append(.{
+        .from = "ls",
+        .to = "ls \"--color=auto\"",
+    });
+
     try expectEqualStrings("ls \"--color=auto\"", try aliasLookup(&state, cmd));
 }
 
@@ -641,6 +646,11 @@ test "Single alias lookup failure" {
     var state = testState();
 
     const cmd = "lsblk";
+
+    try symtable.aliases.append(.{
+        .from = "ls",
+        .to = "ls \"--color=auto\"",
+    });
 
     try expectEqualStrings("lsblk", try aliasLookup(&state, cmd));
 }
@@ -653,6 +663,11 @@ test "Single alias lookup success but keeps arg" {
 
     const cmd = "ls /tmp";
 
+    try symtable.aliases.append(.{
+        .from = "ls",
+        .to = "ls \"--color=auto\"",
+    });
+
     try expectEqualStrings("ls \"--color=auto\" /tmp", try aliasLookup(&state, cmd));
 }
 
@@ -663,6 +678,11 @@ test "Nested alias lookup success" {
     var state = testState();
 
     const cmd = "ll";
+
+    try symtable.aliases.appendSlice(&.{
+        .{ .from = "ls", .to = "ls \"--color=auto\"" },
+        .{ .from = "ll", .to = "ls -l" },
+    });
 
     try expectEqualStrings("ls \"--color=auto\" -l", try aliasLookup(&state, cmd));
 }

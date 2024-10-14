@@ -3,6 +3,7 @@ const values = @import("value.zig");
 const gc = @import("gc.zig");
 const interpreter = @import("interpreter.zig");
 const pipeline = @import("pipeline.zig");
+const symtable = @import("symtable.zig");
 
 const Value = values.Value;
 const Type = values.Type;
@@ -113,6 +114,21 @@ fn assert(_: *State, args: []const *Value) !Result {
 
 fn alias(state: *State, args: []const *Value) !Result {
     try validateArgsCount(state, &.{2}, args.len);
+
+    const alias_from = switch (args[0].as) {
+        .string => |s| s,
+        else => unreachable,
+    };
+    const alias_to = switch (args[1].as) {
+        .string => |s| s,
+        else => unreachable,
+    };
+
+    try symtable.aliases.append(.{
+        .from = alias_from,
+        .to = alias_to,
+    });
+
     return nothing;
 }
 
