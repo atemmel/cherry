@@ -304,6 +304,12 @@ fn skipChars(state: *LexState) !void {
                 });
             },
             '#' => {
+                state.next();
+                if (!state.eof() and state.get() == '{') {
+                    // seek end of block comment
+                    try skipBlockComments(state);
+                    continue;
+                }
                 while (!state.eof()) : (state.next()) {
                     switch (state.get()) {
                         '\n' => return,
@@ -315,6 +321,24 @@ fn skipChars(state: *LexState) !void {
             else => return,
         }
     }
+}
+
+fn skipBlockComments(state: *LexState) !void {
+    var depth: usize = 1;
+    var prev = state.get();
+    state.next();
+    while (!state.eof()) : (state.next()) {
+        defer prev = state.get();
+        if (prev == '#' and state.get() == '}') {
+            depth -= 1;
+            if (depth == 0) {
+                return;
+            }
+        } else if (prev == '#' and state.get() == '{') {
+            depth += 1;
+        }
+    }
+    return error.UnterminatedBlockComment;
 }
 
 pub fn dump(state: *PipelineState) void {
@@ -552,5 +576,63 @@ test "lex integer" {
 //
 // #}
 //
-test "lex block comment" {}
-test "lex nested block comment" {}
+test "lex block comment" {
+    const ally = std.testing.allocator_instance.allocator();
+
+    var state: PipelineState = .{
+        .ally = ally,
+        .arena = ally,
+        .source =
+        \\hello
+        \\#{
+        \\  comment
+        \\#}
+        \\bye
+        ,
+        .filename = "",
+        .arena_source = undefined,
+        .verboseLexer = true,
+    };
+
+    const tokens = try lex(&state);
+    defer ally.free(tokens);
+
+    try expectEqual(3, tokens.len);
+    try expectEqual(.Bareword, tokens[0].kind);
+    try expectEqualStrings("hello", tokens[0].value);
+    try expectEqual(.Newline, tokens[1].kind);
+    try expectEqual(.Bareword, tokens[2].kind);
+    try expectEqualStrings("bye", tokens[2].value);
+}
+test "lex nested block comment" {
+    const ally = std.testing.allocator_instance.allocator();
+
+    var state: PipelineState = .{
+        .ally = ally,
+        .arena = ally,
+        .source =
+        \\hello
+        \\#{
+        \\comment
+        \\#{
+        \\nested comment
+        \\#}
+        \\comment
+        \\#}
+        \\bye
+        ,
+        .filename = "",
+        .arena_source = undefined,
+        .verboseLexer = true,
+    };
+
+    const tokens = try lex(&state);
+    defer ally.free(tokens);
+
+    try expectEqual(3, tokens.len);
+    try expectEqual(.Bareword, tokens[0].kind);
+    try expectEqualStrings("hello", tokens[0].value);
+    try expectEqual(.Newline, tokens[1].kind);
+    try expectEqual(.Bareword, tokens[2].kind);
+    try expectEqualStrings("bye", tokens[2].value);
+}
