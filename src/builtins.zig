@@ -6,7 +6,7 @@ const pipeline = @import("pipeline.zig");
 const symtable = @import("symtable.zig");
 
 const Value = values.Value;
-const Type = values.Type;
+const TypeInfo = values.TypeInfo;
 const Result = values.Result;
 const State = pipeline.State;
 const InterpreterError = interpreter.InterpreterError;
@@ -35,6 +35,7 @@ const builtins_table = std.StaticStringMap(*const Builtin).initComptime(
         .{ "assert", assert },
         .{ "say", say },
         .{ "alias", alias },
+        .{ "cd", cd },
         // collections
         .{ "append", append },
         .{ "get", get },
@@ -129,6 +130,30 @@ fn alias(state: *State, args: []const *Value) !Result {
         .to = alias_to,
     });
 
+    return nothing;
+}
+
+fn cd(state: *State, args: []const *Value) !Result {
+    try validateArgsCount(state, &.{1}, args.len);
+    const path = switch (args[0].as) {
+        .string => |str| str,
+        else => {
+            return error.TypeMismatch;
+        },
+    };
+    var dir = std.fs.cwd().openDir(path, .{}) catch |err| {
+        const err_str = switch (err) {
+            error.FileNotFound => "No such directory",
+            error.AccessDenied => "Access denied",
+            error.NotDir => "Not a directory",
+            error.DeviceBusy => "Device is busy",
+            else => @errorName(err),
+        };
+        std.debug.print("{s}: {s}\n", .{ path, err_str });
+        return nothing;
+    };
+    defer dir.close();
+    dir.setAsCwd() catch {};
     return nothing;
 }
 

@@ -1,8 +1,11 @@
 const std = @import("std");
 const pipeline = @import("pipeline.zig");
 const terminal = @import("term.zig");
-const Term = terminal.Term;
 const symtable = @import("symtable.zig");
+const Term = terminal.Term;
+const Color = terminal.Color;
+const Hi = terminal.Hi;
+const BoldHi = terminal.BoldHi;
 
 const History = std.ArrayList([]const u8);
 
@@ -85,7 +88,7 @@ const State = struct {
         switch (self.mode) {
             .prompt => {
                 const cwd = try self.calcCwd();
-                fmt(out, "{s} |> {s}\r", .{ cwd, self.line() });
+                fmt(out, "{s} {s}|>{s} {s}\r", .{ cwd, BoldHi.white, Color.gray, self.line() });
             },
             .search => {
                 if (self.search_idx) |idx| {

@@ -3,6 +3,42 @@ const std = @import("std");
 const fs = std.fs;
 const posix = std.posix;
 
+pub const Color = struct {
+    pub const black = "\x1b[0;30m";
+    pub const red = "\x1b[0;31m";
+    pub const green = "\x1b[0;32m";
+    pub const yellow = "\x1b[0;33m";
+    pub const blue = "\x1b[0;34m";
+    pub const purple = "\x1b[0;35m";
+    pub const cyan = "\x1b[0;36m";
+    pub const white = "\x1b[0;37m";
+    pub const gray = "\x1b[0;38m";
+};
+
+pub const Hi = struct {
+    pub const black = "\x1b[0;90m";
+    pub const red = "\x1b[0;91m";
+    pub const green = "\x1b[0;92m";
+    pub const yellow = "\x1b[0;93m";
+    pub const blue = "\x1b[0;94m";
+    pub const purple = "\x1b[0;95m";
+    pub const cyan = "\x1b[0;96m";
+    pub const white = "\x1b[0;97m";
+    pub const gray = "\x1b[0;98m";
+};
+
+pub const BoldHi = struct {
+    pub const black = "\x1b[1;90m";
+    pub const red = "\x1b[1;91m";
+    pub const green = "\x1b[1;92m";
+    pub const yellow = "\x1b[1;93m";
+    pub const blue = "\x1b[1;94m";
+    pub const purple = "\x1b[1;95m";
+    pub const cyan = "\x1b[1;96m";
+    pub const white = "\x1b[1;97m";
+    pub const gray = "\x1b[1;98m";
+};
+
 // shoutout to big man over at:
 // https://zig.news/lhp/want-to-create-a-tui-application-the-basics-of-uncooked-terminal-io-17gm
 
