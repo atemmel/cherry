@@ -19,10 +19,28 @@ pub const Type = enum {
     record,
 };
 
+//TODO: think about this
+pub const TypeInfo = union(Type) {
+    string,
+    integer,
+    float,
+    boolean,
+    list: struct {
+        of: *const TypeInfo,
+    },
+    record: struct {
+        from: *const TypeInfo,
+        to: *const TypeInfo,
+    },
+    join: struct {
+        between: []const TypeInfo,
+    },
+};
+
 pub const Value = struct {
     as: union(Type) {
         // strings are immutable
-        string: []const u8, //TODO: this should be u32 so as to be unicode-compatible
+        string: []const u8, //TODO: this should perhaps be u32 so as to be unicode-compatible
         // integer type
         integer: i64,
         float: f64,

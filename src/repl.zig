@@ -2,7 +2,6 @@ const std = @import("std");
 const pipeline = @import("pipeline.zig");
 const terminal = @import("term.zig");
 const Term = terminal.Term;
-const utils = @import("utils.zig");
 const symtable = @import("symtable.zig");
 
 const History = std.ArrayList([]const u8);
@@ -405,7 +404,7 @@ fn tryAutocompleteCmd(state: *State) !void {
     if (state.length == 0) {
         return;
     }
-    const path = utils.env.get("PATH") orelse {
+    const path = std.posix.getenv("PATH") orelse {
         return;
     };
 
