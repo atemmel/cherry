@@ -7,6 +7,8 @@ const Color = terminal.Color;
 const Hi = terminal.Hi;
 const BoldHi = terminal.BoldHi;
 
+const startsWith = std.mem.startsWith;
+
 const History = std.ArrayList([]const u8);
 
 const Mode = enum {
@@ -88,7 +90,12 @@ const State = struct {
         switch (self.mode) {
             .prompt => {
                 const cwd = try self.calcCwd();
-                fmt(out, "{s} {s}|>{s} {s}\r", .{ cwd, BoldHi.white, Color.gray, self.line() });
+                if (startsWith(u8, cwd, self.home)) {
+                    const cwd_after_home = cwd[self.home.len..];
+                    fmt(out, "~{s} {s}|>{s} {s}\r", .{ cwd_after_home, BoldHi.white, Color.gray, self.line() });
+                } else {
+                    fmt(out, "{s} {s}|>{s} {s}\r", .{ cwd, BoldHi.white, Color.gray, self.line() });
+                }
             },
             .search => {
                 if (self.search_idx) |idx| {
@@ -108,7 +115,7 @@ const State = struct {
 
     pub fn prefixLen(self: *State) usize {
         return switch (self.mode) {
-            .prompt => self.cwd.len + 4,
+            .prompt => if (startsWith(u8, self.cwd, self.home)) self.cwd.len - self.home.len + 1 + 4 else self.cwd.len + 4,
             .search => blk: {
                 var sum = "(reverse-search) ".len;
                 if (self.search_idx) |idx| {
@@ -436,7 +443,7 @@ fn tryAutocompleteCmd(state: *State) !void {
                 continue;
             }
 
-            if (std.mem.startsWith(u8, entry.name, state.line())) {
+            if (startsWith(u8, entry.name, state.line())) {
                 n_hits += 1;
                 if (n_hits == 1) {
                     slice = try std.fmt.bufPrint(&buf, "{s}", .{entry.name});
@@ -481,7 +488,7 @@ fn tryAutocompletePath(state: *State) !void {
     defer dir.close();
     var dir_it = dir.iterate();
     while (try dir_it.next()) |entry| {
-        if (std.mem.startsWith(u8, entry.name, last_cmd)) {
+        if (startsWith(u8, entry.name, last_cmd)) {
             n_hits += 1;
             if (n_hits == 1) {
                 slice = try std.fmt.bufPrint(&buf, "{s}", .{entry.name});
@@ -596,7 +603,7 @@ fn aliasLookup(state: *State, cmd_arg: []const u8) ![]const u8 {
 
     var it = std.mem.reverseIterator(aliases);
     while (it.next()) |alias| {
-        if (!std.mem.startsWith(u8, cmd, alias.from)) {
+        if (!startsWith(u8, cmd, alias.from)) {
             continue;
         }
         if (cmd.len == alias.from.len or cmd[alias.from.len] == ' ') {

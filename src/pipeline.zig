@@ -26,6 +26,7 @@ pub const State = struct {
         offending_token: *const Token,
         msg: []const u8,
         trailing: bool,
+        offending_expr_idx: ?usize = null,
     } = null,
 
     const ErrorInfo = struct {

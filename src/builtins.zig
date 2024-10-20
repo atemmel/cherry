@@ -138,7 +138,7 @@ fn cd(state: *State, args: []const *Value) !Result {
     const path = switch (args[0].as) {
         .string => |str| str,
         else => {
-            return error.TypeMismatch;
+            return typeMismatchError(state, "string", "int", 0);
         },
     };
     var dir = std.fs.cwd().openDir(path, .{}) catch |err| {
@@ -455,4 +455,17 @@ fn validateArgsCount(
         .trailing = false,
     };
     return InterpreterError.ArgsCountMismatch;
+}
+
+const TypeMismatchError = InterpreterError || std.mem.Allocator.Error;
+
+fn typeMismatchError(state: *State, wants: []const u8, got: []const u8, offending_value_idx: usize) TypeMismatchError {
+    const msg = try std.fmt.allocPrint(state.arena, "Type mismatch, expected '{s}', got '{s}'", .{ wants, got });
+    state.error_report = .{
+        .msg = msg,
+        .trailing = false,
+        .offending_token = undefined,
+        .offending_expr_idx = offending_value_idx,
+    };
+    return error.TypeMismatch;
 }

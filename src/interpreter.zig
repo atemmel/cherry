@@ -186,7 +186,12 @@ fn evalBuiltin(ctx: *Context, call: ast.Call, builtin: *const builtins.Builtin) 
     return builtin(ctx.state, args.items) catch |e| {
         switch (e) {
             error.TypeMismatch, error.ArgsCountMismatch => {
-                ctx.state.error_report.?.offending_token = call.token;
+                if (ctx.state.error_report.?.offending_expr_idx) |idx| {
+                    const expr = call.arguments[idx];
+                    ctx.state.error_report.?.offending_token = tokenFromExpr(expr);
+                } else {
+                    ctx.state.error_report.?.offending_token = call.token;
+                }
             },
             else => {},
         }
@@ -446,4 +451,17 @@ fn ptrAdd(token: *const tokens.Token, steps: usize) *const tokens.Token {
     const original_adress = @intFromPtr(token);
     const offset_adress = original_adress + steps * @sizeOf(tokens.Token);
     return @ptrFromInt(offset_adress);
+}
+
+fn tokenFromExpr(expr: ast.Expression) *const tokens.Token {
+    return switch (expr.as) {
+        .bareword => |bw| bw.token,
+        .bool_literal => |bl| bl.token,
+        .capturing_call => |cc| cc.token,
+        .integer_literal => |il| il.token,
+        .list_literal => |li| li.token,
+        .record_literal => |rl| rl.token,
+        .string_literal => |sl| sl.token,
+        .variable => |v| v.token,
+    };
 }
