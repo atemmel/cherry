@@ -9,6 +9,7 @@ pub const Token = struct {
         StringLiteral,
         IntegerLiteral,
         Variable,
+        EmptyRecord, // [=]
         // Significant whitespace
         Newline,
         // Symbols
@@ -21,7 +22,6 @@ pub const Token = struct {
         RBrace,
         LBracket,
         RBracket,
-        EmptyRecord, // [=]
         RedirectOut, // |>
         RedirectIn, // <|
         // Keywords

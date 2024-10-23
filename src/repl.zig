@@ -311,7 +311,10 @@ fn eval(state: *State) !void {
         switch (e) {
             error.CommandNotFound => try state.writer().print("Could not find command in system\r\n", .{}),
             //TODO: handle these
-            else => {},
+            else => {
+                try state.writer().print("Error: {any}\r\n", .{e});
+                state.flush();
+            },
         }
     };
     state.flush();
@@ -475,8 +478,8 @@ fn tryAutocompletePath(state: *State) !void {
 
     const line = state.line();
 
-    var last_cmd_begin = std.mem.lastIndexOfScalar(u8, line, ' ') orelse line.len;
-    if (last_cmd_begin < line.len) {
+    var last_cmd_begin = std.mem.lastIndexOfScalar(u8, line, ' ') orelse 0;
+    if (last_cmd_begin < line.len and last_cmd_begin != 0) {
         last_cmd_begin += 1;
     }
     const last_cmd = line[last_cmd_begin..];
@@ -573,12 +576,12 @@ fn readRc(state: *State) !void {
     const rc_src = file.readToEndAlloc(state.arena.allocator(), 1_000_000_000) catch return;
 
     try state.term.restore();
-    state.flush();
     defer {
         state.term = Term.init() catch unreachable;
         state.length = 0;
         state.cursor = 0;
     }
+    state.flush();
 
     state.pipeline_state.source = rc_src;
     pipeline.run(state.pipeline_state) catch |e| {
