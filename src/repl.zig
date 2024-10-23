@@ -142,8 +142,6 @@ fn fmts(writer: anytype, comptime str: []const u8) void {
 
 //TODO
 // - display commands in a nice way (colors, etc)
-// - read rc file on startup
-// - aliases
 
 pub fn repl(pipeline_state: *pipeline.State) !void {
     var arena = std.heap.ArenaAllocator.init(pipeline_state.ally);
