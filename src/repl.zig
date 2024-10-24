@@ -405,7 +405,8 @@ fn tryAutocomplete(state: *State) !void {
     const has_spaces = std.mem.indexOfScalar(u8, state.line(), ' ') != null;
 
     if (has_spaces) {
-        try tryAutocompletePath(state);
+        //try tryAutocompletePath(state);
+        try tryAutocompletePath2(state);
     } else {
         try tryAutocompleteCmd(state);
     }
@@ -516,6 +517,126 @@ fn tryAutocompletePath(state: *State) !void {
     }
 }
 
+fn tryAutocompletePath2(state: *State) !void {
+    var arena = std.heap.ArenaAllocator.init(state.ally);
+    defer arena.deinit();
+
+    const line = state.line();
+
+    var last_cmd_begin = std.mem.lastIndexOfScalar(u8, line, ' ') orelse 0;
+    if (last_cmd_begin < line.len and last_cmd_begin != 0) {
+        last_cmd_begin += 1;
+    }
+    const last_cmd = line[last_cmd_begin..];
+    const out = state.writer();
+
+    var path_ctx: PathCompletionCtx = .{
+        .source = last_cmd,
+        .arena = arena.allocator(),
+    };
+    const result = try tryAutocompletePathImpl(&path_ctx);
+    switch (result) {
+        .none => {},
+        .single_match => |str| {
+            const offset = line.len - last_cmd_begin;
+            _ = try std.fmt.bufPrint(state.buffer[state.length - offset ..], "{s}", .{str});
+            state.length += str.len - offset;
+            state.cursor += str.len - offset;
+        },
+        .multiple_match => |all| {
+            for (all.potential_matches) |match| {
+                fmt(out, "\r\n{s} ", .{match});
+            }
+            fmts(out, "\r\n");
+            state.flush();
+        },
+    }
+}
+
+const PathCompletionCtx = struct {
+    source: []const u8,
+    arena: std.mem.Allocator,
+};
+
+const PathCompletionResult = union(enum) {
+    single_match: []const u8,
+    multiple_match: struct {
+        shared_match: []const u8,
+        potential_matches: []const []const u8,
+    },
+    none: void,
+};
+
+fn compareStrings(_: void, lhs: []const u8, rhs: []const u8) bool {
+    return std.mem.order(u8, lhs, rhs) == .lt;
+}
+
+fn tryAutocompletePathImpl(ctx: *PathCompletionCtx) !PathCompletionResult {
+    const dir_path = try dirLookup(ctx);
+    var dir = try std.fs.cwd().openDir(dir_path.dir_to_open, .{ .iterate = true });
+    defer dir.close();
+    var dir_it = dir.iterate();
+
+    var result_list = std.ArrayList([]const u8).init(ctx.arena);
+
+    while (try dir_it.next()) |entry| {
+        //std.debug.print("Comparing {s} with {s}\n", .{ dir_path.stem, entry.name });
+        if (startsWith(u8, entry.name, dir_path.stem)) {
+            if (dir_path.base) |base| {
+                const s = try std.fmt.allocPrint(ctx.arena, "{s}{s}", .{ base, entry.name });
+                try result_list.append(s);
+            } else {
+                try result_list.append(try ctx.arena.dupe(u8, entry.name));
+            }
+        }
+    }
+
+    std.mem.sort([]const u8, result_list.items, {}, compareStrings);
+
+    return switch (result_list.items.len) {
+        0 => .{ .none = {} },
+        1 => .{ .single_match = result_list.items[0] },
+        else => .{
+            .multiple_match = .{
+                .shared_match = "", //TODO: this
+                .potential_matches = result_list.items,
+            },
+        },
+    };
+}
+
+const DirLookup = struct {
+    dir_to_open: []const u8,
+    base: ?[]const u8,
+    stem: []const u8,
+};
+
+fn dirLookup(ctx: *PathCompletionCtx) !DirLookup {
+    const first_separator = std.mem.indexOfScalar(u8, ctx.source, '/');
+    if (first_separator == null) {
+        return .{
+            .dir_to_open = ".",
+            .base = null,
+            .stem = ctx.source,
+        };
+    }
+    const last_separator = std.mem.lastIndexOfScalar(u8, ctx.source, '/');
+    const end_of_base = if (last_separator == null) ctx.source.len else last_separator.? + 1;
+    const source_is_root = startsWith(u8, "/", ctx.source);
+    if (source_is_root) {
+        return .{
+            .dir_to_open = ctx.source[0..end_of_base],
+            .base = ctx.source[0..end_of_base],
+            .stem = ctx.source[end_of_base..],
+        };
+    }
+    return .{
+        .dir_to_open = try std.fmt.allocPrint(ctx.arena, "./{s}", .{ctx.source[0..end_of_base]}),
+        .base = ctx.source[0..end_of_base],
+        .stem = ctx.source[end_of_base..],
+    };
+}
+
 fn reverseSearch(state: *State, reset: enum { reset, forward }) !void {
     state.search_reached_end = false;
 
@@ -620,7 +741,9 @@ fn aliasLookup(state: *State, cmd_arg: []const u8) ![]const u8 {
     return cmd;
 }
 
+const expectEqual = std.testing.expectEqual;
 const expectEqualStrings = std.testing.expectEqualStrings;
+
 fn testState() State {
     return State{
         .arena = undefined,
@@ -695,4 +818,102 @@ test "Nested alias lookup success" {
     });
 
     try expectEqualStrings("ls \"--color=auto\" -l", try aliasLookup(&state, cmd));
+}
+
+test "autocomplete simple cases" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    var ctx: PathCompletionCtx = .{
+        .source = "",
+        .arena = arena.allocator(),
+    };
+
+    const tmpDir = std.testing.tmpDir(.{});
+    try tmpDir.dir.setAsCwd();
+    _ = try std.fs.cwd().createFile("alice", .{});
+    _ = try std.fs.cwd().createFile("bob", .{});
+    _ = try std.fs.cwd().createFile("billy", .{});
+    _ = try std.fs.cwd().createFile("charlie", .{});
+
+    {
+        ctx.source = "c";
+        const result = try tryAutocompletePathImpl(&ctx);
+        try expectEqualStrings("charlie", result.single_match);
+    }
+
+    {
+        ctx.source = "d";
+        const result = try tryAutocompletePathImpl(&ctx);
+        switch (result) {
+            .none => {},
+            else => unreachable,
+        }
+    }
+
+    {
+        ctx.source = "b";
+        const result = try tryAutocompletePathImpl(&ctx);
+        try expectEqual(2, result.multiple_match.potential_matches.len);
+        try expectEqualStrings("billy", result.multiple_match.potential_matches[0]);
+        try expectEqualStrings("bob", result.multiple_match.potential_matches[1]);
+    }
+}
+
+test "autocomplete nested cases" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    var ctx: PathCompletionCtx = .{
+        .source = "",
+        .arena = arena.allocator(),
+    };
+
+    const tmpDir = std.testing.tmpDir(.{});
+    try tmpDir.dir.setAsCwd();
+
+    _ = try std.fs.cwd().makeDir("./my_dir");
+    _ = try std.fs.cwd().createFile("./my_dir/alice", .{});
+    _ = try std.fs.cwd().createFile("./my_dir/bob", .{});
+    _ = try std.fs.cwd().createFile("./my_dir/billy", .{});
+    _ = try std.fs.cwd().createFile("./my_dir/charlie", .{});
+
+    var dir = try std.fs.cwd().openDir("my_dir", .{ .iterate = true });
+    defer dir.close();
+    var it = dir.iterate();
+
+    while (try it.next()) |ent| {
+        std.debug.print("{s}\n", .{ent.name});
+    }
+
+    {
+        ctx.source = "my_dir/a";
+        const result = try tryAutocompletePathImpl(&ctx);
+        try expectEqualStrings("my_dir/alice", result.single_match);
+    }
+}
+
+test "autocomplete from root" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    var ctx: PathCompletionCtx = .{
+        .source = "",
+        .arena = arena.allocator(),
+    };
+
+    var dir = try std.fs.openDirAbsolute("/", .{});
+    defer dir.close();
+    try dir.setAsCwd();
+
+    {
+        ctx.source = "/";
+        const result = try tryAutocompletePathImpl(&ctx);
+        if (result.multiple_match.potential_matches.len == 0) {
+            unreachable;
+        }
+    }
+
+    {
+        ctx.source = "/e";
+        const result = try tryAutocompletePathImpl(&ctx);
+        try expectEqualStrings("/etc", result.single_match);
+    }
 }
