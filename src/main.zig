@@ -96,6 +96,7 @@ pub fn main() !void {
 
 comptime {
     const refAllDecls = std.testing.refAllDecls;
+    refAllDecls(@import("algo.zig"));
     refAllDecls(@import("ast.zig"));
     refAllDecls(@import("repl.zig"));
     refAllDecls(@import("tokens.zig"));

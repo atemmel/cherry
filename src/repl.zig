@@ -1,4 +1,5 @@
 const std = @import("std");
+const algo = @import("algo.zig");
 const pipeline = @import("pipeline.zig");
 const terminal = @import("term.zig");
 const symtable = @import("symtable.zig");
@@ -405,10 +406,9 @@ fn tryAutocomplete(state: *State) !void {
     const has_spaces = std.mem.indexOfScalar(u8, state.line(), ' ') != null;
 
     if (has_spaces) {
-        //try tryAutocompletePath(state);
-        try tryAutocompletePath2(state);
+        tryAutocompletePath2(state) catch {};
     } else {
-        try tryAutocompleteCmd(state);
+        tryAutocompleteCmd(state) catch {};
     }
 }
 
@@ -538,12 +538,45 @@ fn tryAutocompletePath2(state: *State) !void {
     switch (result) {
         .none => {},
         .single_match => |str| {
+            //TODO: single match sometimes needs multiple tabs to succeed properly
+            // e.g.
+            //      |> ls zig-o       <TAB>
+            // (x)  |> ls zig-out     <TAB>
+            //      |> ls zig-out/    <TAB>
+            //      |> ls zig-out/bin <TAB>
             const offset = line.len - last_cmd_begin;
-            _ = try std.fmt.bufPrint(state.buffer[state.length - offset ..], "{s}", .{str});
-            state.length += str.len - offset;
-            state.cursor += str.len - offset;
+
+            defer {
+                state.length += str.len - offset;
+                state.cursor += str.len - offset;
+            }
+
+            const stat = std.fs.cwd().statFile(str) catch std.fs.Dir.Stat{
+                .atime = undefined,
+                .ctime = undefined,
+                .inode = undefined,
+                .kind = .file,
+                .mode = undefined,
+                .mtime = undefined,
+                .size = undefined,
+            };
+            if (std.mem.eql(u8, last_cmd, str) and stat.kind == .directory) {
+                //TODO: make bufPrint to state.buffer-pattern into separate function
+                _ = try std.fmt.bufPrint(state.buffer[state.length - offset ..], "{s}/", .{str});
+                state.length += 1;
+                state.cursor += 1;
+            } else {
+                _ = try std.fmt.bufPrint(state.buffer[state.length - offset ..], "{s}", .{str});
+            }
         },
         .multiple_match => |all| {
+            const delta = all.shared_match.len - last_cmd.len;
+            if (delta > 0) {
+                const shared_match_substr = all.shared_match[last_cmd.len..];
+                _ = try std.fmt.bufPrint(state.buffer[state.length..], "{s}", .{shared_match_substr});
+                state.length += delta;
+                state.cursor += delta;
+            }
             for (all.potential_matches) |match| {
                 fmt(out, "\r\n{s} ", .{match});
             }
@@ -567,10 +600,6 @@ const PathCompletionResult = union(enum) {
     none: void,
 };
 
-fn compareStrings(_: void, lhs: []const u8, rhs: []const u8) bool {
-    return std.mem.order(u8, lhs, rhs) == .lt;
-}
-
 fn tryAutocompletePathImpl(ctx: *PathCompletionCtx) !PathCompletionResult {
     const dir_path = try dirLookup(ctx);
     var dir = try std.fs.cwd().openDir(dir_path.dir_to_open, .{ .iterate = true });
@@ -580,7 +609,6 @@ fn tryAutocompletePathImpl(ctx: *PathCompletionCtx) !PathCompletionResult {
     var result_list = std.ArrayList([]const u8).init(ctx.arena);
 
     while (try dir_it.next()) |entry| {
-        //std.debug.print("Comparing {s} with {s}\n", .{ dir_path.stem, entry.name });
         if (startsWith(u8, entry.name, dir_path.stem)) {
             if (dir_path.base) |base| {
                 const s = try std.fmt.allocPrint(ctx.arena, "{s}{s}", .{ base, entry.name });
@@ -591,16 +619,20 @@ fn tryAutocompletePathImpl(ctx: *PathCompletionCtx) !PathCompletionResult {
         }
     }
 
-    std.mem.sort([]const u8, result_list.items, {}, compareStrings);
+    std.mem.sort([]const u8, result_list.items, {}, algo.compareStrings);
 
     return switch (result_list.items.len) {
         0 => .{ .none = {} },
         1 => .{ .single_match = result_list.items[0] },
-        else => .{
-            .multiple_match = .{
-                .shared_match = "", //TODO: this
-                .potential_matches = result_list.items,
-            },
+        else => blk: {
+            const last_shared_idx = algo.indexOfDiffStrings(result_list.items);
+            const shared_match_slice = result_list.items[0][0..last_shared_idx];
+            break :blk .{
+                .multiple_match = .{
+                    .shared_match = shared_match_slice,
+                    .potential_matches = result_list.items,
+                },
+            };
         },
     };
 }
@@ -622,7 +654,7 @@ fn dirLookup(ctx: *PathCompletionCtx) !DirLookup {
     }
     const last_separator = std.mem.lastIndexOfScalar(u8, ctx.source, '/');
     const end_of_base = if (last_separator == null) ctx.source.len else last_separator.? + 1;
-    const source_is_root = startsWith(u8, "/", ctx.source);
+    const source_is_root = first_separator.? == 0;
     if (source_is_root) {
         return .{
             .dir_to_open = ctx.source[0..end_of_base],
@@ -876,14 +908,6 @@ test "autocomplete nested cases" {
     _ = try std.fs.cwd().createFile("./my_dir/billy", .{});
     _ = try std.fs.cwd().createFile("./my_dir/charlie", .{});
 
-    var dir = try std.fs.cwd().openDir("my_dir", .{ .iterate = true });
-    defer dir.close();
-    var it = dir.iterate();
-
-    while (try it.next()) |ent| {
-        std.debug.print("{s}\n", .{ent.name});
-    }
-
     {
         ctx.source = "my_dir/a";
         const result = try tryAutocompletePathImpl(&ctx);
@@ -899,21 +923,55 @@ test "autocomplete from root" {
         .arena = arena.allocator(),
     };
 
-    var dir = try std.fs.openDirAbsolute("/", .{});
-    defer dir.close();
-    try dir.setAsCwd();
-
     {
         ctx.source = "/";
         const result = try tryAutocompletePathImpl(&ctx);
-        if (result.multiple_match.potential_matches.len == 0) {
-            unreachable;
-        }
+        try std.testing.expect(result.multiple_match.potential_matches.len > 0);
     }
 
     {
         ctx.source = "/e";
         const result = try tryAutocompletePathImpl(&ctx);
         try expectEqualStrings("/etc", result.single_match);
+    }
+}
+
+test "autocomplete closest suggested path" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    var ctx: PathCompletionCtx = .{
+        .source = "",
+        .arena = arena.allocator(),
+    };
+
+    const tmpDir = std.testing.tmpDir(.{});
+    try tmpDir.dir.setAsCwd();
+
+    _ = try std.fs.cwd().makeDir("./my_dir");
+    _ = try std.fs.cwd().createFile("./my_dir/alice", .{});
+    _ = try std.fs.cwd().createFile("./my_dir/bob", .{});
+    _ = try std.fs.cwd().createFile("./my_dir/bobby", .{});
+    _ = try std.fs.cwd().createFile("./my_dir/bobbotron", .{});
+    _ = try std.fs.cwd().createFile("./my_dir/charlie", .{});
+
+    {
+        ctx.source = "my_dir/b";
+        const result = try tryAutocompletePathImpl(&ctx);
+        try expectEqual(3, result.multiple_match.potential_matches.len);
+        try expectEqualStrings("my_dir/bob", result.multiple_match.shared_match);
+    }
+
+    {
+        ctx.source = "my_dir/";
+        const result = try tryAutocompletePathImpl(&ctx);
+        try expectEqual(5, result.multiple_match.potential_matches.len);
+        try expectEqualStrings("my_dir/", result.multiple_match.shared_match);
+    }
+
+    {
+        ctx.source = "my_dir/bob";
+        const result = try tryAutocompletePathImpl(&ctx);
+        try expectEqual(3, result.multiple_match.potential_matches.len);
+        try expectEqualStrings("my_dir/bob", result.multiple_match.shared_match);
     }
 }
