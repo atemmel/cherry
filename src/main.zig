@@ -91,7 +91,9 @@ pub fn main() !void {
 
     state.source = try readfile(arena_allocator, file.?);
 
-    try pipeline.run(&state);
+    pipeline.run(&state) catch |err| {
+        try pipeline.writeError(&state, err);
+    };
 }
 
 comptime {

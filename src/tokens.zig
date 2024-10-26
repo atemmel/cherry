@@ -2,6 +2,10 @@ const std = @import("std");
 const ast = @import("ast.zig");
 const PipelineState = @import("pipeline.zig").State;
 
+pub const LexerError = error{
+    UnterminatedBlockComment,
+} || std.mem.Allocator.Error;
+
 pub const Token = struct {
     pub const Kind = enum {
         // Values/literals
@@ -94,7 +98,7 @@ const LexState = struct {
     }
 };
 
-pub fn lex(state: *PipelineState) ![]Token {
+pub fn lex(state: *PipelineState) LexerError![]Token {
     var lstate = LexState{
         .state = state,
         .list = std.ArrayList(Token).init(state.arena),
@@ -321,7 +325,7 @@ fn lexBareword(state: *LexState) ?Token {
         };
 }
 
-fn skipChars(state: *LexState) !void {
+fn skipChars(state: *LexState) LexerError!void {
     while (!state.eof()) : (state.next()) {
         switch (state.get()) {
             ' ', '\t' => {},

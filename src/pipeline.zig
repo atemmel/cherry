@@ -1,12 +1,14 @@
 const std = @import("std");
 const tokens = @import("tokens.zig");
 const ast = @import("ast.zig");
-const interpret = @import("interpreter.zig").interpret;
+const interpreter = @import("interpreter.zig");
 
 const Token = tokens.Token;
 
 const print = std.debug.print;
 const microTimestamp = std.time.microTimestamp;
+
+pub const PipelineError = tokens.LexerError || ast.errors || interpreter.EvalError;
 
 pub const State = struct {
     arena_source: *std.heap.ArenaAllocator,
@@ -87,6 +89,91 @@ fn logTime(comptime prefix: []const u8, start_ms: i64, stop_ms: i64) void {
     print(prefix ++ "{d:.3}s\n", .{s});
 }
 
+pub fn writeError(state: *State, err: PipelineError) !void {
+    const writer = std.io.getStdErr().writer();
+    switch (err) {
+        error.UnterminatedBlockComment => {
+            try writeLexerError(state, writer);
+        },
+        error.ParseFailed => {
+            try writeAstError(state, writer);
+        },
+        error.ArgsCountMismatch,
+        error.BadVariableLookup,
+        error.CommandNotFound,
+        error.MembersNotAllowed,
+        error.MismatchedBraces,
+        error.TypeMismatch,
+        error.ValueRequired,
+        error.VariableAlreadyDeclared,
+        => {
+            try writeRuntimeError(state, writer);
+        },
+        error.OutOfMemory,
+        error.FileNotFound,
+        error.AccessDenied,
+        error.NameTooLong,
+        error.InvalidUtf8,
+        error.InvalidWtf8,
+        error.BadPathName,
+        error.Unexpected,
+        error.SymLinkLoop,
+        error.ProcessFdQuotaExceeded,
+        error.SystemFdQuotaExceeded,
+        error.NoDevice,
+        error.SystemResources,
+        error.FileTooBig,
+        error.IsDir,
+        error.NoSpaceLeft,
+        error.NotDir,
+        error.DeviceBusy,
+        error.FileBusy,
+        error.WouldBlock,
+        error.InputOutput,
+        error.OperationAborted,
+        error.BrokenPipe,
+        error.ConnectionResetByPeer,
+        error.ConnectionTimedOut,
+        error.NotOpenForReading,
+        error.SocketNotConnected,
+        error.DiskQuota,
+        error.InvalidArgument,
+        error.NotOpenForWriting,
+        error.LockViolation,
+        error.AssertionFailed,
+        error.CurrentWorkingDirectoryUnlinked,
+        error.InvalidBatchScriptArg,
+        error.InvalidExe,
+        error.FileSystem,
+        error.ResourceLimitReached,
+        error.InvalidUserId,
+        error.PermissionDenied,
+        error.InvalidName,
+        error.InvalidHandle,
+        error.WaitAbandoned,
+        error.WaitTimeOut,
+        error.NetworkSubsystemFailed,
+        error.StdoutStreamTooLong,
+        error.StderrStreamTooLong,
+        error.Utf8ExpectedContinuation,
+        error.Utf8OverlongEncoding,
+        error.Utf8EncodesSurrogateHalf,
+        error.Utf8CodepointTooLarge,
+        error.Utf8InvalidStartByte,
+        error.TruncatedInput,
+        => return err,
+    }
+}
+
+pub fn writeLexerError(state: *State, writer: anytype) !void {
+    //TODO: handle error information better when there are no tokens
+    //const info = state.errorInfo();
+    //const file = state.filename;
+    //try writer.print("<{s}>:{}:{}: lexer error: {s}\n{s}\n", .{ file, info.row, info.col, info.msg, info.row_str });
+    //try writeErrorSource(info, writer);
+    try writer.print("<{s}>: lexer error\n", .{state.filename});
+}
+
 pub fn writeAstError(state: *State, writer: anytype) !void {
     const info = state.errorInfo();
     const file = state.filename;
@@ -114,8 +201,7 @@ fn writeErrorSource(info: State.ErrorInfo, writer: anytype) !void {
     try writer.print("\n", .{});
 }
 
-pub fn run(state: *State) !void {
-    defer _ = state.arena_source.reset(.retain_capacity);
+pub fn run(state: *State) PipelineError!void {
     const lexer_start_ms = microTimestamp();
     state.tokens = try tokens.lex(state);
     const lexer_stop_ms = microTimestamp();
@@ -125,85 +211,13 @@ pub fn run(state: *State) !void {
     }
 
     const ast_start_ms = microTimestamp();
-    state.root = ast.parse(state) catch |e| switch (e) {
-        ast.errors.OutOfMemory => @panic("OOM"),
-        ast.errors.ParseFailed => {
-            try writeAstError(state, std.io.getStdErr().writer());
-            return e;
-        },
-    };
+    state.root = try ast.parse(state);
+
     const ast_stop_ms = microTimestamp();
     if (state.verboseParser) {
         logTime("Parsing: ", ast_start_ms, ast_stop_ms);
         ast.dump(state.root);
     }
 
-    interpret(state) catch |e| {
-        switch (e) {
-            error.ArgsCountMismatch,
-            error.BadVariableLookup,
-            error.CommandNotFound,
-            error.MembersNotAllowed,
-            error.MismatchedBraces,
-            error.TypeMismatch,
-            error.ValueRequired,
-            error.VariableAlreadyDeclared,
-            => {
-                try writeRuntimeError(state, std.io.getStdErr().writer());
-            },
-            error.OutOfMemory,
-            error.FileNotFound,
-            error.AccessDenied,
-            error.NameTooLong,
-            error.InvalidUtf8,
-            error.InvalidWtf8,
-            error.BadPathName,
-            error.Unexpected,
-            error.SymLinkLoop,
-            error.ProcessFdQuotaExceeded,
-            error.SystemFdQuotaExceeded,
-            error.NoDevice,
-            error.SystemResources,
-            error.FileTooBig,
-            error.IsDir,
-            error.NoSpaceLeft,
-            error.NotDir,
-            error.DeviceBusy,
-            error.FileBusy,
-            error.WouldBlock,
-            error.InputOutput,
-            error.OperationAborted,
-            error.BrokenPipe,
-            error.ConnectionResetByPeer,
-            error.ConnectionTimedOut,
-            error.NotOpenForReading,
-            error.SocketNotConnected,
-            error.DiskQuota,
-            error.InvalidArgument,
-            error.NotOpenForWriting,
-            error.LockViolation,
-            error.AssertionFailed,
-            error.CurrentWorkingDirectoryUnlinked,
-            error.InvalidBatchScriptArg,
-            error.InvalidExe,
-            error.FileSystem,
-            error.ResourceLimitReached,
-            error.InvalidUserId,
-            error.PermissionDenied,
-            error.InvalidName,
-            error.InvalidHandle,
-            error.WaitAbandoned,
-            error.WaitTimeOut,
-            error.NetworkSubsystemFailed,
-            error.StdoutStreamTooLong,
-            error.StderrStreamTooLong,
-            error.Utf8ExpectedContinuation,
-            error.Utf8OverlongEncoding,
-            error.Utf8EncodesSurrogateHalf,
-            error.Utf8CodepointTooLarge,
-            error.Utf8InvalidStartByte,
-            error.TruncatedInput,
-            => return e,
-        }
-    };
+    try interpreter.interpret(state);
 }

@@ -37,6 +37,8 @@ const State = struct {
     arena: std.heap.ArenaAllocator,
     mode: Mode = .prompt,
 
+    auto_cd: bool = true,
+
     pub fn deinit(self: *State) void {
         for (self.history.items) |item| {
             self.ally.free(item);
@@ -295,6 +297,7 @@ pub fn repl(pipeline_state: *pipeline.State) !void {
 }
 
 fn eval(state: *State) !void {
+    defer _ = state.pipeline_state.arena_source.reset(.retain_capacity);
     try state.writer().print("\r\n", .{});
     terminal.clearLine(state.writer(), state.prefixLen());
     try state.term.restore();
@@ -309,13 +312,19 @@ fn eval(state: *State) !void {
 
     state.pipeline_state.source = cmd;
     pipeline.run(state.pipeline_state) catch |e| {
-        switch (e) {
-            error.CommandNotFound => try state.writer().print("Could not find command in system\r\n", .{}),
-            //TODO: handle these
-            else => {
-                try state.writer().print("Error: {any}\r\n", .{e});
+        const tokens = state.pipeline_state.tokens;
+        for (tokens) |tok| {
+            std.debug.print("{any}\n", .{tok.kind});
+        }
+        std.debug.print("{any}\n", .{e});
+        if (state.auto_cd and tokens.len == 1 and tokens[0].kind == .Bareword) {
+            tryAutoCd(state, tokens[0].value);
+        } else {
+            pipeline.writeError(state.pipeline_state, e) catch |err| {
+                //TODO: handle these
+                try state.writer().print("Error: {any}\r\n", .{err});
                 state.flush();
-            },
+            };
         }
     };
     state.flush();
@@ -323,6 +332,19 @@ fn eval(state: *State) !void {
 
     appendHistory(state) catch |e| {
         try state.writer().print("Could not write history, {any}\r\n", .{e});
+        state.flush();
+    };
+}
+
+fn tryAutoCd(state: *State, path: []const u8) void {
+    var dir = std.fs.cwd().openDir(path, .{}) catch |err| {
+        state.writer().print("auto-cd failed to open directory: {any}\r\n", .{err}) catch {};
+        state.flush();
+        return;
+    };
+    defer dir.close();
+    dir.setAsCwd() catch |err| {
+        state.writer().print("auto-cd failed to change directory: {any}\r\n", .{err}) catch {};
         state.flush();
     };
 }

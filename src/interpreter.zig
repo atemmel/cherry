@@ -34,7 +34,9 @@ pub const InterpreterError = error{
     VariableAlreadyDeclared,
 };
 
-pub fn interpret(state: *PipelineState) !void {
+pub const EvalError = builtins.BuiltinError || std.process.Child.RunError;
+
+pub fn interpret(state: *PipelineState) EvalError!void {
     var stmntArena = std.heap.ArenaAllocator.init(state.ally);
     defer stmntArena.deinit();
     var ctx = Context{
@@ -48,7 +50,7 @@ pub fn interpret(state: *PipelineState) !void {
     try interpretRoot(&ctx);
 }
 
-fn interpretRoot(ctx: *Context) !void {
+fn interpretRoot(ctx: *Context) EvalError!void {
     try symtable.pushFrame();
     defer symtable.popFrame();
     for (ctx.root.statements) |stmnt| {
@@ -379,8 +381,6 @@ fn evalArgs(ctx: *Context, arguments: []const ast.Expression) !std.ArrayList(*Va
     }
     return args;
 }
-
-pub const EvalError = builtins.BuiltinError || std.process.Child.RunError;
 
 fn evalExpression(ctx: *Context, expr: ast.Expression) EvalError!Result {
     const base_expr = switch (expr.as) {
