@@ -59,7 +59,7 @@ fn interpretRoot(ctx: *Context) !void {
 fn interpretStatement(ctx: *Context, stmnt: ast.Statement) EvalError!Result {
     defer _ = ctx.stmntArena.reset(.retain_capacity);
     switch (stmnt) {
-        .call => |call| _ = try evalPipeline(ctx, call),
+        .call => |call| _ = try evalCall(ctx, call),
         .var_decl => |var_decl| try interpretVarDecl(ctx, var_decl),
         .assignment => |assign| try interpretAssign(ctx, assign),
         .branches => |br| try interpretBranches(ctx, br),
@@ -68,6 +68,7 @@ fn interpretStatement(ctx: *Context, stmnt: ast.Statement) EvalError!Result {
         .ret => |ret| {
             return try evalReturn(ctx, ret);
         },
+        .loop => |loop| try interpretLoop(ctx, loop),
     }
     return nothing;
 }
@@ -162,6 +163,47 @@ fn interpretScope(ctx: *Context, scope: ast.Scope) !void {
     }
 }
 
+fn interpretLoop(ctx: *Context, loop: ast.Loop) !void {
+    try symtable.pushFrame();
+    defer symtable.popFrame();
+    if (loop.init_op) |init_op| {
+        switch (init_op) {
+            .assignment => |assign| try interpretAssign(ctx, assign),
+            .declaration => |decl| try interpretVarDecl(ctx, decl),
+        }
+    }
+
+    while (true) {
+        if (loop.expr) |expr| {
+            const value = try evalExpression(ctx, expr);
+            switch (value) {
+                .value => |val| {
+                    switch (val.as) {
+                        .boolean => |b| {
+                            if (!b) {
+                                break;
+                            }
+                        },
+                        // needs boolean
+                        else => unreachable,
+                    }
+                },
+                // needs value
+                .nothing => unreachable,
+            }
+        }
+
+        try interpretScope(ctx, loop.scope);
+
+        if (loop.post_op) |post_op| {
+            switch (post_op) {
+                .assignment => |assign| try interpretAssign(ctx, assign),
+                .call => |call| _ = try evalCall(ctx, call),
+            }
+        }
+    }
+}
+
 fn evalReturn(ctx: *Context, ret: ast.Return) !Result {
     if (ret.expression) |expr| {
         return try evalExpression(ctx, expr);
@@ -169,7 +211,7 @@ fn evalReturn(ctx: *Context, ret: ast.Return) !Result {
     return nothing;
 }
 
-fn evalPipeline(ctx: *Context, call: ast.Call) !Result {
+fn evalCall(ctx: *Context, call: ast.Call) !Result {
     const name = call.token.value;
     if (builtins.lookup(name)) |builtin| {
         return try evalBuiltin(ctx, call, builtin);
@@ -347,7 +389,7 @@ fn evalExpression(ctx: *Context, expr: ast.Expression) EvalError!Result {
         .integer_literal => |int| something(try evalIntegerLiteral(int)),
         .bool_literal => |bl| something(try evalBoolLiteral(bl)),
         .variable => |variable| something(evalVariable(variable)),
-        .capturing_call => |cap_inv| try evalPipeline(ctx, cap_inv),
+        .capturing_call => |cap_inv| try evalCall(ctx, cap_inv),
         .list_literal => |list| something(try evalListLiteral(ctx, list)),
         .record_literal => |record| something(try evalRecordLiteral(ctx, record)),
     };

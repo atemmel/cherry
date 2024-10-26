@@ -51,6 +51,7 @@ fn dumpStatement(stmnt: ast.Statement) void {
         .scope => |scope| dumpScope(scope),
         .func => |func| dumpFunc(func),
         .ret => |ret| dumpReturn(ret),
+        .loop => |loop| dumpLoop(loop),
     }
 }
 
@@ -110,6 +111,38 @@ fn dumpReturn(ret: ast.Return) void {
     leaf("Return\n", .{});
     if (ret.expression) |expr| {
         dumpExpression(expr);
+    }
+}
+
+fn dumpInitOp(init_op: ast.InitOp) void {
+    defer up();
+    leaf("Init op\n", .{});
+    switch (init_op) {
+        .assignment => |assign| dumpAssign(assign),
+        .declaration => |decl| dumpVarDecl(decl),
+    }
+}
+
+fn dumpPostOp(post_op: ast.PostOp) void {
+    defer up();
+    leaf("Post op\n", .{});
+    switch (post_op) {
+        .assignment => |assign| dumpAssign(assign),
+        .call => |call| dumpCall(call),
+    }
+}
+
+fn dumpLoop(loop: ast.Loop) void {
+    defer up();
+    leaf("Loop\n", .{});
+    if (loop.init_op) |init_op| {
+        dumpInitOp(init_op);
+    }
+    if (loop.expr) |expr| {
+        dumpExpression(expr);
+    }
+    if (loop.post_op) |post_op| {
+        dumpPostOp(post_op);
     }
 }
 

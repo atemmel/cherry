@@ -4,7 +4,6 @@ if true {
 	assert true
 }
 
-
 say test 2
 
 if true {
@@ -30,5 +29,9 @@ if false {
 } else if true {
 	assert true
 } else {
+	assert false
+}
+
+if (< 3 2) {
 	assert false
 }

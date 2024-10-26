@@ -102,6 +102,24 @@ pub const Return = struct {
 
 pub const Branches = []const Branch;
 
+pub const InitOp = union(enum) {
+    assignment: Assignment,
+    declaration: VarDecl,
+};
+
+pub const PostOp = union(enum) {
+    assignment: Assignment,
+    call: Call,
+};
+
+pub const Loop = struct {
+    token: *const Token,
+    init_op: ?InitOp,
+    expr: ?Expression,
+    post_op: ?PostOp,
+    scope: Scope,
+};
+
 pub const Statement = union(enum) {
     call: Call,
     var_decl: VarDecl,
@@ -110,6 +128,7 @@ pub const Statement = union(enum) {
     scope: Scope,
     func: Func,
     ret: Return,
+    loop: Loop,
 };
 
 pub const Root = struct {
@@ -223,17 +242,17 @@ fn parseStatement(ctx: *Context) errors!?Statement {
         return Statement{
             .call = inv,
         };
-    } else if (try parseVarDeclaration(ctx)) |var_decl| {
-        return Statement{
-            .var_decl = var_decl,
-        };
-    } else if (try parseAssignment(ctx)) |assign| {
+    } else if (try parseAssignment(ctx, .{})) |assign| {
         return Statement{
             .assignment = assign,
         };
     } else if (try parseBranches(ctx)) |branches| {
         return Statement{
             .branches = branches,
+        };
+    } else if (try parseLoop(ctx)) |loop| {
+        return Statement{
+            .loop = loop,
         };
     } else if (try parseReturn(ctx)) |ret| {
         return Statement{
@@ -282,7 +301,7 @@ fn parseVarDeclaration(ctx: *Context) !?VarDecl {
     };
 }
 
-fn parseAssignment(ctx: *Context) !?Assignment {
+fn parseAssignment(ctx: *Context, opt: struct { needs_newline: bool = true }) !?Assignment {
     const checkpoint = ctx.idx;
 
     const variable = try parseVariable(ctx) orelse return null;
@@ -299,11 +318,13 @@ fn parseAssignment(ctx: *Context) !?Assignment {
         });
     };
 
-    // the assignment must be followed by a terminating newline or eot
-    if (ctx.getIf(.Newline) == null and !ctx.eot()) {
-        return ctx.err(.{
-            .msg = "expected newline (\\n)",
-        });
+    if (opt.needs_newline) {
+        // the assignment must be followed by a terminating newline or eot
+        if (ctx.getIf(.Newline) == null and !ctx.eot()) {
+            return ctx.err(.{
+                .msg = "expected newline (\\n)",
+            });
+        }
     }
 
     return .{
@@ -426,7 +447,7 @@ fn parseFunc(ctx: *Context) !?Func {
 
     const scope = try parseScope(ctx, true) orelse {
         return ctx.err(.{
-            .msg = "expected name of args or '{'",
+            .msg = "expected '{'",
         });
     };
 
@@ -434,6 +455,74 @@ fn parseFunc(ctx: *Context) !?Func {
         .token = token,
         .scope = scope,
         .params = try params.toOwnedSlice(),
+    };
+}
+
+fn parseInitOp(ctx: *Context) !?InitOp {
+    if (try parseVarDeclaration(ctx)) |decl| {
+        return .{
+            .declaration = decl,
+        };
+    } else if (try parseAssignment(ctx, .{ .needs_newline = false })) |assign| {
+        return .{
+            .assignment = assign,
+        };
+    }
+    return null;
+}
+
+fn parsePostOp(ctx: *Context) !?PostOp {
+    if (try parseAssignment(ctx, .{ .needs_newline = false })) |assign| {
+        return .{
+            .assignment = assign,
+        };
+    } else if (try parseCapturingCall(ctx)) |call| {
+        return .{
+            .call = call,
+        };
+    }
+    return null;
+}
+
+fn parseLoop(ctx: *Context) !?Loop {
+    const token = ctx.getIf(.For) orelse {
+        return null;
+    };
+
+    const init_op = try parseInitOp(ctx);
+    const left_semicolon = ctx.getIf(.Semicolon);
+
+    if (left_semicolon == null and init_op != null) {
+        return ctx.err(.{
+            .msg = "expected ';' between initial operation and loop expression",
+        });
+    }
+
+    const expr = try parseExpression(ctx);
+    var post_op: ?PostOp = null;
+
+    if (left_semicolon != null) {
+        _ = ctx.getIf(.Semicolon) orelse {
+            return ctx.err(.{
+                .msg = "",
+            });
+        };
+
+        post_op = try parsePostOp(ctx);
+    }
+
+    const scope = try parseScope(ctx, true) orelse {
+        return ctx.err(.{
+            .msg = "expected ';' between initial operation and loop expression",
+        });
+    };
+
+    return .{
+        .token = token,
+        .init_op = init_op,
+        .expr = expr,
+        .post_op = post_op,
+        .scope = scope,
     };
 }
 

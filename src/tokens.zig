@@ -14,6 +14,7 @@ pub const Token = struct {
         Newline,
         // Symbols
         Colon,
+        Semicolon,
         Assign,
         Pipe,
         LParens,
@@ -27,7 +28,6 @@ pub const Token = struct {
         // Keywords
         If,
         Else,
-        While,
         For,
         Fn,
         Return,
@@ -42,7 +42,6 @@ pub const Token = struct {
 const string_keyword_map = std.StaticStringMap(Token.Kind).initComptime(&.{
     .{ "if", .If },
     .{ "else", .Else },
-    .{ "while", .While },
     .{ "for", .For },
     .{ "fn", .Fn },
     .{ "return", .Return },
@@ -150,6 +149,7 @@ fn lexSymbol(state: *LexState) ?Token {
             };
         },
         ':' => .Colon,
+        ';' => .Semicolon,
         '|' => .Pipe,
         '(' => .LParens,
         ')' => .RParens,
