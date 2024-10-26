@@ -68,7 +68,7 @@ const LexState = struct {
 
     pub fn isSymbolChar(self: LexState) bool {
         return switch (self.get()) {
-            ':', '=', '|', '(', ')', '{', '}', '[', ']' => true,
+            ':', ';', '=', '|', '(', ')', '{', '}', '[', ']' => true,
             else => false,
         };
     }
@@ -80,7 +80,7 @@ const LexState = struct {
     pub fn isUnallowedBarewordChar(self: LexState) bool {
         // chars that are never allowed to appear in the middle of a bareword
         return switch (self.get()) {
-            ':', '|', '(', ')', '{', '}', '[', ']', ' ', '\n', '\t', '\r', '#', '"', '`' => true,
+            ':', ';', '|', '(', ')', '{', '}', '[', ']', ' ', '\n', '\t', '\r', '#', '"', '`' => true,
             else => false,
         };
     }
@@ -279,6 +279,10 @@ fn lexIntegerLiteral(state: *LexState) ?Token {
 
     for (int_prospect) |c| {
         if (!std.ascii.isDigit(c)) {
+            std.debug.print("{s}\n", .{int_prospect});
+            if (state.isSymbolChar()) {
+                break;
+            }
             //TODO: bad token
             unreachable;
         }

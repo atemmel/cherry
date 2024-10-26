@@ -234,7 +234,7 @@ pub fn parse(state: *PipelineState) !Root {
 }
 
 fn parseStatement(ctx: *Context) errors!?Statement {
-    if (try parseVarDeclaration(ctx)) |var_decl| {
+    if (try parseVarDeclaration(ctx, .{})) |var_decl| {
         return Statement{
             .var_decl = var_decl,
         };
@@ -269,7 +269,7 @@ fn parseStatement(ctx: *Context) errors!?Statement {
     } else return null;
 }
 
-fn parseVarDeclaration(ctx: *Context) !?VarDecl {
+fn parseVarDeclaration(ctx: *Context, opt: struct { needs_newline: bool = true }) !?VarDecl {
     const checkpoint = ctx.idx;
 
     // 'var' MUST be followed by a identifer/bareword
@@ -288,11 +288,13 @@ fn parseVarDeclaration(ctx: *Context) !?VarDecl {
         });
     };
 
-    // the assignment must be followed by a terminating newline or eot
-    if (ctx.getIf(.Newline) == null and !ctx.eot()) {
-        return ctx.err(.{
-            .msg = "expected newline (\\n)",
-        });
+    if (opt.needs_newline) {
+        // the assignment must be followed by a terminating newline or eot
+        if (ctx.getIf(.Newline) == null and !ctx.eot()) {
+            return ctx.err(.{
+                .msg = "expected newline (\\n)",
+            });
+        }
     }
 
     return VarDecl{
@@ -459,7 +461,7 @@ fn parseFunc(ctx: *Context) !?Func {
 }
 
 fn parseInitOp(ctx: *Context) !?InitOp {
-    if (try parseVarDeclaration(ctx)) |decl| {
+    if (try parseVarDeclaration(ctx, .{ .needs_newline = false })) |decl| {
         return .{
             .declaration = decl,
         };
