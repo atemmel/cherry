@@ -146,7 +146,7 @@ fn interpretBranches(ctx: *Context, branches: ast.Branches) !void {
                     }
                 },
                 // needs value
-                .nothing => unreachable,
+                .nothing => return errRequiresValue(ctx, tokenFromExpr(expr)),
             }
         } else {
             try interpretScope(ctx, branch.scope);
@@ -189,7 +189,7 @@ fn interpretLoop(ctx: *Context, loop: ast.Loop) !void {
                     }
                 },
                 // needs value
-                .nothing => unreachable,
+                .nothing => return errRequiresValue(ctx, tokenFromExpr(expr)),
             }
         }
 
