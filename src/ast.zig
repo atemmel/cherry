@@ -9,8 +9,10 @@ pub const dump = @import("ast_dump.zig").dump;
 pub const errors = error{ParseFailed} || std.mem.Allocator.Error;
 
 const string_primitive_lookup = std.StaticStringMap(semantics.TypeInfo).initComptime(.{
-    .{ "string", .string },
+    .{ "bool", .boolean },
+    .{ "float", .float },
     .{ "int", .integer },
+    .{ "string", .string },
 });
 
 pub const Bareword = struct {
