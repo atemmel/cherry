@@ -134,10 +134,12 @@ fn analyzeCall(ctx: *Context, call: ast.Call) !TypeInfo {
     const builtin_info = builtins.lookup(name);
     if (builtin_info) |bi| {
         return analyzeBuiltinCall(ctx, call, bi);
+    } else if (ctx.root.functions.getPtr(name)) |func| {
+        return func.signature.produces;
     }
 
     //TODO: call.pipe
-    return .{ .nothing = {} };
+    return .string;
 }
 
 fn analyzeBuiltinCall(ctx: *Context, call: ast.Call, builtin_info: builtins.BuiltinInfo) !TypeInfo {

@@ -1,10 +1,17 @@
 const std = @import("std");
 const builtin = @import("builtin");
+const semantics = @import("semantics.zig");
 const Token = @import("tokens.zig").Token;
 const PipelineState = @import("pipeline.zig").State;
+
 pub const dump = @import("ast_dump.zig").dump;
 
 pub const errors = error{ParseFailed} || std.mem.Allocator.Error;
+
+const string_primitive_lookup = std.StaticStringMap(semantics.TypeInfo).initComptime(.{
+    .{ "string", .string },
+    .{ "int", .integer },
+});
 
 pub const Bareword = struct {
     token: *const Token,
@@ -93,6 +100,7 @@ pub const Branch = struct {
 pub const Func = struct {
     token: *const Token, // contains identifier
     params: []const Bareword,
+    signature: semantics.Signature,
     scope: Scope,
 };
 
@@ -440,11 +448,24 @@ fn parseFunc(ctx: *Context) !?Func {
         });
     };
 
+    var produces: semantics.TypeInfo = .nothing;
+    var parameters = std.ArrayList(semantics.TypeInfo).init(ctx.ally);
+    defer parameters.deinit();
+
     var params = std.ArrayList(Bareword).init(ctx.ally);
     defer params.deinit();
 
-    while (parseBareword(ctx)) |bw| {
-        try params.append(bw);
+    while (try parseParam(ctx)) |param| {
+        const type_info = string_primitive_lookup.get(param.type_name.token.value) orelse {
+            //TODO: error about a string not looking like a primitive type or something
+            unreachable;
+        };
+        try parameters.append(type_info);
+        try params.append(param.name);
+    }
+
+    if (try parseProducingType(ctx)) |type_info| {
+        produces = type_info;
     }
 
     const scope = try parseScope(ctx, true) orelse {
@@ -453,10 +474,62 @@ fn parseFunc(ctx: *Context) !?Func {
         });
     };
 
+    //TODO: support more of this
     return Func{
         .token = token,
         .scope = scope,
         .params = try params.toOwnedSlice(),
+        .signature = .{
+            .generics = &.{},
+            .produces = produces,
+            .parameters = try parameters.toOwnedSlice(),
+            .last_parameter_is_variadic = false,
+        },
+    };
+}
+
+fn parseParam(ctx: *Context) !?struct { name: Bareword, type_name: Bareword } {
+    const name_token = parseBareword(ctx) orelse {
+        return null;
+    };
+
+    _ = ctx.getIf(.Colon) orelse {
+        return ctx.err(.{
+            .msg = "expected ':'",
+        });
+    };
+
+    const parsed_type = parseType(ctx) orelse {
+        return ctx.err(.{
+            .msg = "expected valid type",
+        });
+    };
+
+    return .{
+        .name = name_token,
+        .type_name = parsed_type,
+    };
+}
+
+//TODO: expand on this to handle, lists, records, etc
+fn parseType(ctx: *Context) ?Bareword {
+    return parseBareword(ctx);
+}
+
+fn parseProducingType(ctx: *Context) !?semantics.TypeInfo {
+    _ = ctx.getIf(.Pipe) orelse {
+        return null;
+    };
+
+    const type_bareword = parseType(ctx) orelse {
+        return ctx.err(.{
+            .msg = "expected valid type",
+        });
+    };
+
+    return string_primitive_lookup.get(type_bareword.token.value) orelse {
+        //TODO: error about a string not looking like a primitive type or something
+        unreachable;
     };
 }
 
