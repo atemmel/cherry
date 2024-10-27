@@ -99,14 +99,25 @@ pub const Branch = struct {
     scope: Scope,
 };
 
+pub const Parameter = struct {
+    name: []const u8,
+    param_type: Type,
+};
+
 pub const Type = struct {
-    token: *const Token,
     type_info: semantics.TypeInfo,
+};
+
+pub const Signature = struct {
+    generics: []const []const u8 = &.{},
+    parameters: []const Parameter,
+    last_parameter_is_variadic: bool = false,
+    produces: semantics.TypeInfo = .nothing,
 };
 
 pub const Func = struct {
     token: *const Token, // contains identifier
-    signature: semantics.Signature,
+    signature: Signature,
     scope: Scope,
 };
 
@@ -455,18 +466,11 @@ fn parseFunc(ctx: *Context) !?Func {
     };
 
     var produces: semantics.TypeInfo = .nothing;
-    var parameters = std.ArrayList(semantics.Parameter).init(ctx.ally);
+    var parameters = std.ArrayList(Parameter).init(ctx.ally);
     defer parameters.deinit();
 
     while (try parseParam(ctx)) |param| {
-        const type_info = string_primitive_lookup.get(param.type_name.token.value) orelse {
-            //TODO: error about a string not looking like a primitive type or something
-            unreachable;
-        };
-        try parameters.append(.{
-            .name = param.name.token.value,
-            .type_info = type_info,
-        });
+        try parameters.append(param);
     }
 
     if (try parseProducingType(ctx)) |type_info| {
@@ -492,7 +496,7 @@ fn parseFunc(ctx: *Context) !?Func {
     };
 }
 
-fn parseParam(ctx: *Context) !?struct { name: Bareword, type_name: Bareword } {
+fn parseParam(ctx: *Context) !?Parameter {
     const name_token = parseBareword(ctx) orelse {
         return null;
     };
@@ -503,21 +507,64 @@ fn parseParam(ctx: *Context) !?struct { name: Bareword, type_name: Bareword } {
         });
     };
 
-    const parsed_type = parseType(ctx) orelse {
+    const parsed_type = try parseType(ctx) orelse {
         return ctx.err(.{
             .msg = "expected valid type",
         });
     };
 
-    return .{
-        .name = name_token,
-        .type_name = parsed_type,
+    return Parameter{
+        .name = name_token.token.value,
+        .param_type = parsed_type,
     };
 }
 
 //TODO: expand on this to handle, lists, records, etc
-fn parseType(ctx: *Context) ?Bareword {
-    return parseBareword(ctx);
+fn parseType(ctx: *Context) !?Type {
+    if (try parseListType(ctx)) |list| {
+        return list;
+    }
+
+    const primitive_type = try parsePrimitiveType(ctx) orelse {
+        return null;
+    };
+
+    return Type{
+        .type_info = primitive_type,
+    };
+}
+
+fn parseListType(ctx: *Context) !?Type {
+    _ = ctx.getIf(.LBracket) orelse {
+        return null;
+    };
+    _ = ctx.getIf(.RBracket) orelse {
+        return ctx.err(.{ .msg = "expected ']'" });
+    };
+
+    const inner = try ctx.ally.create(semantics.TypeInfo);
+    inner.* = try parsePrimitiveType(ctx) orelse {
+        return ctx.err(.{ .msg = "expected type" });
+    };
+
+    return Type{
+        .type_info = .{
+            .list = .{
+                .of = inner,
+            },
+        },
+    };
+}
+
+fn parsePrimitiveType(ctx: *Context) !?semantics.TypeInfo {
+    const bareword = parseBareword(ctx) orelse {
+        return null;
+    };
+    const name = bareword.token.value;
+    return string_primitive_lookup.get(name) orelse {
+        const msg = try std.fmt.allocPrint(ctx.ally, "'{s}' is not a recognized type", .{name});
+        return ctx.err(.{ .msg = msg });
+    };
 }
 
 fn parseProducingType(ctx: *Context) !?semantics.TypeInfo {
@@ -525,16 +572,13 @@ fn parseProducingType(ctx: *Context) !?semantics.TypeInfo {
         return null;
     };
 
-    const type_bareword = parseType(ctx) orelse {
+    const parsed_type = try parseType(ctx) orelse {
         return ctx.err(.{
             .msg = "expected valid type",
         });
     };
 
-    return string_primitive_lookup.get(type_bareword.token.value) orelse {
-        //TODO: error about a string not looking like a primitive type or something
-        unreachable;
-    };
+    return parsed_type.type_info;
 }
 
 fn parseInitOp(ctx: *Context) !?InitOp {

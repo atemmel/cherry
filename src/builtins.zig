@@ -1,4 +1,5 @@
 const std = @import("std");
+const ast = @import("ast.zig");
 const values = @import("value.zig");
 const gc = @import("gc.zig");
 const interpreter = @import("interpreter.zig");
@@ -6,8 +7,8 @@ const semantics = @import("semantics.zig");
 const pipeline = @import("pipeline.zig");
 const symtable = @import("symtable.zig");
 
+const Signature = ast.Signature;
 const TypeInfo = semantics.TypeInfo;
-const Signature = semantics.Signature;
 
 const Value = values.Value;
 const Result = values.Result;
@@ -45,7 +46,9 @@ fn unchecked(func: *const BuiltinFn) BuiltinInfo {
             .parameters = &.{
                 .{
                     .name = "args",
-                    .type_info = .{ .something = {} },
+                    .param_type = .{
+                        .type_info = .something,
+                    },
                 },
             },
             .produces = .something,
@@ -99,7 +102,9 @@ const say_info: BuiltinInfo = .{
         .parameters = &.{
             .{
                 .name = "args",
-                .type_info = .{ .something = {} },
+                .param_type = .{
+                    .type_info = .something,
+                },
             },
         },
     },
@@ -137,7 +142,9 @@ const assert_info: BuiltinInfo = .{
         .parameters = &.{
             .{
                 .name = "args",
-                .type_info = .boolean,
+                .param_type = .{
+                    .type_info = .boolean,
+                },
             },
         },
     },
@@ -171,11 +178,15 @@ const alias_info: BuiltinInfo = .{
         .parameters = &.{
             .{
                 .name = "name",
-                .type_info = .{ .string = {} },
+                .param_type = .{
+                    .type_info = .string,
+                },
             },
             .{
                 .name = "command",
-                .type_info = .{ .string = {} },
+                .param_type = .{
+                    .type_info = .string,
+                },
             },
         },
     },
@@ -207,7 +218,9 @@ const cd_info: BuiltinInfo = .{
         .parameters = &.{ // takes one string
             .{
                 .name = "path",
-                .type_info = .{ .string = {} },
+                .param_type = .{
+                    .type_info = .string,
+                },
             },
         },
     },

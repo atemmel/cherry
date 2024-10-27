@@ -25,18 +25,6 @@ pub const TypeInfo = union(enum) {
     either: []const TypeInfo,
 };
 
-pub const Parameter = struct {
-    name: []const u8,
-    type_info: TypeInfo,
-};
-
-pub const Signature = struct {
-    generics: []const []const u8 = &.{},
-    parameters: []const Parameter,
-    last_parameter_is_variadic: bool = false,
-    produces: TypeInfo = .nothing,
-};
-
 pub const SemanticsError = error{SemanticError} || std.mem.Allocator.Error;
 
 pub const Analysis = struct {
@@ -177,7 +165,7 @@ fn analyzeBuiltinCall(ctx: *Context, call: ast.Call, builtin_info: builtins.Buil
         const param = signature.parameters[idx];
         const arg = args[idx];
         const arg_token = ast.tokenFromExpr(call.arguments[idx]);
-        try analyzeSingleParam(ctx, param.type_info, arg, arg_token);
+        try analyzeSingleParam(ctx, param.param_type.type_info, arg, arg_token);
     }
 
     // if not variadic, cool, exit
@@ -191,7 +179,7 @@ fn analyzeBuiltinCall(ctx: *Context, call: ast.Call, builtin_info: builtins.Buil
     while (idx < provided_len) : (idx += 1) {
         const arg = args[idx];
         const arg_token = ast.tokenFromExpr(call.arguments[idx]);
-        try analyzeSingleParam(ctx, variadic_param.type_info, arg, arg_token);
+        try analyzeSingleParam(ctx, variadic_param.param_type.type_info, arg, arg_token);
     }
 
     return signature.produces;

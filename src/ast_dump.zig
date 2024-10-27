@@ -101,7 +101,7 @@ fn dumpFunc(func: ast.Func) void {
     leaf("Params:\n", .{});
     for (func.signature.parameters) |param| {
         //TODO: needs more work to print all kinds of types
-        leaf("{s}: {s}\n", .{ param.name, @tagName(param.type_info) });
+        leaf("{s}: {s}\n", .{ param.name, @tagName(param.param_type.type_info) });
         up();
     }
     up();
