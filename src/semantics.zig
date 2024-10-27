@@ -10,6 +10,7 @@ const ErrorReport = pipeline.ErrorReport;
 
 // types used during semantic analysis
 pub const TypeInfo = union(enum) {
+    something,
     string,
     integer,
     float,
@@ -23,7 +24,7 @@ pub const TypeInfo = union(enum) {
 pub const Signature = struct {
     generics: []const []const u8 = &.{},
     parameters: []const TypeInfo,
-    last_parameter_is_trailing: bool = false,
+    last_parameter_is_variadic: bool = false,
     produces: TypeInfo = .nothing,
 };
 
@@ -112,7 +113,16 @@ fn analyzeBuiltinCall(ctx: *Context, call: ast.Call, builtin_info: builtins.Buil
     const required_len = signature.parameters.len;
     const provided_len = args.len;
 
-    if (args.len != signature.parameters.len) {
+    if (builtin_info.signature.last_parameter_is_variadic) {
+        const n_non_variadic_parameters = required_len - 1;
+        if (n_non_variadic_parameters > provided_len) {
+            try ctx.errFmt(
+                .{ .offending_token = call.token },
+                "Call to '{s}' requires at least {} arguments, {} provided.",
+                .{ name, required_len, provided_len },
+            );
+        }
+    } else if (args.len != signature.parameters.len) {
         try ctx.errFmt(
             .{ .offending_token = call.token },
             "Call to '{s}' requires {} arguments, {} provided.",
@@ -125,27 +135,76 @@ fn analyzeBuiltinCall(ctx: *Context, call: ast.Call, builtin_info: builtins.Buil
         const param = signature.parameters[idx];
         const arg = args[idx];
         const arg_token = ast.tokenFromExpr(call.arguments[idx]);
-        switch (param) {
-            .string => {
-                switch (arg) {
-                    .string => {},
-                    .integer => try ctx.typeMismatch("string", "integer", arg_token),
-                    .float => try ctx.typeMismatch("string", "float", arg_token),
-                    .boolean => try ctx.typeMismatch("string", "boolean", arg_token),
-                    .list => try ctx.typeMismatch("string", "list", arg_token),
-                    .record => try ctx.typeMismatch("string", "record", arg_token),
-                    .user_defined => unreachable, //TODO: this
-                    .nothing => try ctx.typeMismatch("string", "nothing", arg_token),
-                }
-            },
-            .nothing => unreachable,
-            .integer => unreachable,
-            .list => unreachable,
-            .user_defined => unreachable,
-            .boolean => unreachable,
-            .record => unreachable,
-            .float => unreachable,
-        }
+        try analyzeSingleParam(ctx, param, arg, arg_token);
+    }
+
+    // if not variadic, cool, exit
+    if (!signature.last_parameter_is_variadic) {
+        return;
+    }
+
+    // otherwise, more work
+    const type_of_variadic_param = signature.parameters[signature.parameters.len - 1];
+
+    while (idx < provided_len) : (idx += 1) {
+        const arg = args[idx];
+        const arg_token = ast.tokenFromExpr(call.arguments[idx]);
+        try analyzeSingleParam(ctx, type_of_variadic_param, arg, arg_token);
+    }
+}
+
+fn analyzeSingleParam(ctx: *Context, param: TypeInfo, arg: TypeInfo, arg_token: *const Token) !void {
+    switch (param) {
+        .something => {
+            switch (arg) {
+                .boolean,
+                .float,
+                .integer,
+                .list,
+                .record,
+                .string,
+                .user_defined,
+                => {},
+                .nothing => try ctx.typeMismatch("something", "nothing", arg_token),
+                // An expression should never be 'something', it should always be specified
+                .something => unreachable,
+            }
+        },
+        // A builtin should never specify 'nothing' as the requested type, instead, the number of parameters should be 0
+        .nothing => unreachable,
+        .string => {
+            switch (arg) {
+                .boolean => try ctx.typeMismatch("string", "boolean", arg_token),
+                .float => try ctx.typeMismatch("string", "float", arg_token),
+                .integer => try ctx.typeMismatch("string", "integer", arg_token),
+                .list => try ctx.typeMismatch("string", "list", arg_token),
+                .nothing => try ctx.typeMismatch("string", "nothing", arg_token),
+                .record => try ctx.typeMismatch("string", "record", arg_token),
+                .string => {},
+                .user_defined => unreachable, //TODO: this
+                // An expression should never be 'something', it should always be specified
+                .something => unreachable,
+            }
+        },
+        .integer => unreachable,
+        .list => unreachable,
+        .user_defined => unreachable,
+        .boolean => {
+            switch (arg) {
+                .boolean => {},
+                .float => try ctx.typeMismatch("boolean", "float", arg_token),
+                .integer => try ctx.typeMismatch("boolean", "integer", arg_token),
+                .list => try ctx.typeMismatch("boolean", "list", arg_token),
+                .nothing => try ctx.typeMismatch("boolean", "nothing", arg_token),
+                .record => try ctx.typeMismatch("boolean", "record", arg_token),
+                .string => try ctx.typeMismatch("boolean", "string", arg_token),
+                .user_defined => unreachable, //TODO: this
+                // An expression should never be 'something', it should always be specified
+                .something => unreachable,
+            }
+        },
+        .record => unreachable,
+        .float => unreachable,
     }
 }
 

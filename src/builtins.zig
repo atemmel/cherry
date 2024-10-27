@@ -40,28 +40,9 @@ pub const BuiltinInfo = struct {
 const builtins_table = std.StaticStringMap(BuiltinInfo).initComptime(
     &.{
         // general
-        .{
-            "assert", BuiltinInfo{
-                .func = assert,
-                .signature = .{
-                    .parameters = &.{},
-                },
-            },
-        },
-        .{
-            "say",
-            BuiltinInfo{
-                .func = say,
-                .signature = .{ .parameters = &.{} },
-            },
-        },
-        .{
-            "alias",
-            BuiltinInfo{
-                .func = alias,
-                .signature = .{ .parameters = &.{} },
-            },
-        },
+        .{ "assert", assert_info },
+        .{ "say", say_info },
+        .{ "alias", alias_info },
         .{ "cd", cd_info },
         // collections
         .{
@@ -227,6 +208,17 @@ pub fn lookup(str: []const u8) ?BuiltinInfo {
     return builtins_table.get(str);
 }
 
+const say_info: BuiltinInfo = .{
+    .func = say,
+    .signature = .{
+        // takes any number of any argument
+        .last_parameter_is_variadic = true,
+        .parameters = &.{
+            .{ .something = {} },
+        },
+    },
+};
+
 fn say(_: *State, args: []const *Value) !Result {
     const stdout = std.io.getStdOut().writer();
 
@@ -251,6 +243,17 @@ fn say(_: *State, args: []const *Value) !Result {
     return nothing;
 }
 
+const assert_info: BuiltinInfo = .{
+    .func = assert,
+    .signature = .{
+        // takes any number of booleans
+        .last_parameter_is_variadic = true,
+        .parameters = &.{
+            .{ .boolean = {} },
+        },
+    },
+};
+
 fn assert(_: *State, args: []const *Value) !Result {
     const stderr = std.io.getStdErr().writer();
     var all_passed = true;
@@ -271,6 +274,17 @@ fn assert(_: *State, args: []const *Value) !Result {
         false => BuiltinError.AssertionFailed,
     };
 }
+
+const alias_info: BuiltinInfo = .{
+    .func = alias,
+    .signature = .{
+        // takes two strings
+        .parameters = &.{
+            .{ .string = {} },
+            .{ .string = {} },
+        },
+    },
+};
 
 fn alias(state: *State, args: []const *Value) !Result {
     try validateArgsCount(state, &.{2}, args.len);
