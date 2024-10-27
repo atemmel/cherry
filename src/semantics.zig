@@ -15,10 +15,13 @@ pub const TypeInfo = union(enum) {
     integer,
     float,
     boolean,
-    list,
+    list: struct {
+        of: *const TypeInfo,
+    },
     record,
     user_defined,
     nothing,
+    generic: []const u8,
 };
 
 pub const Signature = struct {
@@ -168,6 +171,7 @@ fn analyzeSingleParam(ctx: *Context, param: TypeInfo, arg: TypeInfo, arg_token: 
                 .nothing => try ctx.typeMismatch("something", "nothing", arg_token),
                 // An expression should never be 'something', it should always be specified
                 .something => unreachable,
+                .generic => unreachable,
             }
         },
         // A builtin should never specify 'nothing' as the requested type, instead, the number of parameters should be 0
@@ -184,6 +188,7 @@ fn analyzeSingleParam(ctx: *Context, param: TypeInfo, arg: TypeInfo, arg_token: 
                 .user_defined => unreachable, //TODO: this
                 // An expression should never be 'something', it should always be specified
                 .something => unreachable,
+                .generic => unreachable,
             }
         },
         .integer => unreachable,
@@ -201,10 +206,12 @@ fn analyzeSingleParam(ctx: *Context, param: TypeInfo, arg: TypeInfo, arg_token: 
                 .user_defined => unreachable, //TODO: this
                 // An expression should never be 'something', it should always be specified
                 .something => unreachable,
+                .generic => unreachable,
             }
         },
         .record => unreachable,
         .float => unreachable,
+        .generic => unreachable,
     }
 }
 
@@ -287,7 +294,7 @@ fn typeMismatchReportImpl(
         .expr_idx => |idx| .{
             .msg = msg,
             .trailing = false,
-            .offending_token = undefined, // callee is meant to solve this using offending_expr_idx
+            .offending_token = undefined, // caller is meant to solve this using offending_expr_idx
             .offending_expr_idx = idx,
         },
     };

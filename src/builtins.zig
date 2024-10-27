@@ -45,13 +45,7 @@ const builtins_table = std.StaticStringMap(BuiltinInfo).initComptime(
         .{ "alias", alias_info },
         .{ "cd", cd_info },
         // collections
-        .{
-            "append",
-            BuiltinInfo{
-                .func = alias,
-                .signature = .{ .parameters = &.{} },
-            },
-        },
+        .{ "append", append_info },
         .{
             "get",
             BuiltinInfo{
@@ -519,6 +513,16 @@ fn len(_: *State, args: []const *Value) !Result {
     }
     return something(try gc.integer(length));
 }
+
+const append_info: BuiltinInfo = .{
+    .func = append,
+    .signature = .{
+        // takes one list of generic content, plus zero or more arguments of generic type
+        .parameters = &.{
+            .{ .string = {} },
+        },
+    },
+};
 
 fn append(_: *State, args: []const *Value) !Result {
     if (args.len == 0) {
