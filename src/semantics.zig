@@ -39,9 +39,12 @@ pub const Analysis = struct {
 };
 
 const Context = struct {
+    pub const Scope = std.StringHashMap(TypeInfo);
+
     arena: std.mem.Allocator,
     root: *const ast.Root,
     errors: std.ArrayList(ErrorReport),
+    scopes: std.ArrayList(Scope),
 
     pub fn errFmt(
         ctx: *Context,
@@ -64,6 +67,28 @@ const Context = struct {
     pub fn typeMismatch(ctx: *Context, wants: []const u8, got: []const u8, offending_token: *const Token) !void {
         try ctx.errors.append(try typeMismatchReport(ctx.arena, wants, got, offending_token));
     }
+
+    pub fn addScope(ctx: *Context) !void {
+        try ctx.scopes.append(Scope.init(ctx.arena));
+    }
+
+    pub fn dropScope(ctx: *Context) void {
+        _ = ctx.scopes.pop();
+    }
+
+    pub fn insertVariable(ctx: *Context, name: []const u8, type_info: TypeInfo) !void {
+        var top = &ctx.scopes.items[ctx.scopes.items.len - 1];
+        try top.put(name, type_info);
+    }
+
+    pub fn lookupVariable(ctx: *Context, name: []const u8) ?*TypeInfo {
+        for (ctx.scopes.items) |scope| {
+            if (scope.getPtr(name)) |type_info| {
+                return type_info;
+            }
+        }
+        return null;
+    }
 };
 
 pub fn analyze(state: *PipelineState) SemanticsError!void {
@@ -71,6 +96,7 @@ pub fn analyze(state: *PipelineState) SemanticsError!void {
         .arena = state.arena,
         .root = &state.root,
         .errors = std.ArrayList(ErrorReport).init(state.arena),
+        .scopes = std.ArrayList(Context.Scope).init(state.arena),
     };
     try analyzeRoot(&ctx);
     state.analysis = .{
@@ -83,6 +109,8 @@ pub fn analyze(state: *PipelineState) SemanticsError!void {
 }
 
 fn analyzeRoot(ctx: *Context) !void {
+    try ctx.addScope();
+    defer ctx.dropScope();
     for (ctx.root.statements) |stmnt| {
         try analyzeStatement(ctx, stmnt);
     }
@@ -90,7 +118,7 @@ fn analyzeRoot(ctx: *Context) !void {
 
 fn analyzeStatement(ctx: *Context, stmnt: ast.Statement) !void {
     switch (stmnt) {
-        .call => |call| try analyzeCall(ctx, call),
+        .call => |call| _ = try analyzeCall(ctx, call),
         .var_decl => |var_decl| try analyzeVarDecl(ctx, var_decl),
         .assignment => |assign| try analyzeAssignment(ctx, assign),
         .branches => |br| try analyzeBranches(ctx, br),
@@ -101,15 +129,18 @@ fn analyzeStatement(ctx: *Context, stmnt: ast.Statement) !void {
     }
 }
 
-fn analyzeCall(ctx: *Context, call: ast.Call) !void {
+fn analyzeCall(ctx: *Context, call: ast.Call) !TypeInfo {
     const name = call.token.value;
     const builtin_info = builtins.lookup(name);
     if (builtin_info) |bi| {
-        try analyzeBuiltinCall(ctx, call, bi);
+        return analyzeBuiltinCall(ctx, call, bi);
     }
+
+    //TODO: call.pipe
+    return .{ .nothing = {} };
 }
 
-fn analyzeBuiltinCall(ctx: *Context, call: ast.Call, builtin_info: builtins.BuiltinInfo) !void {
+fn analyzeBuiltinCall(ctx: *Context, call: ast.Call, builtin_info: builtins.BuiltinInfo) !TypeInfo {
     const name = call.token.value;
     const args = try analyzeArguments(ctx, call.arguments);
     const signature = builtin_info.signature;
@@ -144,7 +175,7 @@ fn analyzeBuiltinCall(ctx: *Context, call: ast.Call, builtin_info: builtins.Buil
 
     // if not variadic, cool, exit
     if (!signature.last_parameter_is_variadic) {
-        return;
+        return signature.produces;
     }
 
     // otherwise, more work
@@ -155,6 +186,8 @@ fn analyzeBuiltinCall(ctx: *Context, call: ast.Call, builtin_info: builtins.Buil
         const arg_token = ast.tokenFromExpr(call.arguments[idx]);
         try analyzeSingleParam(ctx, type_of_variadic_param, arg, arg_token);
     }
+
+    return signature.produces;
 }
 
 fn analyzeSingleParam(ctx: *Context, param: TypeInfo, arg: TypeInfo, arg_token: *const Token) !void {
@@ -171,8 +204,9 @@ fn analyzeSingleParam(ctx: *Context, param: TypeInfo, arg: TypeInfo, arg_token: 
                 .either,
                 => {},
                 .nothing => try ctx.typeMismatch("something", "nothing", arg_token),
-                // An expression should never be 'something', it should always be specified
-                .something => unreachable,
+                //TODO: An expression should never be 'something', it should always be specified
+                //      ok for now as most builtins are unchecked
+                .something => {},
                 .generic => unreachable,
             }
         },
@@ -188,8 +222,9 @@ fn analyzeSingleParam(ctx: *Context, param: TypeInfo, arg: TypeInfo, arg_token: 
                 .record => try ctx.typeMismatch("string", "record", arg_token),
                 .string => {},
                 .user_defined => unreachable, //TODO: this
-                // An expression should never be 'something', it should always be specified
-                .something => unreachable,
+                //TODO: An expression should never be 'something', it should always be specified
+                //      ok for now as most builtins are unchecked
+                .something => {},
                 .generic => unreachable,
                 .either => unreachable,
             }
@@ -204,8 +239,9 @@ fn analyzeSingleParam(ctx: *Context, param: TypeInfo, arg: TypeInfo, arg_token: 
                 .record => try ctx.typeMismatch("integer", "record", arg_token),
                 .string => try ctx.typeMismatch("integer", "string", arg_token),
                 .user_defined => unreachable, //TODO: this
-                // An expression should never be 'something', it should always be specified
-                .something => unreachable,
+                //TODO: An expression should never be 'something', it should always be specified
+                //      ok for now as most builtins are unchecked
+                .something => {},
                 .generic => unreachable,
                 .either => unreachable,
             }
@@ -222,22 +258,27 @@ fn analyzeSingleParam(ctx: *Context, param: TypeInfo, arg: TypeInfo, arg_token: 
                 .record => try ctx.typeMismatch("boolean", "record", arg_token),
                 .string => try ctx.typeMismatch("boolean", "string", arg_token),
                 .user_defined => unreachable, //TODO: this
-                // An expression should never be 'something', it should always be specified
-                .something => unreachable,
+                //TODO: An expression should never be 'something', it should always be specified
+                //      ok for now as most builtins are unchecked
+                .something => {},
                 .generic => unreachable,
                 .either => unreachable,
             }
         },
-        .record => unreachable,
+        .record => {}, //TODO: this
         .float => unreachable,
         .generic => unreachable,
         .either => unreachable,
     }
 }
 
-fn analyzeVarDecl(ctx: *Context, call: ast.VarDecl) !void {
-    _ = ctx;
-    _ = call;
+fn analyzeVarDecl(ctx: *Context, decl: ast.VarDecl) !void {
+    if (ctx.lookupVariable(decl.token.value)) |_| {
+        //TODO: report error
+    } else {
+        const type_info = try analyzeExpression(ctx, decl.expression);
+        try ctx.insertVariable(decl.token.value, type_info);
+    }
 }
 fn analyzeAssignment(ctx: *Context, call: ast.Assignment) !void {
     _ = ctx;
@@ -277,12 +318,20 @@ fn analyzeExpression(ctx: *Context, expr: ast.Expression) SemanticsError!TypeInf
     return switch (expr.as) {
         .bareword => .{ .string = {} },
         .bool_literal => .{ .boolean = {} },
-        .capturing_call => unreachable, //TODO: needs to lookup function
+        .capturing_call => |call| try analyzeCall(ctx, call),
         .integer_literal => .{ .integer = {} },
         .list_literal => |list| try analyzeList(ctx, list),
         .record_literal => .{ .record = {} }, //TODO: needs to understand what it is a record of
         .string_literal => .{ .string = {} }, //TODO: needs to semantically analyze substitutions
-        .variable => unreachable, //TODO: needs to lookup variable from current scope
+        .variable => |variable| blk: {
+            if (ctx.lookupVariable(variable.token.value)) |type_info| {
+                break :blk type_info.*;
+            }
+            try ctx.errFmt(.{ .offending_token = variable.token }, "Variable '{s}' referenced but never declared", .{variable.token.value});
+
+            //TODO: report variable which does not exist
+            break :blk .{ .nothing = {} };
+        },
     };
 }
 

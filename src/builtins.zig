@@ -45,6 +45,7 @@ fn unchecked(func: *const BuiltinFn) BuiltinInfo {
             .parameters = &.{
                 .{ .something = {} },
             },
+            .produces = .something,
         },
     };
 }
