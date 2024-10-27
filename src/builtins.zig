@@ -2,11 +2,14 @@ const std = @import("std");
 const values = @import("value.zig");
 const gc = @import("gc.zig");
 const interpreter = @import("interpreter.zig");
+const semantics = @import("semantics.zig");
 const pipeline = @import("pipeline.zig");
 const symtable = @import("symtable.zig");
 
+const TypeInfo = semantics.TypeInfo;
+const Signature = semantics.Signature;
+
 const Value = values.Value;
-const TypeInfo = values.TypeInfo;
 const Result = values.Result;
 const State = pipeline.State;
 const InterpreterError = interpreter.InterpreterError;
@@ -27,44 +30,200 @@ pub const BuiltinError = error{
     AssertionFailed,
 } || std.mem.Allocator.Error || std.fs.File.WriteError || InterpreterError || Utf8Error;
 
-pub const Builtin = fn (ctx: *State, args: []const *Value) BuiltinError!Result;
+pub const BuiltinFn = fn (ctx: *State, args: []const *Value) BuiltinError!Result;
 
-const builtins_table = std.StaticStringMap(*const Builtin).initComptime(
+pub const BuiltinInfo = struct {
+    func: *const BuiltinFn,
+    signature: Signature,
+};
+
+const builtins_table = std.StaticStringMap(BuiltinInfo).initComptime(
     &.{
         // general
-        .{ "assert", assert },
-        .{ "say", say },
-        .{ "alias", alias },
-        .{ "cd", cd },
+        .{
+            "assert", BuiltinInfo{
+                .func = assert,
+                .signature = .{
+                    .parameters = &.{},
+                },
+            },
+        },
+        .{
+            "say",
+            BuiltinInfo{
+                .func = say,
+                .signature = .{ .parameters = &.{} },
+            },
+        },
+        .{
+            "alias",
+            BuiltinInfo{
+                .func = alias,
+                .signature = .{ .parameters = &.{} },
+            },
+        },
+        .{ "cd", cd_info },
         // collections
-        .{ "append", append },
-        .{ "get", get },
-        .{ "len", len },
-        .{ "put", put },
-        .{ "trim", trim },
+        .{
+            "append",
+            BuiltinInfo{
+                .func = alias,
+                .signature = .{ .parameters = &.{} },
+            },
+        },
+        .{
+            "get",
+            BuiltinInfo{
+                .func = alias,
+                .signature = .{ .parameters = &.{} },
+            },
+        },
+        .{
+            "len",
+            BuiltinInfo{
+                .func = alias,
+                .signature = .{ .parameters = &.{} },
+            },
+        },
+        .{
+            "put",
+            BuiltinInfo{
+                .func = alias,
+                .signature = .{ .parameters = &.{} },
+            },
+        },
+        .{
+            "trim",
+            BuiltinInfo{
+                .func = alias,
+                .signature = .{ .parameters = &.{} },
+            },
+        },
         // operations
-        .{ "add", add },
-        .{ "sum", add },
-        .{ "sub", sub },
-        .{ "mul", mul },
-        .{ "div", div },
-        .{ "eq", equals },
-        .{ "lt", less },
-        .{ "gt", greater },
-        .{ "ne", notEqual },
+        .{
+            "add",
+            BuiltinInfo{
+                .func = alias,
+                .signature = .{ .parameters = &.{} },
+            },
+        },
+        .{
+            "sum",
+            BuiltinInfo{
+                .func = alias,
+                .signature = .{ .parameters = &.{} },
+            },
+        },
+        .{
+            "sub",
+            BuiltinInfo{
+                .func = alias,
+                .signature = .{ .parameters = &.{} },
+            },
+        },
+        .{
+            "mul",
+            BuiltinInfo{
+                .func = alias,
+                .signature = .{ .parameters = &.{} },
+            },
+        },
+        .{
+            "div",
+            BuiltinInfo{
+                .func = alias,
+                .signature = .{ .parameters = &.{} },
+            },
+        },
+        .{
+            "eq",
+            BuiltinInfo{
+                .func = alias,
+                .signature = .{ .parameters = &.{} },
+            },
+        },
+        .{
+            "lt",
+            BuiltinInfo{
+                .func = alias,
+                .signature = .{ .parameters = &.{} },
+            },
+        },
+        .{
+            "gt",
+            BuiltinInfo{
+                .func = alias,
+                .signature = .{ .parameters = &.{} },
+            },
+        },
+        .{
+            "ne",
+            BuiltinInfo{
+                .func = alias,
+                .signature = .{ .parameters = &.{} },
+            },
+        },
         // operations (symbols)
-        .{ "+", add },
-        .{ "-", sub },
-        .{ "*", mul },
-        .{ "/", div },
-        .{ "==", equals },
-        .{ "<", less },
-        .{ ">", greater },
-        .{ "!=", notEqual },
+        .{
+            "+",
+            BuiltinInfo{
+                .func = alias,
+                .signature = .{ .parameters = &.{} },
+            },
+        },
+        .{
+            "-",
+            BuiltinInfo{
+                .func = alias,
+                .signature = .{ .parameters = &.{} },
+            },
+        },
+        .{
+            "*",
+            BuiltinInfo{
+                .func = alias,
+                .signature = .{ .parameters = &.{} },
+            },
+        },
+        .{
+            "/",
+            BuiltinInfo{
+                .func = alias,
+                .signature = .{ .parameters = &.{} },
+            },
+        },
+        .{
+            "==",
+            BuiltinInfo{
+                .func = alias,
+                .signature = .{ .parameters = &.{} },
+            },
+        },
+        .{
+            "<",
+            BuiltinInfo{
+                .func = alias,
+                .signature = .{ .parameters = &.{} },
+            },
+        },
+        .{
+            ">",
+            BuiltinInfo{
+                .func = alias,
+                .signature = .{ .parameters = &.{} },
+            },
+        },
+        .{
+            "!=",
+            BuiltinInfo{
+                .func = alias,
+                .signature = .{ .parameters = &.{} },
+            },
+        },
     },
 );
 
-pub fn lookup(str: []const u8) ?*const Builtin {
+pub fn lookup(str: []const u8) ?BuiltinInfo {
     return builtins_table.get(str);
 }
 
@@ -132,6 +291,15 @@ fn alias(state: *State, args: []const *Value) !Result {
 
     return nothing;
 }
+
+const cd_info: BuiltinInfo = .{
+    .func = cd,
+    .signature = .{
+        .parameters = &.{ // takes one string
+            .{ .string = {} },
+        },
+    },
+};
 
 fn cd(state: *State, args: []const *Value) !Result {
     try validateArgsCount(state, &.{1}, args.len);
@@ -451,7 +619,7 @@ fn validateArgsCount(
     }
     state.error_report = .{
         .msg = try std.fmt.allocPrint(state.arena, "Function expects {any} args, recieved {}", .{ accepted_counts, actual_count }),
-        .offending_token = undefined,
+        .offending_token = undefined, //TODO: not like this...
         .trailing = false,
     };
     return InterpreterError.ArgsCountMismatch;
@@ -460,12 +628,6 @@ fn validateArgsCount(
 const TypeMismatchError = InterpreterError || std.mem.Allocator.Error;
 
 fn typeMismatchError(state: *State, wants: []const u8, got: []const u8, offending_value_idx: usize) TypeMismatchError {
-    const msg = try std.fmt.allocPrint(state.arena, "Type mismatch, expected '{s}', got '{s}'", .{ wants, got });
-    state.error_report = .{
-        .msg = msg,
-        .trailing = false,
-        .offending_token = undefined,
-        .offending_expr_idx = offending_value_idx,
-    };
+    state.error_report = try semantics.typeMismatchReportIdx(state.arena, wants, got, offending_value_idx);
     return error.TypeMismatch;
 }

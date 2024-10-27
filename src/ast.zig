@@ -793,3 +793,16 @@ fn parseMember(ctx: *Context) !?Member {
         return ctx.err(.{ .msg = "expected member name (bareword)" });
     };
 }
+
+pub fn tokenFromExpr(expr: Expression) *const Token {
+    return switch (expr.as) {
+        .bareword => |bw| bw.token,
+        .bool_literal => |bl| bl.token,
+        .capturing_call => |cc| cc.token,
+        .integer_literal => |il| il.token,
+        .list_literal => |li| li.token,
+        .record_literal => |rl| rl.token,
+        .string_literal => |sl| sl.token,
+        .variable => |v| v.token,
+    };
+}
