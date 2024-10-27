@@ -37,6 +37,18 @@ pub const BuiltinInfo = struct {
     signature: Signature,
 };
 
+fn unchecked(func: *const BuiltinFn) BuiltinInfo {
+    return .{
+        .func = func,
+        .signature = .{
+            .last_parameter_is_variadic = true,
+            .parameters = &.{
+                .{ .something = {} },
+            },
+        },
+    };
+}
+
 const builtins_table = std.StaticStringMap(BuiltinInfo).initComptime(
     &.{
         // general
@@ -45,156 +57,29 @@ const builtins_table = std.StaticStringMap(BuiltinInfo).initComptime(
         .{ "alias", alias_info },
         .{ "cd", cd_info },
         // collections
-        .{ "append", append_info },
-        .{
-            "get",
-            BuiltinInfo{
-                .func = alias,
-                .signature = .{ .parameters = &.{} },
-            },
-        },
-        .{
-            "len",
-            BuiltinInfo{
-                .func = alias,
-                .signature = .{ .parameters = &.{} },
-            },
-        },
-        .{
-            "put",
-            BuiltinInfo{
-                .func = alias,
-                .signature = .{ .parameters = &.{} },
-            },
-        },
-        .{
-            "trim",
-            BuiltinInfo{
-                .func = alias,
-                .signature = .{ .parameters = &.{} },
-            },
-        },
+        .{ "append", unchecked(append) },
+        .{ "get", unchecked(get) },
+        .{ "len", unchecked(len) },
+        .{ "put", unchecked(put) },
         // operations
-        .{
-            "add",
-            BuiltinInfo{
-                .func = alias,
-                .signature = .{ .parameters = &.{} },
-            },
-        },
-        .{
-            "sum",
-            BuiltinInfo{
-                .func = alias,
-                .signature = .{ .parameters = &.{} },
-            },
-        },
-        .{
-            "sub",
-            BuiltinInfo{
-                .func = alias,
-                .signature = .{ .parameters = &.{} },
-            },
-        },
-        .{
-            "mul",
-            BuiltinInfo{
-                .func = alias,
-                .signature = .{ .parameters = &.{} },
-            },
-        },
-        .{
-            "div",
-            BuiltinInfo{
-                .func = alias,
-                .signature = .{ .parameters = &.{} },
-            },
-        },
-        .{
-            "eq",
-            BuiltinInfo{
-                .func = alias,
-                .signature = .{ .parameters = &.{} },
-            },
-        },
-        .{
-            "lt",
-            BuiltinInfo{
-                .func = alias,
-                .signature = .{ .parameters = &.{} },
-            },
-        },
-        .{
-            "gt",
-            BuiltinInfo{
-                .func = alias,
-                .signature = .{ .parameters = &.{} },
-            },
-        },
-        .{
-            "ne",
-            BuiltinInfo{
-                .func = alias,
-                .signature = .{ .parameters = &.{} },
-            },
-        },
+        .{ "add", unchecked(add) },
+        .{ "sum", unchecked(add) },
+        .{ "sub", unchecked(sub) },
+        .{ "mul", unchecked(mul) },
+        .{ "div", unchecked(div) },
+        .{ "eq", unchecked(equals) },
+        .{ "lt", unchecked(less) },
+        .{ "gt", unchecked(greater) },
+        .{ "ne", unchecked(notEqual) },
         // operations (symbols)
-        .{
-            "+",
-            BuiltinInfo{
-                .func = alias,
-                .signature = .{ .parameters = &.{} },
-            },
-        },
-        .{
-            "-",
-            BuiltinInfo{
-                .func = alias,
-                .signature = .{ .parameters = &.{} },
-            },
-        },
-        .{
-            "*",
-            BuiltinInfo{
-                .func = alias,
-                .signature = .{ .parameters = &.{} },
-            },
-        },
-        .{
-            "/",
-            BuiltinInfo{
-                .func = alias,
-                .signature = .{ .parameters = &.{} },
-            },
-        },
-        .{
-            "==",
-            BuiltinInfo{
-                .func = alias,
-                .signature = .{ .parameters = &.{} },
-            },
-        },
-        .{
-            "<",
-            BuiltinInfo{
-                .func = alias,
-                .signature = .{ .parameters = &.{} },
-            },
-        },
-        .{
-            ">",
-            BuiltinInfo{
-                .func = alias,
-                .signature = .{ .parameters = &.{} },
-            },
-        },
-        .{
-            "!=",
-            BuiltinInfo{
-                .func = alias,
-                .signature = .{ .parameters = &.{} },
-            },
-        },
+        .{ "+", unchecked(add) },
+        .{ "-", unchecked(sub) },
+        .{ "*", unchecked(mul) },
+        .{ "/", unchecked(div) },
+        .{ "==", unchecked(equals) },
+        .{ "<", unchecked(less) },
+        .{ ">", unchecked(greater) },
+        .{ "!=", unchecked(notEqual) },
     },
 );
 
@@ -514,12 +399,31 @@ fn len(_: *State, args: []const *Value) !Result {
     return something(try gc.integer(length));
 }
 
+const append_info_list_of: TypeInfo = .{
+    .generic = "T",
+};
+
 const append_info: BuiltinInfo = .{
     .func = append,
     .signature = .{
         // takes one list of generic content, plus zero or more arguments of generic type
+        .generics = &.{"T"},
         .parameters = &.{
-            .{ .string = {} },
+            .{
+                .list = .{
+                    .of = &append_info_list_of,
+                },
+            },
+        },
+    },
+};
+
+const wip_append_info: BuiltinInfo = .{
+    .func = append,
+    .signature = .{
+        .last_parameter_is_variadic = true,
+        .parameters = &.{
+            .{ .something = {} },
         },
     },
 };
@@ -593,38 +497,6 @@ fn put(state: *State, args: []const *Value) !Result {
     return something(args[0]);
 }
 
-//TODO this should be inside a module...
-fn trim(state: *State, args: []const *Value) !Result {
-    try validateArgsCount(state, &.{1}, args.len);
-
-    const arg = args[0];
-    const str = switch (arg.as) {
-        .string => |s| s,
-        else => unreachable,
-    };
-
-    if (str.len == 0) {
-        return something(try gc.string(""));
-    }
-
-    var first_real: usize = 0;
-    var last_real = str.len - 1;
-
-    while (first_real < str.len) : (first_real += 1) {
-        if (!std.ascii.isWhitespace(str[first_real])) {
-            break;
-        }
-    }
-
-    while (last_real > first_real) : (last_real -= 1) {
-        if (!std.ascii.isWhitespace(str[last_real])) {
-            break;
-        }
-    }
-
-    return something(try gc.string(str[first_real..last_real]));
-}
-
 fn validateArgsCount(
     state: *State,
     accepted_counts: []const usize,
@@ -637,7 +509,7 @@ fn validateArgsCount(
     }
     state.error_report = .{
         .msg = try std.fmt.allocPrint(state.arena, "Function expects {any} args, recieved {}", .{ accepted_counts, actual_count }),
-        .offending_token = undefined, //TODO: not like this...
+        .offending_token = undefined, // Ok, caller will set the value
         .trailing = false,
     };
     return InterpreterError.ArgsCountMismatch;

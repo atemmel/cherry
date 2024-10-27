@@ -22,6 +22,7 @@ pub const TypeInfo = union(enum) {
     user_defined,
     nothing,
     generic: []const u8,
+    either: []const TypeInfo,
 };
 
 pub const Signature = struct {
@@ -167,6 +168,7 @@ fn analyzeSingleParam(ctx: *Context, param: TypeInfo, arg: TypeInfo, arg_token: 
                 .record,
                 .string,
                 .user_defined,
+                .either,
                 => {},
                 .nothing => try ctx.typeMismatch("something", "nothing", arg_token),
                 // An expression should never be 'something', it should always be specified
@@ -189,9 +191,25 @@ fn analyzeSingleParam(ctx: *Context, param: TypeInfo, arg: TypeInfo, arg_token: 
                 // An expression should never be 'something', it should always be specified
                 .something => unreachable,
                 .generic => unreachable,
+                .either => unreachable,
             }
         },
-        .integer => unreachable,
+        .integer => {
+            switch (arg) {
+                .boolean => try ctx.typeMismatch("integer", "boolean", arg_token),
+                .float => try ctx.typeMismatch("integer", "float", arg_token),
+                .integer => {},
+                .list => try ctx.typeMismatch("integer", "list", arg_token),
+                .nothing => try ctx.typeMismatch("integer", "nothing", arg_token),
+                .record => try ctx.typeMismatch("integer", "record", arg_token),
+                .string => try ctx.typeMismatch("integer", "string", arg_token),
+                .user_defined => unreachable, //TODO: this
+                // An expression should never be 'something', it should always be specified
+                .something => unreachable,
+                .generic => unreachable,
+                .either => unreachable,
+            }
+        },
         .list => unreachable,
         .user_defined => unreachable,
         .boolean => {
@@ -207,11 +225,13 @@ fn analyzeSingleParam(ctx: *Context, param: TypeInfo, arg: TypeInfo, arg_token: 
                 // An expression should never be 'something', it should always be specified
                 .something => unreachable,
                 .generic => unreachable,
+                .either => unreachable,
             }
         },
         .record => unreachable,
         .float => unreachable,
         .generic => unreachable,
+        .either => unreachable,
     }
 }
 
@@ -245,25 +265,53 @@ fn analyzeLoop(ctx: *Context, call: ast.Loop) !void {
     _ = call;
 }
 
-fn analyzeArguments(ctx: *Context, exprs: []const ast.Expression) ![]const TypeInfo {
+fn analyzeArguments(ctx: *Context, exprs: []const ast.Expression) SemanticsError![]const TypeInfo {
     var list = try std.ArrayList(TypeInfo).initCapacity(ctx.arena, exprs.len);
     for (exprs) |expr| {
-        list.appendAssumeCapacity(analyzeExpression(ctx, expr));
+        list.appendAssumeCapacity(try analyzeExpression(ctx, expr));
     }
     return try list.toOwnedSlice();
 }
 
-fn analyzeExpression(ctx: *Context, expr: ast.Expression) TypeInfo {
-    _ = ctx;
+fn analyzeExpression(ctx: *Context, expr: ast.Expression) SemanticsError!TypeInfo {
     return switch (expr.as) {
         .bareword => .{ .string = {} },
         .bool_literal => .{ .boolean = {} },
         .capturing_call => unreachable, //TODO: needs to lookup function
         .integer_literal => .{ .integer = {} },
-        .list_literal => .{ .list = {} }, //TODO: needs to understand what it is a list of
+        .list_literal => |list| try analyzeList(ctx, list),
         .record_literal => .{ .record = {} }, //TODO: needs to understand what it is a record of
         .string_literal => .{ .string = {} }, //TODO: needs to semantically analyze substitutions
         .variable => unreachable, //TODO: needs to lookup variable from current scope
+    };
+}
+
+fn analyzeList(ctx: *Context, list: ast.ListLiteral) SemanticsError!TypeInfo {
+    if (list.items.len == 0) {
+        const of = try ctx.arena.create(TypeInfo);
+        of.*.nothing = {};
+        return TypeInfo{
+            .list = .{
+                .of = of,
+            },
+        };
+    }
+
+    const first_expr = list.items[0];
+    const first_type = try analyzeExpression(ctx, first_expr);
+    for (list.items[1..]) |el| {
+        const current_type = try analyzeExpression(ctx, el);
+        const token = ast.tokenFromExpr(el);
+        try analyzeSingleParam(ctx, first_type, current_type, token);
+    }
+
+    const of = try ctx.arena.create(TypeInfo);
+    of.* = first_type;
+
+    return TypeInfo{
+        .list = .{
+            .of = of,
+        },
     };
 }
 
