@@ -43,7 +43,10 @@ fn unchecked(func: *const BuiltinFn) BuiltinInfo {
         .signature = .{
             .last_parameter_is_variadic = true,
             .parameters = &.{
-                .{ .something = {} },
+                .{
+                    .name = "args",
+                    .type_info = .{ .something = {} },
+                },
             },
             .produces = .something,
         },
@@ -94,7 +97,10 @@ const say_info: BuiltinInfo = .{
         // takes any number of any argument
         .last_parameter_is_variadic = true,
         .parameters = &.{
-            .{ .something = {} },
+            .{
+                .name = "args",
+                .type_info = .{ .something = {} },
+            },
         },
     },
 };
@@ -129,7 +135,10 @@ const assert_info: BuiltinInfo = .{
         // takes any number of booleans
         .last_parameter_is_variadic = true,
         .parameters = &.{
-            .{ .boolean = {} },
+            .{
+                .name = "args",
+                .type_info = .boolean,
+            },
         },
     },
 };
@@ -160,8 +169,14 @@ const alias_info: BuiltinInfo = .{
     .signature = .{
         // takes two strings
         .parameters = &.{
-            .{ .string = {} },
-            .{ .string = {} },
+            .{
+                .name = "name",
+                .type_info = .{ .string = {} },
+            },
+            .{
+                .name = "command",
+                .type_info = .{ .string = {} },
+            },
         },
     },
 };
@@ -190,7 +205,10 @@ const cd_info: BuiltinInfo = .{
     .func = cd,
     .signature = .{
         .parameters = &.{ // takes one string
-            .{ .string = {} },
+            .{
+                .name = "path",
+                .type_info = .{ .string = {} },
+            },
         },
     },
 };

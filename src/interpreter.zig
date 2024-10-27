@@ -250,10 +250,10 @@ fn evalFunctionCall(ctx: *Context, func: ast.Func, call: ast.Call) !Result {
     var args = try evalArgs(ctx, call.arguments);
     defer args.deinit();
 
-    std.debug.assert(func.params.len == args.items.len);
+    std.debug.assert(func.signature.parameters.len == args.items.len);
 
-    for (func.params, args.items) |par, arg| {
-        try symtable.put(par.token.value, arg);
+    for (func.signature.parameters, args.items) |par, arg| {
+        try symtable.put(par.name, arg);
     }
 
     for (func.scope) |stmnt| {

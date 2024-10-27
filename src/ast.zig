@@ -99,9 +99,13 @@ pub const Branch = struct {
     scope: Scope,
 };
 
+pub const Type = struct {
+    token: *const Token,
+    type_info: semantics.TypeInfo,
+};
+
 pub const Func = struct {
     token: *const Token, // contains identifier
-    params: []const Bareword,
     signature: semantics.Signature,
     scope: Scope,
 };
@@ -451,19 +455,18 @@ fn parseFunc(ctx: *Context) !?Func {
     };
 
     var produces: semantics.TypeInfo = .nothing;
-    var parameters = std.ArrayList(semantics.TypeInfo).init(ctx.ally);
+    var parameters = std.ArrayList(semantics.Parameter).init(ctx.ally);
     defer parameters.deinit();
-
-    var params = std.ArrayList(Bareword).init(ctx.ally);
-    defer params.deinit();
 
     while (try parseParam(ctx)) |param| {
         const type_info = string_primitive_lookup.get(param.type_name.token.value) orelse {
             //TODO: error about a string not looking like a primitive type or something
             unreachable;
         };
-        try parameters.append(type_info);
-        try params.append(param.name);
+        try parameters.append(.{
+            .name = param.name.token.value,
+            .type_info = type_info,
+        });
     }
 
     if (try parseProducingType(ctx)) |type_info| {
@@ -480,7 +483,6 @@ fn parseFunc(ctx: *Context) !?Func {
     return Func{
         .token = token,
         .scope = scope,
-        .params = try params.toOwnedSlice(),
         .signature = .{
             .generics = &.{},
             .produces = produces,

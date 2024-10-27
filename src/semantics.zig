@@ -25,9 +25,14 @@ pub const TypeInfo = union(enum) {
     either: []const TypeInfo,
 };
 
+pub const Parameter = struct {
+    name: []const u8,
+    type_info: TypeInfo,
+};
+
 pub const Signature = struct {
     generics: []const []const u8 = &.{},
-    parameters: []const TypeInfo,
+    parameters: []const Parameter,
     last_parameter_is_variadic: bool = false,
     produces: TypeInfo = .nothing,
 };
@@ -172,7 +177,7 @@ fn analyzeBuiltinCall(ctx: *Context, call: ast.Call, builtin_info: builtins.Buil
         const param = signature.parameters[idx];
         const arg = args[idx];
         const arg_token = ast.tokenFromExpr(call.arguments[idx]);
-        try analyzeSingleParam(ctx, param, arg, arg_token);
+        try analyzeSingleParam(ctx, param.type_info, arg, arg_token);
     }
 
     // if not variadic, cool, exit
@@ -181,12 +186,12 @@ fn analyzeBuiltinCall(ctx: *Context, call: ast.Call, builtin_info: builtins.Buil
     }
 
     // otherwise, more work
-    const type_of_variadic_param = signature.parameters[signature.parameters.len - 1];
+    const variadic_param = signature.parameters[signature.parameters.len - 1];
 
     while (idx < provided_len) : (idx += 1) {
         const arg = args[idx];
         const arg_token = ast.tokenFromExpr(call.arguments[idx]);
-        try analyzeSingleParam(ctx, type_of_variadic_param, arg, arg_token);
+        try analyzeSingleParam(ctx, variadic_param.type_info, arg, arg_token);
     }
 
     return signature.produces;

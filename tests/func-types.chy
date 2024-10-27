@@ -1,0 +1,7 @@
+list := [1 2 3]
+
+fn produce-same l: []int | []int {
+    return l
+}
+
+say (produce-same $list)
