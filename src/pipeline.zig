@@ -2,13 +2,22 @@ const std = @import("std");
 const tokens = @import("tokens.zig");
 const ast = @import("ast.zig");
 const interpreter = @import("interpreter.zig");
+const semantics = @import("semantics.zig");
 
 const Token = tokens.Token;
 
+const assert = std.debug.assert;
 const print = std.debug.print;
 const microTimestamp = std.time.microTimestamp;
 
-pub const PipelineError = tokens.LexerError || ast.errors || interpreter.EvalError;
+pub const PipelineError = tokens.LexerError || ast.errors || semantics.SemanticsError || interpreter.EvalError;
+
+pub const ErrorReport = struct {
+    offending_token: *const Token,
+    msg: []const u8,
+    trailing: bool,
+    offending_expr_idx: ?usize = null,
+};
 
 pub const State = struct {
     arena_source: *std.heap.ArenaAllocator,
@@ -22,14 +31,12 @@ pub const State = struct {
     },
     verboseLexer: bool = false,
     verboseParser: bool = false,
+    verboseAnalysis: bool = false,
+    verboseInterpretation: bool = false,
     filename: []const u8,
     color: std.io.tty.Config = std.io.tty.Config.no_color,
-    error_report: ?struct {
-        offending_token: *const Token,
-        msg: []const u8,
-        trailing: bool,
-        offending_expr_idx: ?usize = null,
-    } = null,
+    error_report: ?ErrorReport = null,
+    analysis: semantics.Analysis = .{},
 
     const ErrorInfo = struct {
         msg: []const u8,
@@ -97,6 +104,9 @@ pub fn writeError(state: *State, err: PipelineError) !void {
         },
         error.ParseFailed => {
             try writeAstError(state, writer);
+        },
+        error.SemanticError => {
+            try writeSemanticsError(state, writer);
         },
         error.ArgsCountMismatch,
         error.BadVariableLookup,
@@ -181,6 +191,17 @@ pub fn writeAstError(state: *State, writer: anytype) !void {
     try writeErrorSource(info, writer);
 }
 
+pub fn writeSemanticsError(state: *State, writer: anytype) !void {
+    assert(state.analysis.errors.len > 0);
+    for (state.analysis.errors) |error_report| {
+        state.error_report = error_report;
+        const info = state.errorInfo();
+        const file = state.filename;
+        try writer.print("<{s}>:{}:{}: semantic error: {s}\n{s}\n", .{ file, info.row, info.col, info.msg, info.row_str });
+        try writeErrorSource(info, writer);
+    }
+}
+
 pub fn writeRuntimeError(state: *State, writer: anytype) !void {
     const info = state.errorInfo();
     const file = state.filename;
@@ -219,5 +240,19 @@ pub fn run(state: *State) PipelineError!void {
         ast.dump(state.root);
     }
 
+    const analyze_start_ms = microTimestamp();
+    try semantics.analyze(state);
+
+    const analyze_stop_ms = microTimestamp();
+    if (state.verboseAnalysis) {
+        logTime("Analysis: ", analyze_start_ms, analyze_stop_ms);
+    }
+
+    const interpret_start_ms = microTimestamp();
     try interpreter.interpret(state);
+
+    const interpret_stop_ms = microTimestamp();
+    if (state.verboseInterpretation) {
+        logTime("Interpretation: ", interpret_start_ms, interpret_stop_ms);
+    }
 }

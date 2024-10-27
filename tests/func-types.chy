@@ -1,0 +1,17 @@
+list := [1 2 3]
+
+fn produce-same-list l: []int | []int {
+    return $l
+}
+
+say (produce-same-list $list)
+
+#{
+person := [name = james]
+
+fn produce-same-record r: [string]string | [string]string {
+    return $r
+}
+
+say (produce-same-record $person)
+#}

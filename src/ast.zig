@@ -1,10 +1,19 @@
 const std = @import("std");
 const builtin = @import("builtin");
+const semantics = @import("semantics.zig");
 const Token = @import("tokens.zig").Token;
 const PipelineState = @import("pipeline.zig").State;
+
 pub const dump = @import("ast_dump.zig").dump;
 
 pub const errors = error{ParseFailed} || std.mem.Allocator.Error;
+
+const string_primitive_lookup = std.StaticStringMap(semantics.TypeInfo).initComptime(.{
+    .{ "bool", .boolean },
+    .{ "float", .float },
+    .{ "int", .integer },
+    .{ "string", .string },
+});
 
 pub const Bareword = struct {
     token: *const Token,
@@ -90,9 +99,25 @@ pub const Branch = struct {
     scope: Scope,
 };
 
+pub const Parameter = struct {
+    name: []const u8,
+    param_type: Type,
+};
+
+pub const Type = struct {
+    type_info: semantics.TypeInfo,
+};
+
+pub const Signature = struct {
+    generics: []const []const u8 = &.{},
+    parameters: []const Parameter,
+    last_parameter_is_variadic: bool = false,
+    produces: semantics.TypeInfo = .nothing,
+};
+
 pub const Func = struct {
     token: *const Token, // contains identifier
-    params: []const Bareword,
+    signature: Signature,
     scope: Scope,
 };
 
@@ -440,11 +465,16 @@ fn parseFunc(ctx: *Context) !?Func {
         });
     };
 
-    var params = std.ArrayList(Bareword).init(ctx.ally);
-    defer params.deinit();
+    var produces: semantics.TypeInfo = .nothing;
+    var parameters = std.ArrayList(Parameter).init(ctx.ally);
+    defer parameters.deinit();
 
-    while (parseBareword(ctx)) |bw| {
-        try params.append(bw);
+    while (try parseParam(ctx)) |param| {
+        try parameters.append(param);
+    }
+
+    if (try parseProducingType(ctx)) |type_info| {
+        produces = type_info;
     }
 
     const scope = try parseScope(ctx, true) orelse {
@@ -453,11 +483,102 @@ fn parseFunc(ctx: *Context) !?Func {
         });
     };
 
+    //TODO: support more of this
     return Func{
         .token = token,
         .scope = scope,
-        .params = try params.toOwnedSlice(),
+        .signature = .{
+            .generics = &.{},
+            .produces = produces,
+            .parameters = try parameters.toOwnedSlice(),
+            .last_parameter_is_variadic = false,
+        },
     };
+}
+
+fn parseParam(ctx: *Context) !?Parameter {
+    const name_token = parseBareword(ctx) orelse {
+        return null;
+    };
+
+    _ = ctx.getIf(.Colon) orelse {
+        return ctx.err(.{
+            .msg = "expected ':'",
+        });
+    };
+
+    const parsed_type = try parseType(ctx) orelse {
+        return ctx.err(.{
+            .msg = "expected valid type",
+        });
+    };
+
+    return Parameter{
+        .name = name_token.token.value,
+        .param_type = parsed_type,
+    };
+}
+
+//TODO: expand on this to handle, lists, records, etc
+fn parseType(ctx: *Context) !?Type {
+    if (try parseListType(ctx)) |list| {
+        return list;
+    }
+
+    const primitive_type = try parsePrimitiveType(ctx) orelse {
+        return null;
+    };
+
+    return Type{
+        .type_info = primitive_type,
+    };
+}
+
+fn parseListType(ctx: *Context) !?Type {
+    _ = ctx.getIf(.LBracket) orelse {
+        return null;
+    };
+    _ = ctx.getIf(.RBracket) orelse {
+        return ctx.err(.{ .msg = "expected ']'" });
+    };
+
+    const inner = try ctx.ally.create(semantics.TypeInfo);
+    inner.* = try parsePrimitiveType(ctx) orelse {
+        return ctx.err(.{ .msg = "expected type" });
+    };
+
+    return Type{
+        .type_info = .{
+            .list = .{
+                .of = inner,
+            },
+        },
+    };
+}
+
+fn parsePrimitiveType(ctx: *Context) !?semantics.TypeInfo {
+    const bareword = parseBareword(ctx) orelse {
+        return null;
+    };
+    const name = bareword.token.value;
+    return string_primitive_lookup.get(name) orelse {
+        const msg = try std.fmt.allocPrint(ctx.ally, "'{s}' is not a recognized type", .{name});
+        return ctx.err(.{ .msg = msg });
+    };
+}
+
+fn parseProducingType(ctx: *Context) !?semantics.TypeInfo {
+    _ = ctx.getIf(.Pipe) orelse {
+        return null;
+    };
+
+    const parsed_type = try parseType(ctx) orelse {
+        return ctx.err(.{
+            .msg = "expected valid type",
+        });
+    };
+
+    return parsed_type.type_info;
 }
 
 fn parseInitOp(ctx: *Context) !?InitOp {
@@ -791,5 +912,18 @@ fn parseMember(ctx: *Context) !?Member {
 
     return parseBareword(ctx) orelse {
         return ctx.err(.{ .msg = "expected member name (bareword)" });
+    };
+}
+
+pub fn tokenFromExpr(expr: Expression) *const Token {
+    return switch (expr.as) {
+        .bareword => |bw| bw.token,
+        .bool_literal => |bl| bl.token,
+        .capturing_call => |cc| cc.token,
+        .integer_literal => |il| il.token,
+        .list_literal => |li| li.token,
+        .record_literal => |rl| rl.token,
+        .string_literal => |sl| sl.token,
+        .variable => |v| v.token,
     };
 }

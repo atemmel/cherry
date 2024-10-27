@@ -148,7 +148,7 @@ fn interpretBranches(ctx: *Context, branches: ast.Branches) !void {
                     }
                 },
                 // needs value
-                .nothing => return errRequiresValue(ctx, tokenFromExpr(expr)),
+                .nothing => return errRequiresValue(ctx, ast.tokenFromExpr(expr)),
             }
         } else {
             try interpretScope(ctx, branch.scope);
@@ -191,7 +191,7 @@ fn interpretLoop(ctx: *Context, loop: ast.Loop) !void {
                     }
                 },
                 // needs value
-                .nothing => return errRequiresValue(ctx, tokenFromExpr(expr)),
+                .nothing => return errRequiresValue(ctx, ast.tokenFromExpr(expr)),
             }
         }
 
@@ -215,8 +215,8 @@ fn evalReturn(ctx: *Context, ret: ast.Return) !Result {
 
 fn evalCall(ctx: *Context, call: ast.Call) !Result {
     const name = call.token.value;
-    if (builtins.lookup(name)) |builtin| {
-        return try evalBuiltin(ctx, call, builtin);
+    if (builtins.lookup(name)) |builtin_info| {
+        return try evalBuiltin(ctx, call, builtin_info.func);
     } else if (ctx.root.functions.getPtr(name)) |func| {
         return try evalFunctionCall(ctx, func.*, call);
     } else {
@@ -224,7 +224,7 @@ fn evalCall(ctx: *Context, call: ast.Call) !Result {
     }
 }
 
-fn evalBuiltin(ctx: *Context, call: ast.Call, builtin: *const builtins.Builtin) !Result {
+fn evalBuiltin(ctx: *Context, call: ast.Call, builtin: *const builtins.BuiltinFn) !Result {
     var args = try evalArgs(ctx, call.arguments);
     defer args.deinit();
     return builtin(ctx.state, args.items) catch |e| {
@@ -232,7 +232,7 @@ fn evalBuiltin(ctx: *Context, call: ast.Call, builtin: *const builtins.Builtin) 
             error.TypeMismatch, error.ArgsCountMismatch => {
                 if (ctx.state.error_report.?.offending_expr_idx) |idx| {
                     const expr = call.arguments[idx];
-                    ctx.state.error_report.?.offending_token = tokenFromExpr(expr);
+                    ctx.state.error_report.?.offending_token = ast.tokenFromExpr(expr);
                 } else {
                     ctx.state.error_report.?.offending_token = call.token;
                 }
@@ -250,10 +250,10 @@ fn evalFunctionCall(ctx: *Context, func: ast.Func, call: ast.Call) !Result {
     var args = try evalArgs(ctx, call.arguments);
     defer args.deinit();
 
-    std.debug.assert(func.params.len == args.items.len);
+    std.debug.assert(func.signature.parameters.len == args.items.len);
 
-    for (func.params, args.items) |par, arg| {
-        try symtable.put(par.token.value, arg);
+    for (func.signature.parameters, args.items) |par, arg| {
+        try symtable.put(par.name, arg);
     }
 
     for (func.scope) |stmnt| {
@@ -493,17 +493,4 @@ fn ptrAdd(token: *const tokens.Token, steps: usize) *const tokens.Token {
     const original_adress = @intFromPtr(token);
     const offset_adress = original_adress + steps * @sizeOf(tokens.Token);
     return @ptrFromInt(offset_adress);
-}
-
-fn tokenFromExpr(expr: ast.Expression) *const tokens.Token {
-    return switch (expr.as) {
-        .bareword => |bw| bw.token,
-        .bool_literal => |bl| bl.token,
-        .capturing_call => |cc| cc.token,
-        .integer_literal => |il| il.token,
-        .list_literal => |li| li.token,
-        .record_literal => |rl| rl.token,
-        .string_literal => |sl| sl.token,
-        .variable => |v| v.token,
-    };
 }

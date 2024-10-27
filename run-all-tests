@@ -1,0 +1,11 @@
+#!/bin/sh
+#TODO: migrate to cherry :^)
+
+function die {
+    echo $@ && exit 1
+}
+
+for filename in tests/*.chy; do
+    ./zig-out/bin/cherry "$filename" > /dev/null \
+        || die "Failed test $filename"
+done

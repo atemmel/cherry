@@ -25,7 +25,7 @@ fn readfile(ally: std.mem.Allocator, name: []const u8) ![]const u8 {
     return file.readToEndAlloc(ally, 1_000_000_000);
 }
 
-pub fn main() !void {
+pub fn main() !u8 {
     var base_allocator = switch (builtin.mode) {
         .Debug => std.heap.GeneralPurposeAllocator(.{}){},
         else => .{},
@@ -58,7 +58,7 @@ pub fn main() !void {
             "help",
         })) {
             //TODO: show help
-            return;
+            return 0;
         } else if (eq(u8, "--verbose", arg)) {
             verboseLexer = true;
             verboseParser = true;
@@ -86,14 +86,17 @@ pub fn main() !void {
     };
 
     if (file == null) {
-        return repl(&state);
+        try repl(&state);
+        return 0;
     }
 
     state.source = try readfile(arena_allocator, file.?);
 
     pipeline.run(&state) catch |err| {
         try pipeline.writeError(&state, err);
+        return 1;
     };
+    return 0;
 }
 
 comptime {

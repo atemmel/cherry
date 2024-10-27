@@ -1,12 +1,16 @@
 const std = @import("std");
+const ast = @import("ast.zig");
 const values = @import("value.zig");
 const gc = @import("gc.zig");
 const interpreter = @import("interpreter.zig");
+const semantics = @import("semantics.zig");
 const pipeline = @import("pipeline.zig");
 const symtable = @import("symtable.zig");
 
+const Signature = ast.Signature;
+const TypeInfo = semantics.TypeInfo;
+
 const Value = values.Value;
-const TypeInfo = values.TypeInfo;
 const Result = values.Result;
 const State = pipeline.State;
 const InterpreterError = interpreter.InterpreterError;
@@ -27,46 +31,84 @@ pub const BuiltinError = error{
     AssertionFailed,
 } || std.mem.Allocator.Error || std.fs.File.WriteError || InterpreterError || Utf8Error;
 
-pub const Builtin = fn (ctx: *State, args: []const *Value) BuiltinError!Result;
+pub const BuiltinFn = fn (ctx: *State, args: []const *Value) BuiltinError!Result;
 
-const builtins_table = std.StaticStringMap(*const Builtin).initComptime(
+pub const BuiltinInfo = struct {
+    func: *const BuiltinFn,
+    signature: Signature,
+};
+
+fn unchecked(func: *const BuiltinFn) BuiltinInfo {
+    return .{
+        .func = func,
+        .signature = .{
+            .last_parameter_is_variadic = true,
+            .parameters = &.{
+                .{
+                    .name = "args",
+                    .param_type = .{
+                        .type_info = .something,
+                    },
+                },
+            },
+            .produces = .something,
+        },
+    };
+}
+
+const builtins_table = std.StaticStringMap(BuiltinInfo).initComptime(
     &.{
         // general
-        .{ "assert", assert },
-        .{ "say", say },
-        .{ "alias", alias },
-        .{ "cd", cd },
+        .{ "assert", assert_info },
+        .{ "say", say_info },
+        .{ "alias", alias_info },
+        .{ "cd", cd_info },
         // collections
-        .{ "append", append },
-        .{ "get", get },
-        .{ "len", len },
-        .{ "put", put },
-        .{ "trim", trim },
+        .{ "append", unchecked(append) },
+        .{ "get", unchecked(get) },
+        .{ "len", unchecked(len) },
+        .{ "put", unchecked(put) },
         // operations
-        .{ "add", add },
-        .{ "sum", add },
-        .{ "sub", sub },
-        .{ "mul", mul },
-        .{ "div", div },
-        .{ "eq", equals },
-        .{ "lt", less },
-        .{ "gt", greater },
-        .{ "ne", notEqual },
+        .{ "add", unchecked(add) },
+        .{ "sum", unchecked(add) },
+        .{ "sub", unchecked(sub) },
+        .{ "mul", unchecked(mul) },
+        .{ "div", unchecked(div) },
+        .{ "eq", unchecked(equals) },
+        .{ "lt", unchecked(less) },
+        .{ "gt", unchecked(greater) },
+        .{ "ne", unchecked(notEqual) },
         // operations (symbols)
-        .{ "+", add },
-        .{ "-", sub },
-        .{ "*", mul },
-        .{ "/", div },
-        .{ "==", equals },
-        .{ "<", less },
-        .{ ">", greater },
-        .{ "!=", notEqual },
+        .{ "+", unchecked(add) },
+        .{ "-", unchecked(sub) },
+        .{ "*", unchecked(mul) },
+        .{ "/", unchecked(div) },
+        .{ "==", unchecked(equals) },
+        .{ "<", unchecked(less) },
+        .{ ">", unchecked(greater) },
+        .{ "!=", unchecked(notEqual) },
     },
 );
 
-pub fn lookup(str: []const u8) ?*const Builtin {
+pub fn lookup(str: []const u8) ?BuiltinInfo {
     return builtins_table.get(str);
 }
+
+const say_info: BuiltinInfo = .{
+    .func = say,
+    .signature = .{
+        // takes any number of any argument
+        .last_parameter_is_variadic = true,
+        .parameters = &.{
+            .{
+                .name = "args",
+                .param_type = .{
+                    .type_info = .something,
+                },
+            },
+        },
+    },
+};
 
 fn say(_: *State, args: []const *Value) !Result {
     const stdout = std.io.getStdOut().writer();
@@ -92,6 +134,22 @@ fn say(_: *State, args: []const *Value) !Result {
     return nothing;
 }
 
+const assert_info: BuiltinInfo = .{
+    .func = assert,
+    .signature = .{
+        // takes any number of booleans
+        .last_parameter_is_variadic = true,
+        .parameters = &.{
+            .{
+                .name = "args",
+                .param_type = .{
+                    .type_info = .boolean,
+                },
+            },
+        },
+    },
+};
+
 fn assert(_: *State, args: []const *Value) !Result {
     const stderr = std.io.getStdErr().writer();
     var all_passed = true;
@@ -113,6 +171,27 @@ fn assert(_: *State, args: []const *Value) !Result {
     };
 }
 
+const alias_info: BuiltinInfo = .{
+    .func = alias,
+    .signature = .{
+        // takes two strings
+        .parameters = &.{
+            .{
+                .name = "name",
+                .param_type = .{
+                    .type_info = .string,
+                },
+            },
+            .{
+                .name = "command",
+                .param_type = .{
+                    .type_info = .string,
+                },
+            },
+        },
+    },
+};
+
 fn alias(state: *State, args: []const *Value) !Result {
     try validateArgsCount(state, &.{2}, args.len);
 
@@ -132,6 +211,20 @@ fn alias(state: *State, args: []const *Value) !Result {
 
     return nothing;
 }
+
+const cd_info: BuiltinInfo = .{
+    .func = cd,
+    .signature = .{
+        .parameters = &.{ // takes one string
+            .{
+                .name = "path",
+                .param_type = .{
+                    .type_info = .string,
+                },
+            },
+        },
+    },
+};
 
 fn cd(state: *State, args: []const *Value) !Result {
     try validateArgsCount(state, &.{1}, args.len);
@@ -338,6 +431,35 @@ fn len(_: *State, args: []const *Value) !Result {
     return something(try gc.integer(length));
 }
 
+const append_info_list_of: TypeInfo = .{
+    .generic = "T",
+};
+
+const append_info: BuiltinInfo = .{
+    .func = append,
+    .signature = .{
+        // takes one list of generic content, plus zero or more arguments of generic type
+        .generics = &.{"T"},
+        .parameters = &.{
+            .{
+                .list = .{
+                    .of = &append_info_list_of,
+                },
+            },
+        },
+    },
+};
+
+const wip_append_info: BuiltinInfo = .{
+    .func = append,
+    .signature = .{
+        .last_parameter_is_variadic = true,
+        .parameters = &.{
+            .{ .something = {} },
+        },
+    },
+};
+
 fn append(_: *State, args: []const *Value) !Result {
     if (args.len == 0) {
         unreachable;
@@ -407,38 +529,6 @@ fn put(state: *State, args: []const *Value) !Result {
     return something(args[0]);
 }
 
-//TODO this should be inside a module...
-fn trim(state: *State, args: []const *Value) !Result {
-    try validateArgsCount(state, &.{1}, args.len);
-
-    const arg = args[0];
-    const str = switch (arg.as) {
-        .string => |s| s,
-        else => unreachable,
-    };
-
-    if (str.len == 0) {
-        return something(try gc.string(""));
-    }
-
-    var first_real: usize = 0;
-    var last_real = str.len - 1;
-
-    while (first_real < str.len) : (first_real += 1) {
-        if (!std.ascii.isWhitespace(str[first_real])) {
-            break;
-        }
-    }
-
-    while (last_real > first_real) : (last_real -= 1) {
-        if (!std.ascii.isWhitespace(str[last_real])) {
-            break;
-        }
-    }
-
-    return something(try gc.string(str[first_real..last_real]));
-}
-
 fn validateArgsCount(
     state: *State,
     accepted_counts: []const usize,
@@ -451,7 +541,7 @@ fn validateArgsCount(
     }
     state.error_report = .{
         .msg = try std.fmt.allocPrint(state.arena, "Function expects {any} args, recieved {}", .{ accepted_counts, actual_count }),
-        .offending_token = undefined,
+        .offending_token = undefined, // Ok, caller will set the value
         .trailing = false,
     };
     return InterpreterError.ArgsCountMismatch;
@@ -460,12 +550,6 @@ fn validateArgsCount(
 const TypeMismatchError = InterpreterError || std.mem.Allocator.Error;
 
 fn typeMismatchError(state: *State, wants: []const u8, got: []const u8, offending_value_idx: usize) TypeMismatchError {
-    const msg = try std.fmt.allocPrint(state.arena, "Type mismatch, expected '{s}', got '{s}'", .{ wants, got });
-    state.error_report = .{
-        .msg = msg,
-        .trailing = false,
-        .offending_token = undefined,
-        .offending_expr_idx = offending_value_idx,
-    };
+    state.error_report = try semantics.typeMismatchReportIdx(state.arena, wants, got, offending_value_idx);
     return error.TypeMismatch;
 }

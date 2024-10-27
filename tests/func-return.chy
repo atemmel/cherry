@@ -1,4 +1,5 @@
-fn calc lhs rhs {
+#TODO: needs to be typed: 
+fn calc lhs: int rhs: int | int {
     return (+ $lhs $rhs)
 }
 

@@ -99,10 +99,17 @@ fn dumpFunc(func: ast.Func) void {
     defer up();
     leaf("Func: {s}\n", .{func.token.value});
     leaf("Params:\n", .{});
-    for (func.params) |param| {
-        dumpBareword(param);
+    for (func.signature.parameters) |param| {
+        //TODO: needs more work to print all kinds of types
+        leaf("{s}: {s}\n", .{ param.name, @tagName(param.param_type.type_info) });
+        up();
     }
     up();
+    if (func.signature.produces != .nothing) {
+        //TODO: needs more work to print all kinds of types
+        leaf("Produces: {s}\n", .{@tagName(func.signature.produces)});
+        up();
+    }
     dumpScope(func.scope);
 }
 
