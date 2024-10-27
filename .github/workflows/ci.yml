@@ -17,11 +17,11 @@ jobs:
         with:
           version: 0.13.0
       - run: |
-        # build
-        zig build 
-
-        # unit tests
-        zig build test
-
-        # code tests
-        ./run-all-tests
+          # build
+          zig build 
+          
+          # unit tests
+          zig build test
+          
+          # code tests
+          ./run-all-tests
