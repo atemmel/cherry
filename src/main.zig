@@ -48,6 +48,9 @@ pub fn main() !u8 {
 
     var verboseLexer = false;
     var verboseParser = false;
+    var verboseAnalysis = false;
+    var verboseInterpretation = false;
+
     var file: ?[]const u8 = null;
 
     for (args[1..args.len]) |arg| {
@@ -62,6 +65,8 @@ pub fn main() !u8 {
         } else if (eq(u8, "--verbose", arg)) {
             verboseLexer = true;
             verboseParser = true;
+            verboseAnalysis = true;
+            verboseInterpretation = true;
             std.debug.print("args: {s}\n", .{args});
         } else {
             file = arg;
@@ -75,12 +80,14 @@ pub fn main() !u8 {
     defer symtable.deinit();
 
     var state = pipeline.State{
-        .arena_source = &arena,
+        .arena_source = arena,
         .arena = arena_allocator,
         .ally = ally,
         .source = "",
         .verboseLexer = verboseLexer,
         .verboseParser = verboseParser,
+        .verboseAnalysis = verboseAnalysis,
+        .verboseInterpretation = verboseInterpretation,
         .color = std.io.tty.detectConfig(std.io.getStdOut()),
         .filename = file orelse "repl",
     };

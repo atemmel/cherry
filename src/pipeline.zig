@@ -20,7 +20,7 @@ pub const ErrorReport = struct {
 };
 
 pub const State = struct {
-    arena_source: *std.heap.ArenaAllocator,
+    arena_source: std.heap.ArenaAllocator,
     arena: std.mem.Allocator,
     ally: std.mem.Allocator,
     source: []const u8,
@@ -29,10 +29,10 @@ pub const State = struct {
         .statements = &.{},
         .functions = undefined,
     },
-    verboseLexer: bool = false,
-    verboseParser: bool = false,
-    verboseAnalysis: bool = false,
-    verboseInterpretation: bool = false,
+    verboseLexer: bool,
+    verboseParser: bool,
+    verboseAnalysis: bool,
+    verboseInterpretation: bool,
     filename: []const u8,
     color: std.io.tty.Config = std.io.tty.Config.no_color,
     error_report: ?ErrorReport = null,
@@ -91,9 +91,23 @@ pub const State = struct {
     }
 };
 
-fn logTime(comptime prefix: []const u8, start_ms: i64, stop_ms: i64) void {
-    const s = @as(f64, @floatFromInt(stop_ms - start_ms)) / std.time.ms_per_s;
-    print(prefix ++ "{d:.3}s\n", .{s});
+fn logTime(comptime prefix: []const u8, start_us: i64, stop_us: i64) void {
+    //const s = @as(f64, @floatFromInt(stop_us - start_us)) / std.time.us_per_ms;
+    var s = @as(f64, @floatFromInt(stop_us - start_us));
+    if (s < 1000) {
+        print(prefix ++ "{d:.3}µs\n", .{s});
+        return;
+    }
+    s /= std.time.us_per_ms;
+    if (s < 1000) {
+        print(prefix ++ "{d:.3}ms\n", .{s});
+        return;
+    }
+    s /= std.time.ms_per_s;
+    if (s < 1000) {
+        print(prefix ++ "{d:.3}s\n", .{s});
+        return;
+    }
 }
 
 pub fn writeError(state: *State, err: PipelineError) !void {
@@ -223,36 +237,36 @@ fn writeErrorSource(info: State.ErrorInfo, writer: anytype) !void {
 }
 
 pub fn run(state: *State) PipelineError!void {
-    const lexer_start_ms = microTimestamp();
+    const lexer_start_us = microTimestamp();
     state.tokens = try tokens.lex(state);
-    const lexer_stop_ms = microTimestamp();
+    const lexer_stop_us = microTimestamp();
     if (state.verboseLexer) {
-        logTime("Lexing:  ", lexer_start_ms, lexer_stop_ms);
+        logTime("Lexing:  ", lexer_start_us, lexer_stop_us);
         tokens.dump(state);
     }
 
-    const ast_start_ms = microTimestamp();
+    const ast_start_us = microTimestamp();
     state.root = try ast.parse(state);
 
-    const ast_stop_ms = microTimestamp();
+    const ast_stop_us = microTimestamp();
     if (state.verboseParser) {
-        logTime("Parsing: ", ast_start_ms, ast_stop_ms);
+        logTime("Parsing: ", ast_start_us, ast_stop_us);
         ast.dump(state.root);
     }
 
-    const analyze_start_ms = microTimestamp();
+    const analyze_start_us = microTimestamp();
     try semantics.analyze(state);
 
-    const analyze_stop_ms = microTimestamp();
+    const analyze_stop_us = microTimestamp();
     if (state.verboseAnalysis) {
-        logTime("Analysis: ", analyze_start_ms, analyze_stop_ms);
+        logTime("Analysis: ", analyze_start_us, analyze_stop_us);
     }
 
-    const interpret_start_ms = microTimestamp();
+    const interpret_start_us = microTimestamp();
     try interpreter.interpret(state);
 
-    const interpret_stop_ms = microTimestamp();
+    const interpret_stop_us = microTimestamp();
     if (state.verboseInterpretation) {
-        logTime("Interpretation: ", interpret_start_ms, interpret_stop_ms);
+        logTime("Interpretation: ", interpret_start_us, interpret_stop_us);
     }
 }

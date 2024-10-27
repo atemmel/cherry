@@ -391,16 +391,24 @@ pub fn dump(state: *PipelineState) void {
 const expectEqual = std.testing.expectEqual;
 const expectEqualStrings = std.testing.expectEqualStrings;
 
-test "lex barewords" {
-    const ally = std.testing.allocator_instance.allocator();
-
-    var state: PipelineState = .{
-        .ally = ally,
-        .arena = ally,
-        .source = "ls -l -a",
+fn testState(source: []const u8) PipelineState {
+    return PipelineState{
+        .ally = std.testing.allocator,
+        .arena = std.testing.allocator,
+        .source = source,
         .filename = "",
         .arena_source = undefined,
+        .verboseLexer = false,
+        .verboseParser = false,
+        .verboseAnalysis = false,
+        .verboseInterpretation = false,
     };
+}
+
+test "lex barewords" {
+    const ally = std.testing.allocator;
+
+    var state = testState("ls -l -a");
 
     const tokens = try lex(&state);
     defer ally.free(tokens);
@@ -415,15 +423,9 @@ test "lex barewords" {
 }
 
 test "lex string literals" {
-    const ally = std.testing.allocator_instance.allocator();
+    const ally = std.testing.allocator;
 
-    var state: PipelineState = .{
-        .ally = ally,
-        .arena = ally,
-        .source = "\"hi\" \"hello\"",
-        .filename = "",
-        .arena_source = undefined,
-    };
+    var state = testState("\"hi\" \"hello\"");
 
     const tokens = try lex(&state);
     defer ally.free(tokens);
@@ -436,15 +438,9 @@ test "lex string literals" {
 }
 
 test "lex var declaration" {
-    const ally = std.testing.allocator_instance.allocator();
+    const ally = std.testing.allocator;
 
-    var state: PipelineState = .{
-        .ally = ally,
-        .arena = ally,
-        .source = "x := \"hello\"",
-        .filename = "",
-        .arena_source = undefined,
-    };
+    var state = testState("x := \"hello\"");
 
     const tokens = try lex(&state);
     defer ally.free(tokens);
@@ -457,15 +453,9 @@ test "lex var declaration" {
 }
 
 test "lex call with variable" {
-    const ally = std.testing.allocator_instance.allocator();
+    const ally = std.testing.allocator;
 
-    var state: PipelineState = .{
-        .ally = ally,
-        .arena = ally,
-        .source = "say $x",
-        .filename = "",
-        .arena_source = undefined,
-    };
+    var state = testState("say $x");
 
     const tokens = try lex(&state);
     defer ally.free(tokens);
@@ -477,15 +467,9 @@ test "lex call with variable" {
 }
 
 test "lex equals" {
-    const ally = std.testing.allocator_instance.allocator();
+    const ally = std.testing.allocator;
 
-    var state: PipelineState = .{
-        .ally = ally,
-        .arena = ally,
-        .source = "== 1 2",
-        .filename = "",
-        .arena_source = undefined,
-    };
+    var state = testState("== 1 2");
 
     const tokens = try lex(&state);
     defer ally.free(tokens);
@@ -500,15 +484,9 @@ test "lex equals" {
 }
 
 test "lex rpar rpar" {
-    const ally = std.testing.allocator_instance.allocator();
+    const ally = std.testing.allocator;
 
-    var state: PipelineState = .{
-        .ally = ally,
-        .arena = ally,
-        .source = "3))",
-        .filename = "",
-        .arena_source = undefined,
-    };
+    var state = testState("3))");
 
     const tokens = try lex(&state);
     defer ally.free(tokens);
@@ -520,15 +498,8 @@ test "lex rpar rpar" {
 }
 
 test "lex assert equals rpar" {
-    const ally = std.testing.allocator_instance.allocator();
-
-    var state: PipelineState = .{
-        .ally = ally,
-        .arena = ally,
-        .source = "assert (== \"hello\" $x)",
-        .filename = "",
-        .arena_source = undefined,
-    };
+    const ally = std.testing.allocator;
+    var state = testState("assert (== \"hello\" $x)");
 
     const tokens = try lex(&state);
     defer ally.free(tokens);
@@ -543,15 +514,9 @@ test "lex assert equals rpar" {
 }
 
 test "lex assert str str" {
-    const ally = std.testing.allocator_instance.allocator();
+    const ally = std.testing.allocator;
 
-    var state: PipelineState = .{
-        .ally = ally,
-        .arena = ally,
-        .source = "assert (== \"H\" \"H\")",
-        .filename = "",
-        .arena_source = undefined,
-    };
+    var state = testState("assert (== \"H\" \"H\")");
 
     const tokens = try lex(&state);
     defer ally.free(tokens);
@@ -566,15 +531,9 @@ test "lex assert str str" {
 }
 
 test "lex x y newline }" {
-    const ally = std.testing.allocator_instance.allocator();
+    const ally = std.testing.allocator;
 
-    var state: PipelineState = .{
-        .ally = ally,
-        .arena = ally,
-        .source = "\tassert true\n}",
-        .filename = "",
-        .arena_source = undefined,
-    };
+    var state = testState("\tassert true\n}");
 
     const tokens = try lex(&state);
     defer ally.free(tokens);
@@ -587,15 +546,9 @@ test "lex x y newline }" {
 }
 
 test "lex integer" {
-    const ally = std.testing.allocator_instance.allocator();
+    const ally = std.testing.allocator;
 
-    var state: PipelineState = .{
-        .ally = ally,
-        .arena = ally,
-        .source = "3 5",
-        .filename = "",
-        .arena_source = undefined,
-    };
+    var state = testState("3 5");
 
     const tokens = try lex(&state);
     defer ally.free(tokens);
@@ -608,19 +561,13 @@ test "lex integer" {
 }
 
 test "lex multiline string" {
-    const ally = std.testing.allocator_instance.allocator();
+    const ally = std.testing.allocator;
 
-    var state: PipelineState = .{
-        .ally = ally,
-        .arena = ally,
-        .source =
+    var state = testState(
         \\say `
         \\
         \\guys`
-        ,
-        .filename = "",
-        .arena_source = undefined,
-    };
+    );
 
     const tokens = try lex(&state);
     defer ally.free(tokens);
@@ -632,28 +579,16 @@ test "lex multiline string" {
     try expectEqualStrings("\n\nguys", tokens[1].value);
 }
 
-// maybe something like so?
-// #{
-//
-// #}
-//
 test "lex block comment" {
     const ally = std.testing.allocator_instance.allocator();
 
-    var state: PipelineState = .{
-        .ally = ally,
-        .arena = ally,
-        .source =
+    var state = testState(
         \\hello
         \\#{
         \\  comment
         \\#}
         \\bye
-        ,
-        .filename = "",
-        .arena_source = undefined,
-        .verboseLexer = true,
-    };
+    );
 
     const tokens = try lex(&state);
     defer ally.free(tokens);
@@ -668,10 +603,7 @@ test "lex block comment" {
 test "lex nested block comment" {
     const ally = std.testing.allocator_instance.allocator();
 
-    var state: PipelineState = .{
-        .ally = ally,
-        .arena = ally,
-        .source =
+    var state = testState(
         \\hello
         \\#{
         \\comment
@@ -681,11 +613,7 @@ test "lex nested block comment" {
         \\comment
         \\#}
         \\bye
-        ,
-        .filename = "",
-        .arena_source = undefined,
-        .verboseLexer = true,
-    };
+    );
 
     const tokens = try lex(&state);
     defer ally.free(tokens);
