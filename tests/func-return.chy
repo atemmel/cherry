@@ -1,3 +1,5 @@
+#TODO: needs to be typed: 
+#   fn calc lhs: int rhs: int -> int {
 fn calc lhs rhs {
     return (+ $lhs $rhs)
 }
