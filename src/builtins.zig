@@ -68,6 +68,7 @@ const builtins_table = std.StaticStringMap(BuiltinInfo).initComptime(
         .{ "get", unchecked(get) },
         .{ "len", unchecked(len) },
         .{ "put", unchecked(put) },
+        .{ "slice", unchecked(slice) },
         // operations
         .{ "add", unchecked(add) },
         .{ "sum", unchecked(add) },
@@ -527,6 +528,54 @@ fn put(state: *State, args: []const *Value) !Result {
     }
 
     return something(args[0]);
+}
+
+fn slice(state: *State, args: []const *Value) !Result {
+    try validateArgsCount(state, &.{ 1, 2, 3 }, args.len);
+    const list = switch (args[0].as) {
+        .list => |list| list,
+        .boolean => return typeMismatchError(state, "list", "bool", 0),
+        .float => return typeMismatchError(state, "list", "float", 0),
+        .integer => return typeMismatchError(state, "list", "int", 0),
+        .record => return typeMismatchError(state, "list", "record", 0),
+        .string => return typeMismatchError(state, "list", "string", 0),
+    };
+
+    var from_idx: usize = 0;
+    var to_idx: usize = @intCast(list.items.len);
+
+    if (args.len > 1) {
+        from_idx = switch (args[1].as) {
+            .integer => |integer| @intCast(@max(0, integer)),
+            .boolean => return typeMismatchError(state, "int", "bool", 1),
+            .float => return typeMismatchError(state, "int", "float", 1),
+            .list => return typeMismatchError(state, "int", "list", 1),
+            .record => return typeMismatchError(state, "int", "record", 1),
+            .string => return typeMismatchError(state, "int", "string", 1),
+        };
+    }
+
+    if (args.len > 2) {
+        to_idx = switch (args[2].as) {
+            .integer => |integer| @intCast(@max(0, integer)),
+            .boolean => return typeMismatchError(state, "int", "bool", 2),
+            .float => return typeMismatchError(state, "int", "float", 2),
+            .list => return typeMismatchError(state, "int", "list", 2),
+            .record => return typeMismatchError(state, "int", "record", 2),
+            .string => return typeMismatchError(state, "int", "string", 2),
+        };
+    }
+
+    if (from_idx > to_idx) {
+        unreachable;
+    }
+
+    var new_list = try std.ArrayList(*Value).initCapacity(state.ally, to_idx - from_idx);
+    for (list.items[from_idx..to_idx]) |val| {
+        try new_list.append(try gc.cloneOrReference(val));
+    }
+
+    return something(try gc.list(new_list));
 }
 
 fn validateArgsCount(

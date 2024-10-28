@@ -16,12 +16,9 @@ jobs:
       - uses: mlugg/setup-zig@v1
         with:
           version: 0.13.0
-      - run: |
-          # build
-          zig build 
-          
-          # unit tests
-          zig build test
-          
-          # code tests
-          ./run-all-tests
+      - name: build
+        run: zig build
+      - name: unit tests
+        run: zig build test
+      - name: code tests
+        run: ./run-all-tests
