@@ -497,6 +497,13 @@ fn parseFunc(ctx: *Context) !?Func {
 }
 
 fn parseParam(ctx: *Context) !?Parameter {
+    if (ctx.state.useSemanticAnalysis) {
+        return parseParamWithType(ctx);
+    }
+    return parseParamWithoutType(ctx);
+}
+
+fn parseParamWithType(ctx: *Context) !?Parameter {
     const name_token = parseBareword(ctx) orelse {
         return null;
     };
@@ -516,6 +523,19 @@ fn parseParam(ctx: *Context) !?Parameter {
     return Parameter{
         .name = name_token.token.value,
         .param_type = parsed_type,
+    };
+}
+
+fn parseParamWithoutType(ctx: *Context) !?Parameter {
+    const name_token = parseBareword(ctx) orelse {
+        return null;
+    };
+
+    return Parameter{
+        .name = name_token.token.value,
+        .param_type = .{
+            .type_info = .something,
+        },
     };
 }
 

@@ -50,6 +50,7 @@ pub fn main() !u8 {
     var verboseParser = false;
     var verboseAnalysis = false;
     var verboseInterpretation = false;
+    var useSemanticAnalysis = false;
 
     var file: ?[]const u8 = null;
 
@@ -68,6 +69,8 @@ pub fn main() !u8 {
             verboseAnalysis = true;
             verboseInterpretation = true;
             std.debug.print("args: {s}\n", .{args});
+        } else if (eq(u8, "--types", arg)) {
+            useSemanticAnalysis = true;
         } else {
             file = arg;
         }
@@ -88,6 +91,7 @@ pub fn main() !u8 {
         .verboseParser = verboseParser,
         .verboseAnalysis = verboseAnalysis,
         .verboseInterpretation = verboseInterpretation,
+        .useSemanticAnalysis = useSemanticAnalysis,
         .color = std.io.tty.detectConfig(std.io.getStdOut()),
         .filename = file orelse "repl",
     };

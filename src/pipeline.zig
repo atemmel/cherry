@@ -33,6 +33,7 @@ pub const State = struct {
     verboseParser: bool,
     verboseAnalysis: bool,
     verboseInterpretation: bool,
+    useSemanticAnalysis: bool,
     filename: []const u8,
     color: std.io.tty.Config = std.io.tty.Config.no_color,
     error_report: ?ErrorReport = null,
@@ -254,12 +255,14 @@ pub fn run(state: *State) PipelineError!void {
         ast.dump(state.root);
     }
 
-    const analyze_start_us = microTimestamp();
-    try semantics.analyze(state);
+    if (state.useSemanticAnalysis) {
+        const analyze_start_us = microTimestamp();
+        try semantics.analyze(state);
 
-    const analyze_stop_us = microTimestamp();
-    if (state.verboseAnalysis) {
-        logTime("Analysis: ", analyze_start_us, analyze_stop_us);
+        const analyze_stop_us = microTimestamp();
+        if (state.verboseAnalysis) {
+            logTime("Analysis: ", analyze_start_us, analyze_stop_us);
+        }
     }
 
     const interpret_start_us = microTimestamp();

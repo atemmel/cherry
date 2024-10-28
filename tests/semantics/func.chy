@@ -6,7 +6,7 @@ my-func
 
 my-other-func James
 
-fn my-other-func who {
+fn my-other-func who: string {
     say $who is in the func
 }
 
