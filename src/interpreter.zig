@@ -14,15 +14,6 @@ const something = values.something;
 const nothing = values.nothing;
 const integer = values.integer;
 
-const Context = struct {
-    state: *PipelineState,
-    ally: std.mem.Allocator,
-    arena: std.mem.Allocator,
-    stmntArena: std.heap.ArenaAllocator,
-    stmntAlly: std.mem.Allocator,
-    root: ast.Root,
-};
-
 pub const InterpreterError = error{
     ArgsCountMismatch,
     BadVariableLookup,
@@ -35,6 +26,20 @@ pub const InterpreterError = error{
 };
 
 pub const EvalError = builtins.BuiltinError || std.process.Child.RunError;
+
+const Context = struct {
+    state: *PipelineState,
+    ally: std.mem.Allocator,
+    arena: std.mem.Allocator,
+    stmntArena: std.heap.ArenaAllocator,
+    stmntAlly: std.mem.Allocator,
+    root: ast.Root,
+};
+
+const Returns = union(enum) {
+    did_return: Result,
+    did_not_return: void,
+};
 
 pub fn interpret(state: *PipelineState) EvalError!void {
     var stmntArena = std.heap.ArenaAllocator.init(state.ally);
@@ -58,21 +63,21 @@ fn interpretRoot(ctx: *Context) EvalError!void {
     }
 }
 
-fn interpretStatement(ctx: *Context, stmnt: ast.Statement) EvalError!Result {
+fn interpretStatement(ctx: *Context, stmnt: ast.Statement) EvalError!Returns {
     defer _ = ctx.stmntArena.reset(.retain_capacity);
     switch (stmnt) {
         .call => |call| _ = try evalCall(ctx, call),
         .var_decl => |var_decl| try interpretVarDecl(ctx, var_decl),
         .assignment => |assign| try interpretAssign(ctx, assign),
-        .branches => |br| try interpretBranches(ctx, br),
-        .scope => |scope| try interpretScope(ctx, scope),
+        .branches => |br| return try interpretBranches(ctx, br),
+        .scope => |scope| return try interpretScope(ctx, scope),
         .func => unreachable, // this should never happen
         .ret => |ret| {
             return try evalReturn(ctx, ret);
         },
-        .loop => |loop| try interpretLoop(ctx, loop),
+        .loop => |loop| return try interpretLoop(ctx, loop),
     }
-    return nothing;
+    return .did_not_return;
 }
 
 fn interpretVarDecl(ctx: *Context, var_decl: ast.VarDecl) !void {
@@ -128,7 +133,7 @@ fn interpretAssign(ctx: *Context, assign: ast.Assignment) !void {
     }
 }
 
-fn interpretBranches(ctx: *Context, branches: ast.Branches) !void {
+fn interpretBranches(ctx: *Context, branches: ast.Branches) !Returns {
     try symtable.pushFrame();
     defer symtable.popFrame();
     for (branches) |branch| {
@@ -139,8 +144,7 @@ fn interpretBranches(ctx: *Context, branches: ast.Branches) !void {
                     switch (v.as) {
                         .boolean => |b| {
                             if (b) {
-                                try interpretScope(ctx, branch.scope);
-                                break;
+                                return try interpretScope(ctx, branch.scope);
                             }
                         },
                         // needs boolean
@@ -151,21 +155,28 @@ fn interpretBranches(ctx: *Context, branches: ast.Branches) !void {
                 .nothing => return errRequiresValue(ctx, ast.tokenFromExpr(expr)),
             }
         } else {
-            try interpretScope(ctx, branch.scope);
-            break;
+            return try interpretScope(ctx, branch.scope);
         }
     }
+    return .did_not_return;
 }
 
-fn interpretScope(ctx: *Context, scope: ast.Scope) !void {
+fn interpretScope(ctx: *Context, scope: ast.Scope) !Returns {
     try symtable.pushFrame();
     defer symtable.popFrame();
     for (scope) |stmnt| {
-        _ = try interpretStatement(ctx, stmnt);
+        const returns = try interpretStatement(ctx, stmnt);
+        switch (returns) {
+            .did_return => {
+                return returns;
+            },
+            .did_not_return => {},
+        }
     }
+    return .did_not_return;
 }
 
-fn interpretLoop(ctx: *Context, loop: ast.Loop) !void {
+fn interpretLoop(ctx: *Context, loop: ast.Loop) !Returns {
     try symtable.pushFrame();
     defer symtable.popFrame();
     if (loop.init_op) |init_op| {
@@ -195,7 +206,13 @@ fn interpretLoop(ctx: *Context, loop: ast.Loop) !void {
             }
         }
 
-        try interpretScope(ctx, loop.scope);
+        const returned = try interpretScope(ctx, loop.scope);
+        switch (returned) {
+            .did_return => {
+                return returned;
+            },
+            .did_not_return => {},
+        }
 
         if (loop.post_op) |post_op| {
             switch (post_op) {
@@ -204,13 +221,17 @@ fn interpretLoop(ctx: *Context, loop: ast.Loop) !void {
             }
         }
     }
+
+    return .did_not_return;
 }
 
-fn evalReturn(ctx: *Context, ret: ast.Return) !Result {
+fn evalReturn(ctx: *Context, ret: ast.Return) !Returns {
     if (ret.expression) |expr| {
-        return try evalExpression(ctx, expr);
+        return .{
+            .did_return = try evalExpression(ctx, expr),
+        };
     }
-    return nothing;
+    return .{ .did_return = nothing };
 }
 
 fn evalCall(ctx: *Context, call: ast.Call) !Result {
@@ -257,15 +278,15 @@ fn evalFunctionCall(ctx: *Context, func: ast.Func, call: ast.Call) !Result {
     }
 
     for (func.scope) |stmnt| {
-        const result = try interpretStatement(ctx, stmnt);
-        switch (result) {
-            .nothing => {
-                switch (stmnt) {
-                    .ret => return nothing,
-                    else => {},
-                }
+        const returned = try interpretStatement(ctx, stmnt);
+        switch (returned) {
+            .did_return => |what_it_returned| {
+                return switch (what_it_returned) {
+                    .nothing => nothing,
+                    .value => |val| return something(val),
+                };
             },
-            .value => |val| return something(val),
+            .did_not_return => {},
         }
     }
     return nothing;
