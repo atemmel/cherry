@@ -402,6 +402,7 @@ fn testState(source: []const u8) PipelineState {
         .verboseParser = false,
         .verboseAnalysis = false,
         .verboseInterpretation = false,
+        .useSemanticAnalysis = false,
     };
 }
 
