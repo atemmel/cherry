@@ -612,17 +612,60 @@ fn tryAutocompletePathImpl(ctx: *CompletionContext) !CompletionResult {
     }
 
     std.mem.sort([]const u8, result_list.items, {}, algo.compareStrings);
+    return listToResult(result_list);
+}
 
-    return switch (result_list.items.len) {
-        0 => .{ .none = {} },
-        1 => .{ .single_match = result_list.items[0] },
+fn tryAutocompleteCmdImpl(ctx: *CompletionContext) !CompletionResult {
+    if (ctx.source.len == 0) {
+        return .none;
+    }
+    const path = std.posix.getenv("PATH") orelse {
+        return .none;
+    };
+
+    var result_list = std.ArrayList([]const u8).init(ctx.arena);
+    var it = std.mem.tokenize(u8, path, ":");
+
+    while (it.next()) |p| {
+        var dir = std.fs.cwd().openDir(p, .{ .iterate = true }) catch {
+            continue;
+        };
+        defer dir.close();
+        var dir_it = dir.iterate();
+        while (try dir_it.next()) |entry| {
+            if (entry.kind != .file and entry.kind != .sym_link) {
+                continue;
+            }
+
+            const stat = dir.statFile(entry.name) catch {
+                continue;
+            };
+
+            if (stat.mode & 0b1 == 0) {
+                continue;
+            }
+
+            if (startsWith(u8, entry.name, ctx.source)) {
+                try result_list.append(try ctx.arena.dupe(u8, entry.name));
+            }
+        }
+    }
+
+    std.mem.sort([]const u8, result_list.items, {}, algo.compareStrings);
+    return listToResult(result_list);
+}
+
+fn listToResult(list: std.ArrayList([]const u8)) CompletionResult {
+    return switch (list.items.len) {
+        0 => .none,
+        1 => .{ .single_match = list.items[0] },
         else => blk: {
-            const last_shared_idx = algo.indexOfDiffStrings(result_list.items);
-            const shared_match_slice = result_list.items[0][0..last_shared_idx];
+            const last_shared_idx = algo.indexOfDiffStrings(list.items);
+            const shared_match_slice = list.items[0][0..last_shared_idx];
             break :blk .{
                 .multiple_match = .{
                     .shared_match = shared_match_slice,
-                    .potential_matches = result_list.items,
+                    .potential_matches = list.items,
                 },
             };
         },
