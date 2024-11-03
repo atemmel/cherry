@@ -564,6 +564,11 @@ fn displayCompletionResults(state: *State, result: CompletionResult) !void {
                 state.length += delta;
                 state.cursor += delta;
             }
+
+            const size = state.term.size();
+            //const longest_match = algo.lengthOfLongestSlice(all.potential_matches);
+            fmt(out, "\r\nsize: {any}", .{size});
+
             for (all.potential_matches) |match| {
                 fmt(out, "\r\n{s} ", .{match});
             }

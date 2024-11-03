@@ -47,6 +47,11 @@ pub const Cursor = struct {
     column: u16,
 };
 
+pub const Window = struct {
+    row: u16,
+    column: u16,
+};
+
 pub const Term = struct {
     tty: fs.File,
     original_termios: posix.termios,
@@ -161,6 +166,19 @@ pub const Term = struct {
         return .{
             .column = column - 1, // it's one-based
             .row = row - 1,
+        };
+    }
+
+    pub fn size(self: Term) Window {
+        const linux = std.os.linux;
+        var l_size = std.mem.zeroes(linux.winsize);
+        const err = linux.ioctl(self.tty.handle, linux.T.IOCGWINSZ, @intFromPtr(&l_size));
+        if (posix.errno(err) != .SUCCESS) {
+            unreachable;
+        }
+        return .{
+            .column = l_size.ws_row,
+            .row = l_size.ws_col,
         };
     }
 

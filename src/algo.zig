@@ -20,6 +20,16 @@ pub fn indexOfDiffStrings(strings: []const []const u8) usize {
     return deepest_common_diff;
 }
 
+pub fn lengthOfLongestSlice(slices: []const []const u8) usize {
+    var longest: usize = 0;
+    for (slices) |slice| {
+        if (slice.len > longest) {
+            longest = slice.len;
+        }
+    }
+    return longest;
+}
+
 const expectEqual = std.testing.expectEqual;
 
 test "index of diff strings" {
