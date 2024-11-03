@@ -313,12 +313,15 @@ fn eval(state: *State) !void {
     state.pipeline_state.source = cmd;
     pipeline.run(state.pipeline_state) catch |e| {
         const tokens = state.pipeline_state.tokens;
-        for (tokens) |tok| {
-            std.debug.print("{any}\n", .{tok.kind});
+        if (state.pipeline_state.verboseInterpretation) {
+            std.debug.print("Error has occured while evaluating: {any}\nTokens: ", .{e});
+            for (tokens) |tok| {
+                std.debug.print("{any}\n", .{tok.kind});
+            }
         }
-        std.debug.print("{any}\n", .{e});
-        if (state.auto_cd and tokens.len == 1 and tokens[0].kind == .Bareword) {
-            tryAutoCd(state, tokens[0].value);
+        const should_try_auto_cd = state.auto_cd and tokens.len == 1 and tokens[0].kind == .Bareword;
+        if (should_try_auto_cd and tryAutoCd(state, tokens[0].value)) {
+            // All ok
         } else {
             pipeline.writeError(state.pipeline_state, e) catch |err| {
                 //TODO: handle these
@@ -336,17 +339,19 @@ fn eval(state: *State) !void {
     };
 }
 
-fn tryAutoCd(state: *State, path: []const u8) void {
-    var dir = std.fs.cwd().openDir(path, .{}) catch |err| {
-        state.writer().print("auto-cd failed to open directory: {any}\r\n", .{err}) catch {};
-        state.flush();
-        return;
+// returns true if cwd is changed
+fn tryAutoCd(state: *State, path: []const u8) bool {
+    var dir = std.fs.cwd().openDir(path, .{}) catch {
+        // fail silently, maybe the user didn't mean to auto-cd
+        return false;
     };
     defer dir.close();
     dir.setAsCwd() catch |err| {
         state.writer().print("auto-cd failed to change directory: {any}\r\n", .{err}) catch {};
         state.flush();
+        return false;
     };
+    return true;
 }
 
 fn appendHistory(state: *State) !void {
@@ -505,22 +510,27 @@ fn tryAutocompletePath2(state: *State) !void {
         last_cmd_begin += 1;
     }
     const last_cmd = line[last_cmd_begin..];
-    const out = state.writer();
 
-    var path_ctx: PathCompletionCtx = .{
+    var cmp_ctx: CompletionContext = .{
         .source = last_cmd,
         .arena = arena.allocator(),
     };
-    const result = try tryAutocompletePathImpl(&path_ctx);
+    const result = try tryAutocompletePathImpl(&cmp_ctx);
+    try displayCompletionResults(state, result);
+}
+
+fn displayCompletionResults(state: *State, result: CompletionResult) !void {
+    const line = state.line();
+
+    var last_cmd_begin = std.mem.lastIndexOfScalar(u8, line, ' ') orelse 0;
+    if (last_cmd_begin < line.len and last_cmd_begin != 0) {
+        last_cmd_begin += 1;
+    }
+    const last_cmd = line[last_cmd_begin..];
+    const out = state.writer();
     switch (result) {
         .none => {},
         .single_match => |str| {
-            //TODO: single match sometimes needs multiple tabs to succeed properly
-            // e.g.
-            //      |> ls zig-o       <TAB>
-            // (x)  |> ls zig-out     <TAB>
-            //      |> ls zig-out/    <TAB>
-            //      |> ls zig-out/bin <TAB>
             const offset = line.len - last_cmd_begin;
 
             defer {
@@ -563,12 +573,12 @@ fn tryAutocompletePath2(state: *State) !void {
     }
 }
 
-const PathCompletionCtx = struct {
+const CompletionContext = struct {
     source: []const u8,
     arena: std.mem.Allocator,
 };
 
-const PathCompletionResult = union(enum) {
+const CompletionResult = union(enum) {
     single_match: []const u8,
     multiple_match: struct {
         shared_match: []const u8,
@@ -577,7 +587,7 @@ const PathCompletionResult = union(enum) {
     none: void,
 };
 
-fn tryAutocompletePathImpl(ctx: *PathCompletionCtx) !PathCompletionResult {
+fn tryAutocompletePathImpl(ctx: *CompletionContext) !CompletionResult {
     const dir_path = try dirLookup(ctx);
     var dir = try std.fs.cwd().openDir(dir_path.dir_to_open, .{ .iterate = true });
     defer dir.close();
@@ -620,7 +630,7 @@ const DirLookup = struct {
     stem: []const u8,
 };
 
-fn dirLookup(ctx: *PathCompletionCtx) !DirLookup {
+fn dirLookup(ctx: *CompletionContext) !DirLookup {
     const first_separator = std.mem.indexOfScalar(u8, ctx.source, '/');
     if (first_separator == null) {
         return .{
@@ -832,7 +842,7 @@ test "Nested alias lookup success" {
 test "autocomplete simple cases" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    var ctx: PathCompletionCtx = .{
+    var ctx: CompletionContext = .{
         .source = "",
         .arena = arena.allocator(),
     };
@@ -871,7 +881,7 @@ test "autocomplete simple cases" {
 test "autocomplete nested cases" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    var ctx: PathCompletionCtx = .{
+    var ctx: CompletionContext = .{
         .source = "",
         .arena = arena.allocator(),
     };
@@ -895,7 +905,7 @@ test "autocomplete nested cases" {
 test "autocomplete from root" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    var ctx: PathCompletionCtx = .{
+    var ctx: CompletionContext = .{
         .source = "",
         .arena = arena.allocator(),
     };
@@ -916,7 +926,7 @@ test "autocomplete from root" {
 test "autocomplete closest suggested path" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    var ctx: PathCompletionCtx = .{
+    var ctx: CompletionContext = .{
         .source = "",
         .arena = arena.allocator(),
     };
