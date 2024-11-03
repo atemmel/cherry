@@ -494,51 +494,6 @@ fn tryAutocompleteCmd(state: *State) !void {
     }
 }
 
-fn tryAutocompletePath(state: *State) !void {
-    var n_hits: usize = 0;
-    var buf: [128]u8 = undefined;
-    var slice: []const u8 = "";
-
-    const line = state.line();
-
-    var last_cmd_begin = std.mem.lastIndexOfScalar(u8, line, ' ') orelse 0;
-    if (last_cmd_begin < line.len and last_cmd_begin != 0) {
-        last_cmd_begin += 1;
-    }
-    const last_cmd = line[last_cmd_begin..];
-
-    const out = state.writer();
-    var dir = try std.fs.cwd().openDir(".", .{ .iterate = true });
-    defer dir.close();
-    var dir_it = dir.iterate();
-    while (try dir_it.next()) |entry| {
-        if (startsWith(u8, entry.name, last_cmd)) {
-            n_hits += 1;
-            if (n_hits == 1) {
-                slice = try std.fmt.bufPrint(&buf, "{s}", .{entry.name});
-            } else if (n_hits == 2) {
-                fmt(out, "\r\n{s} ", .{slice});
-            }
-
-            if (n_hits > 1) {
-                fmt(out, "\r\n{s} ", .{entry.name});
-            }
-        }
-    }
-
-    if (n_hits > 1) {
-        fmts(out, "\r\n");
-        state.flush();
-    }
-
-    if (n_hits == 1) {
-        const offset = line.len - last_cmd_begin;
-        _ = try std.fmt.bufPrint(state.buffer[state.length - offset ..], "{s}", .{slice});
-        state.length += slice.len - offset;
-        state.cursor += slice.len - offset;
-    }
-}
-
 fn tryAutocompletePath2(state: *State) !void {
     var arena = std.heap.ArenaAllocator.init(state.ally);
     defer arena.deinit();
@@ -582,7 +537,7 @@ fn tryAutocompletePath2(state: *State) !void {
                 .mtime = undefined,
                 .size = undefined,
             };
-            if (std.mem.eql(u8, last_cmd, str) and stat.kind == .directory) {
+            if (stat.kind == .directory) {
                 //TODO: make bufPrint to state.buffer-pattern into separate function
                 _ = try std.fmt.bufPrint(state.buffer[state.length - offset ..], "{s}/", .{str});
                 state.length += 1;
