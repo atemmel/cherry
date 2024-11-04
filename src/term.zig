@@ -177,8 +177,8 @@ pub const Term = struct {
             unreachable;
         }
         return .{
-            .column = l_size.ws_row,
-            .row = l_size.ws_col,
+            .column = l_size.ws_col,
+            .row = l_size.ws_row,
         };
     }
 

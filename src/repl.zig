@@ -35,6 +35,8 @@ const State = struct {
     search_reached_end: bool = false,
     rc_path: []const u8 = "",
     arena: std.heap.ArenaAllocator,
+    completion_arena: std.heap.ArenaAllocator,
+
     mode: Mode = .prompt,
 
     auto_cd: bool = true,
@@ -45,6 +47,7 @@ const State = struct {
         }
         self.history.deinit();
         self.arena.deinit();
+        self.completion_arena.deinit();
         self.term.restore() catch unreachable; // no balls
     }
 
@@ -157,6 +160,7 @@ pub fn repl(pipeline_state: *pipeline.State) !void {
         .home = try std.process.getEnvVarOwned(arena.allocator(), "HOME"),
         .history_scroll_idx = 0,
         .arena = arena,
+        .completion_arena = std.heap.ArenaAllocator.init(pipeline_state.ally),
     };
     defer state.deinit();
 
@@ -435,7 +439,7 @@ fn tryAutocomplete(state: *State) !void {
     if (has_spaces) {
         tryAutocompletePath2(state) catch {};
     } else {
-        tryAutocompleteCmd(state) catch {};
+        tryAutocompleteCmd2(state) catch {};
     }
 }
 
@@ -499,9 +503,8 @@ fn tryAutocompleteCmd(state: *State) !void {
     }
 }
 
-fn tryAutocompletePath2(state: *State) !void {
-    var arena = std.heap.ArenaAllocator.init(state.ally);
-    defer arena.deinit();
+fn tryAutocompleteCmd2(state: *State) !void {
+    defer _ = state.completion_arena.reset(.retain_capacity);
 
     const line = state.line();
 
@@ -513,7 +516,26 @@ fn tryAutocompletePath2(state: *State) !void {
 
     var cmp_ctx: CompletionContext = .{
         .source = last_cmd,
-        .arena = arena.allocator(),
+        .arena = state.completion_arena.allocator(),
+    };
+    const result = try tryAutocompleteCmdImpl(&cmp_ctx);
+    try displayCompletionResults(state, result);
+}
+
+fn tryAutocompletePath2(state: *State) !void {
+    defer _ = state.completion_arena.reset(.retain_capacity);
+
+    const line = state.line();
+
+    var last_cmd_begin = std.mem.lastIndexOfScalar(u8, line, ' ') orelse 0;
+    if (last_cmd_begin < line.len and last_cmd_begin != 0) {
+        last_cmd_begin += 1;
+    }
+    const last_cmd = line[last_cmd_begin..];
+
+    var cmp_ctx: CompletionContext = .{
+        .source = last_cmd,
+        .arena = state.completion_arena.allocator(),
     };
     const result = try tryAutocompletePathImpl(&cmp_ctx);
     try displayCompletionResults(state, result);
@@ -565,14 +587,32 @@ fn displayCompletionResults(state: *State, result: CompletionResult) !void {
                 state.cursor += delta;
             }
 
-            const size = state.term.size();
-            //const longest_match = algo.lengthOfLongestSlice(all.potential_matches);
-            fmt(out, "\r\nsize: {any}", .{size});
+            const cursor_position = try state.term.getCursor();
+            const terminal_size = state.term.size();
+            const longest_match = algo.lengthOfLongestSlice(all.potential_matches);
+
+            const column_width = longest_match + 2;
+
+            const n_columns = @divTrunc(terminal_size.column, column_width);
+            const max_items_per_column = @divTrunc(all.potential_matches.len, @max(3, n_columns) - 2);
+
+            const y_begin = cursor_position.row + 1;
+
+            var x: usize = 0;
+            var y: usize = y_begin;
 
             for (all.potential_matches) |match| {
-                fmt(out, "\r\n{s} ", .{match});
+                terminal.moveCursor(out, y, x);
+                fmt(out, "{s}", .{match});
+
+                y += 1;
+                if (y > max_items_per_column + y_begin) {
+                    x += column_width;
+                    y = y_begin;
+                }
             }
-            fmts(out, "\r\n");
+
+            terminal.moveCursor(out, y_begin + max_items_per_column + 1, 0);
             state.flush();
         },
     }
@@ -652,6 +692,17 @@ fn tryAutocompleteCmdImpl(ctx: *CompletionContext) !CompletionResult {
     }
 
     std.mem.sort([]const u8, result_list.items, {}, algo.compareStrings);
+    var idx: usize = 1;
+    while (idx < result_list.items.len) {
+        const previous = result_list.items[idx - 1];
+        const current = result_list.items[idx];
+
+        if (std.mem.eql(u8, previous, current)) {
+            _ = result_list.orderedRemove(idx);
+        } else {
+            idx += 1;
+        }
+    }
     return listToResult(result_list);
 }
 
