@@ -865,6 +865,7 @@ const expectEqualStrings = std.testing.expectEqualStrings;
 fn testState() State {
     return State{
         .arena = undefined,
+        .completion_arena = undefined,
         .ally = undefined,
         .out_writer = undefined,
         .history = undefined,
