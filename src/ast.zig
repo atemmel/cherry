@@ -145,6 +145,14 @@ pub const Loop = struct {
     scope: Scope,
 };
 
+pub const Break = struct {
+    token: *const Token,
+};
+
+pub const Continue = struct {
+    token: *const Token,
+};
+
 pub const Statement = union(enum) {
     call: Call,
     var_decl: VarDecl,
@@ -154,6 +162,8 @@ pub const Statement = union(enum) {
     func: Func,
     ret: Return,
     loop: Loop,
+    brk: Break,
+    cont: Continue,
 };
 
 pub const Root = struct {
@@ -290,6 +300,14 @@ fn parseStatement(ctx: *Context) errors!?Statement {
     } else if (try parseScope(ctx, true)) |scope| {
         return Statement{
             .scope = scope,
+        };
+    } else if (parseBreak(ctx)) |brk| {
+        return Statement{
+            .brk = brk,
+        };
+    } else if (parseContinue(ctx)) |cont| {
+        return Statement{
+            .cont = cont,
         };
     } else return null;
 }
@@ -666,6 +684,20 @@ fn parseLoop(ctx: *Context) !?Loop {
         .expr = expr,
         .post_op = post_op,
         .scope = scope,
+    };
+}
+
+fn parseBreak(ctx: *Context) ?Break {
+    const pair = ctx.getIfBoth(.Break, .Newline) orelse return null;
+    return Break{
+        .token = pair.first,
+    };
+}
+
+fn parseContinue(ctx: *Context) ?Continue {
+    const pair = ctx.getIfBoth(.Continue, .Newline) orelse return null;
+    return Continue{
+        .token = pair.first,
     };
 }
 

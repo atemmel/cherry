@@ -119,6 +119,8 @@ fn analyzeStatement(ctx: *Context, stmnt: ast.Statement) !void {
         .func => unreachable, // this should never happen
         .ret => |ret| try analyzeReturn(ctx, ret),
         .loop => |loop| try analyzeLoop(ctx, loop),
+        .brk => unreachable,
+        .cont => unreachable,
     }
 }
 

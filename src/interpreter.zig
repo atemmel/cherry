@@ -39,6 +39,8 @@ const Context = struct {
 const Returns = union(enum) {
     did_return: Result,
     did_not_return: void,
+    did_break: void,
+    did_continue: void,
 };
 
 pub fn interpret(state: *PipelineState) EvalError!void {
@@ -76,6 +78,8 @@ fn interpretStatement(ctx: *Context, stmnt: ast.Statement) EvalError!Returns {
             return try evalReturn(ctx, ret);
         },
         .loop => |loop| return try interpretLoop(ctx, loop),
+        .brk => return .did_break,
+        .cont => return .did_continue,
     }
     return .did_not_return;
 }
@@ -171,6 +175,8 @@ fn interpretScope(ctx: *Context, scope: ast.Scope) !Returns {
                 return returns;
             },
             .did_not_return => {},
+            .did_break => return .did_break,
+            .did_continue => return .did_continue,
         }
     }
     return .did_not_return;
@@ -179,6 +185,7 @@ fn interpretScope(ctx: *Context, scope: ast.Scope) !Returns {
 fn interpretLoop(ctx: *Context, loop: ast.Loop) !Returns {
     try symtable.pushFrame();
     defer symtable.popFrame();
+
     if (loop.init_op) |init_op| {
         switch (init_op) {
             .assignment => |assign| try interpretAssign(ctx, assign),
@@ -208,10 +215,9 @@ fn interpretLoop(ctx: *Context, loop: ast.Loop) !Returns {
 
         const returned = try interpretScope(ctx, loop.scope);
         switch (returned) {
-            .did_return => {
-                return returned;
-            },
-            .did_not_return => {},
+            .did_return => return returned,
+            .did_not_return, .did_continue => {},
+            .did_break => return .did_not_return,
         }
 
         if (loop.post_op) |post_op| {
@@ -287,6 +293,7 @@ fn evalFunctionCall(ctx: *Context, func: ast.Func, call: ast.Call) !Result {
                 };
             },
             .did_not_return => {},
+            .did_break, .did_continue => unreachable, //TODO: handle this
         }
     }
     return nothing;

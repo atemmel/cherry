@@ -1,21 +1,20 @@
 fn index-of haystack needle {
     needle-len := (len $needle)
     haystack-len := (len $haystack)
-    for idx := 0; (< $idx $haystack-len); $idx = (+ $idx 1) {
-        end-needle-occurence := (+ $idx $needle-len)
-        if (< $end-needle-occurence $haystack-len) {
-            potential-needle := (slice $haystack $idx $end-needle-occurence)
-            if (== $needle $potential-needle) {
-                return $idx
+    for i := 0; (< $i $haystack-len); $i = (+ $i 1) {
+        for j := 0; (< $j $needle-len); $j = (+ $j 1) {
+            if (!= (get $haystack (+ $i $j)) (get $needle $j)) {
+                break
             }
-        } else {
-            return -1
+
+            if (== (+ $j 1) $needle-len) {
+                return $i
+            }
         }
     }
     return -1
 }
 
-# OK
 assert (== (index-of "hello" "z") -1)
 assert (== (index-of "hello" "h") 0)
 assert (== (index-of "hello" "e") 1)
@@ -23,7 +22,7 @@ assert (== (index-of "hello" "l") 2)
 assert (== (index-of "hello" "hell") 0)
 assert (== (index-of "hello" "ell") 1)
 assert (== (index-of "hello" "ll") 2)
+assert (== (index-of "hello" "o") 4)
 
-# FAILURES
-#assert (== (index-of "hello" "o") 4)
-#assert (== (index-of "hello" "ll0") 2)
+# TODO: '-1' becomes a string
+assert (== (index-of "hello" "ll0") -1)

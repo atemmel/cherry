@@ -35,6 +35,8 @@ pub const Token = struct {
         For,
         Fn,
         Return,
+        Break,
+        Continue,
         True,
         False,
     };
@@ -49,6 +51,8 @@ const string_keyword_map = std.StaticStringMap(Token.Kind).initComptime(&.{
     .{ "for", .For },
     .{ "fn", .Fn },
     .{ "return", .Return },
+    .{ "break", .Break },
+    .{ "continue", .Continue },
     .{ "true", .True },
     .{ "false", .False },
 });

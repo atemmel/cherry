@@ -122,10 +122,14 @@ pub const Value = struct {
         };
     }
 
-    const Order = enum {
+    const Order = union(enum) {
         less,
         greater,
         equal,
+        failure: struct {
+            wants: []const u8,
+            got: []const u8,
+        },
     };
 
     pub fn compare(self: *const Value, other: *const Value) !Order {
@@ -140,7 +144,11 @@ pub const Value = struct {
                         .eq => .equal,
                     };
                 },
-                .integer, .float, .boolean, .list, .record => return InterpreterError.TypeMismatch,
+                .integer => return typeMismatch(.string, .integer),
+                .float => return typeMismatch(.string, .float),
+                .boolean => return typeMismatch(.string, .boolean),
+                .list => return typeMismatch(.string, .list),
+                .record => return typeMismatch(.string, .record),
             },
             .integer => |lhs| switch (other.as) {
                 .integer => |rhs| {
@@ -214,6 +222,7 @@ pub const Value = struct {
                         switch (value_order) {
                             .less => return .less,
                             .greater => return .greater,
+                            .failure => return value_order,
                             .equal => {},
                         }
                     }
@@ -277,6 +286,15 @@ pub const Value = struct {
         return try gc.allocedString(try result.toOwnedSlice());
     }
 };
+
+fn typeMismatch(lhs_type: Type, rhs_type: Type) !Value.Order {
+    return Value.Order{
+        .failure = .{
+            .wants = @tagName(lhs_type),
+            .got = @tagName(rhs_type),
+        },
+    };
+}
 
 pub const Result = union(enum) {
     value: *Value,

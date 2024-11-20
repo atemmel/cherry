@@ -340,68 +340,72 @@ fn div(_: *State, args: []const *Value) !Result {
     return something(try gc.integer(quotient_value));
 }
 
-fn equals(_: *State, args: []const *Value) !Result {
+fn equals(state: *State, args: []const *Value) !Result {
     if (args.len == 0) {
         return something(try gc.boolean(true));
     }
 
     const first = args[0];
-    for (args[1..]) |arg| {
+    for (args[1..], 1..) |arg, idx| {
         //TODO: handle type error
         const order = first.compare(arg) catch unreachable;
         switch (order) {
             .equal => {},
+            .failure => |fail| return typeMismatchError(state, fail.wants, fail.got, idx),
             else => return something(try gc.boolean(false)),
         }
     }
     return something(try gc.boolean(true));
 }
 
-fn less(_: *State, args: []const *Value) !Result {
+fn less(state: *State, args: []const *Value) !Result {
     if (args.len < 2) {
         unreachable;
     }
 
     const first = args[0];
-    for (args[1..]) |arg| {
+    for (args[1..], 1..) |arg, idx| {
         //TODO: handle type error
         const order = first.compare(arg) catch unreachable;
         switch (order) {
             .less => {},
+            .failure => |fail| return typeMismatchError(state, fail.wants, fail.got, idx),
             else => return something(try gc.boolean(false)),
         }
     }
     return something(try gc.boolean(true));
 }
 
-fn greater(_: *State, args: []const *Value) !Result {
+fn greater(state: *State, args: []const *Value) !Result {
     if (args.len < 2) {
         unreachable;
     }
 
     const first = args[0];
-    for (args[1..]) |arg| {
+    for (args[1..], 1..) |arg, idx| {
         //TODO: handle type error
         const order = first.compare(arg) catch unreachable;
         switch (order) {
             .greater => {},
+            .failure => |fail| return typeMismatchError(state, fail.wants, fail.got, idx),
             else => return something(try gc.boolean(false)),
         }
     }
     return something(try gc.boolean(true));
 }
 
-fn notEqual(_: *State, args: []const *Value) !Result {
+fn notEqual(state: *State, args: []const *Value) !Result {
     if (args.len < 2) {
         return something(try gc.boolean(true));
     }
 
     const first = args[0];
-    for (args[1..]) |arg| {
+    for (args[1..], 1..) |arg, idx| {
         //TODO: handle type error
         const order = first.compare(arg) catch unreachable;
         switch (order) {
             .equal => return something(try gc.boolean(false)),
+            .failure => |fail| return typeMismatchError(state, fail.wants, fail.got, idx),
             else => {},
         }
     }

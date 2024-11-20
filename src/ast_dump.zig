@@ -52,6 +52,8 @@ fn dumpStatement(stmnt: ast.Statement) void {
         .func => |func| dumpFunc(func),
         .ret => |ret| dumpReturn(ret),
         .loop => |loop| dumpLoop(loop),
+        .brk => |brk| dumpBreak(brk),
+        .cont => |cont| dumpContinue(cont),
     }
 }
 
@@ -151,6 +153,16 @@ fn dumpLoop(loop: ast.Loop) void {
     if (loop.post_op) |post_op| {
         dumpPostOp(post_op);
     }
+}
+
+fn dumpBreak(_: ast.Break) void {
+    defer up();
+    leaf("Break\n", .{});
+}
+
+fn dumpContinue(_: ast.Continue) void {
+    defer up();
+    leaf("Continue\n", .{});
 }
 
 fn dumpCall(inv: ast.Call) void {
