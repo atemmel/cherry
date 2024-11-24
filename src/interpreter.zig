@@ -289,7 +289,7 @@ fn evalFunctionCall(ctx: *Context, func: ast.Func, call: ast.Call) !Result {
             .did_return => |what_it_returned| {
                 return switch (what_it_returned) {
                     .nothing => nothing,
-                    .value => |val| return something(val),
+                    .value => |val| something(val),
                 };
             },
             .did_not_return => {},
