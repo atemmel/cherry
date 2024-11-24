@@ -407,6 +407,7 @@ fn testState(source: []const u8) PipelineState {
         .verboseAnalysis = false,
         .verboseInterpretation = false,
         .useSemanticAnalysis = false,
+        .env_map = std.process.EnvMap.init(std.testing.allocator),
     };
 }
 

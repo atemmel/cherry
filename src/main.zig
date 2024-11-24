@@ -94,7 +94,10 @@ pub fn main() !u8 {
         .useSemanticAnalysis = useSemanticAnalysis,
         .color = std.io.tty.detectConfig(std.io.getStdOut()),
         .filename = file orelse "repl",
+        .env_map = try std.process.getEnvMap(ally),
     };
+
+    defer state.env_map.deinit();
 
     if (file == null) {
         try repl(&state);

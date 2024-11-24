@@ -63,6 +63,7 @@ const builtins_table = std.StaticStringMap(BuiltinInfo).initComptime(
         .{ "say", say_info },
         .{ "alias", alias_info },
         .{ "cd", cd_info },
+        .{ "export", unchecked(envExport) },
         // collections
         .{ "append", unchecked(append) },
         .{ "get", unchecked(get) },
@@ -604,6 +605,34 @@ fn getInt(state: *State, args: []const *Value, idx: usize) !i64 {
         .record => typeMismatchError(state, "int", "record", idx),
         .string => typeMismatchError(state, "int", "string", idx),
     };
+}
+
+fn envExport(state: *State, args: []const *Value) !Result {
+    try validateArgsCount(state, &.{2}, args.len);
+
+    const name = switch (args[0].as) {
+        .string => |string| try state.ally.dupe(u8, string),
+        .record => return typeMismatchError(state, "string", "record", 0),
+        .list => return typeMismatchError(state, "string", "list", 0),
+        .float => return typeMismatchError(state, "string", "float", 0),
+        .boolean => return typeMismatchError(state, "string", "boolean", 0),
+        .integer => return typeMismatchError(state, "string", "integer", 0),
+    };
+
+    errdefer state.ally.free(name);
+
+    const value = switch (args[1].as) {
+        .string, .boolean, .integer => try args[1].asStr(state.ally),
+        .record => return typeMismatchError(state, "string, boolean or integer", "record", 0),
+        .list => return typeMismatchError(state, "string, boolean or integer", "list", 0),
+        .float => return typeMismatchError(state, "string, boolean or integer", "float", 0),
+    };
+
+    errdefer state.ally.free(value);
+
+    try state.env_map.putMove(name, value);
+
+    return nothing;
 }
 
 fn validateArgsCount(

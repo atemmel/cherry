@@ -305,7 +305,10 @@ fn evalProc(ctx: *Context, call: ast.Call) !Result {
 
     var ptr: ?*const ast.Call = &call;
     while (ptr) |call_ptr| {
-        try procs.append(try proc(ctx, call_ptr));
+        var new_proc = try proc(ctx, call_ptr);
+        new_proc.env_map = &ctx.state.env_map;
+
+        try procs.append(new_proc);
         ptr = call_ptr.pipe;
     }
 

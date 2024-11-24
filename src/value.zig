@@ -111,7 +111,7 @@ pub const Value = struct {
         }
     }
 
-    pub fn asStr(self: Value, ally: std.mem.Allocator) ![]const u8 {
+    pub fn asStr(self: Value, ally: std.mem.Allocator) ![]u8 {
         return switch (self.as) {
             .string => |s| try ally.dupe(u8, s),
             .integer => |i| try std.fmt.allocPrint(ally, "{}", .{i}),

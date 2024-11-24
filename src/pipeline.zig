@@ -38,6 +38,7 @@ pub const State = struct {
     color: std.io.tty.Config = std.io.tty.Config.no_color,
     error_report: ?ErrorReport = null,
     analysis: semantics.Analysis = .{},
+    env_map: std.process.EnvMap,
 
     const ErrorInfo = struct {
         msg: []const u8,
