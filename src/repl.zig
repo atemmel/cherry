@@ -166,7 +166,7 @@ pub fn repl(pipeline_state: *pipeline.State) !void {
 
     state.histfile_path = try std.fs.path.join(
         state.arena.allocator(),
-        &.{ state.home, ".cherry-hist" },
+        &.{ state.home, ".local/state/cherry-hist" },
     );
     state.rc_path = try std.fs.path.join(
         state.arena.allocator(),
