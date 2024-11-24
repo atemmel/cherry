@@ -419,7 +419,7 @@ fn evalExpression(ctx: *Context, expr: ast.Expression) EvalError!Result {
         .string_literal => |str| something(try evalStringLiteral(ctx, str)),
         .integer_literal => |int| something(try evalIntegerLiteral(int)),
         .bool_literal => |bl| something(try evalBoolLiteral(bl)),
-        .variable => |variable| something(evalVariable(variable)),
+        .variable => |variable| something(try evalVariable(ctx, variable)),
         .capturing_call => |cap_inv| try evalCall(ctx, cap_inv),
         .list_literal => |list| something(try evalListLiteral(ctx, list)),
         .record_literal => |record| something(try evalRecordLiteral(ctx, record)),
@@ -475,9 +475,10 @@ fn evalBoolLiteral(bl: ast.BoolLiteral) !*Value {
     return value;
 }
 
-fn evalVariable(variable: ast.Variable) *Value {
-    //TODO: handle error
-    return symtable.get(variable.token.value) orelse unreachable;
+fn evalVariable(ctx: *Context, variable: ast.Variable) !*Value {
+    return symtable.get(variable.token.value) orelse {
+        return errNeverDeclared(ctx, variable.token);
+    };
 }
 
 fn evalListLiteral(ctx: *Context, list_literal: ast.ListLiteral) !*Value {
