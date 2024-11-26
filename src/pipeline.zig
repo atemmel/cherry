@@ -40,6 +40,10 @@ pub const State = struct {
     analysis: semantics.Analysis = .{},
     env_map: std.process.EnvMap,
 
+    pub fn readEnv(state: *const State, env: []const u8) ?[]const u8 {
+        return state.env_map.get(env);
+    }
+
     const ErrorInfo = struct {
         msg: []const u8,
         col: usize,
@@ -50,7 +54,7 @@ pub const State = struct {
     };
 
     pub fn errorInfo(state: *const State) ErrorInfo {
-        const report = state.error_report orelse @panic("No error stored");
+        const report = state.error_report orelse @panic("Developer error: No error stored");
         const bad_token = report.offending_token;
         const src_ptr_begin = state.source.ptr;
         const src_ptr_offset = bad_token.value.ptr;

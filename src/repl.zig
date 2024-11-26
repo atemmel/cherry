@@ -28,7 +28,6 @@ const State = struct {
     length: usize = 0,
     cursor: usize = 0,
     term: Term,
-    home: []const u8 = "",
     histfile_path: []const u8 = "",
     history_scroll_idx: usize,
     search_idx: ?usize = null,
@@ -49,6 +48,10 @@ const State = struct {
         self.arena.deinit();
         self.completion_arena.deinit();
         self.term.restore() catch unreachable; // no balls
+    }
+
+    pub fn homeOrEmpty(self: *const State) []const u8 {
+        return self.pipeline_state.readEnv("HOME") orelse "";
     }
 
     pub fn writer(self: *State) @TypeOf(self.out_writer.writer()) {
@@ -91,13 +94,14 @@ const State = struct {
     }
 
     pub fn writePrefix(self: *State) !void {
+        const home = self.homeOrEmpty();
         const out = self.writer();
         terminal.clearLine(out, self.prefixLen() + 7 + self.length);
         switch (self.mode) {
             .prompt => {
                 const cwd = try self.calcCwd();
-                if (startsWith(u8, cwd, self.home)) {
-                    const cwd_after_home = cwd[self.home.len..];
+                if (startsWith(u8, cwd, home)) {
+                    const cwd_after_home = cwd[home.len..];
                     fmt(out, "~{s} {s}|>{s} {s}\r", .{ cwd_after_home, BoldHi.white, Color.gray, self.line() });
                 } else {
                     fmt(out, "{s} {s}|>{s} {s}\r", .{ cwd, BoldHi.white, Color.gray, self.line() });
@@ -120,8 +124,9 @@ const State = struct {
     }
 
     pub fn prefixLen(self: *State) usize {
+        const home = self.homeOrEmpty();
         return switch (self.mode) {
-            .prompt => if (startsWith(u8, self.cwd, self.home)) self.cwd.len - self.home.len + 1 + 4 else self.cwd.len + 4,
+            .prompt => if (startsWith(u8, self.cwd, home)) self.cwd.len - home.len + 1 + 4 else self.cwd.len + 4,
             .search => blk: {
                 var sum = "(reverse-search) ".len;
                 if (self.search_idx) |idx| {
@@ -150,27 +155,28 @@ fn fmts(writer: anytype, comptime str: []const u8) void {
 // - display commands in a nice way (colors, etc)
 
 pub fn repl(pipeline_state: *pipeline.State) !void {
-    var arena = std.heap.ArenaAllocator.init(pipeline_state.ally);
+    const arena = std.heap.ArenaAllocator.init(pipeline_state.ally);
     var state = State{
         .ally = pipeline_state.ally,
         .history = try History.initCapacity(pipeline_state.ally, 512),
         .out_writer = std.io.bufferedWriter(std.io.getStdOut().writer()),
         .pipeline_state = pipeline_state,
         .term = try Term.init(),
-        .home = try std.process.getEnvVarOwned(arena.allocator(), "HOME"),
         .history_scroll_idx = 0,
         .arena = arena,
         .completion_arena = std.heap.ArenaAllocator.init(pipeline_state.ally),
     };
     defer state.deinit();
 
+    const home = state.homeOrEmpty();
+
     state.histfile_path = try std.fs.path.join(
         state.arena.allocator(),
-        &.{ state.home, ".local/state/cherry-hist" },
+        &.{ home, ".local/state/cherry-hist" },
     );
     state.rc_path = try std.fs.path.join(
         state.arena.allocator(),
-        &.{ state.home, ".config/cherryrc" },
+        &.{ home, ".config/cherryrc" },
     );
 
     try readHistory(&state);
