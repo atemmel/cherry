@@ -82,6 +82,9 @@ pub fn escape(arena: std.mem.Allocator, str: []const u8) ![]u8 {
             unreachable; // error, escapes nothing
         }
 
-        switch (str[escapee + 1]) {}
+        switch (str[escapee + 1]) {
+            '\\' => {},
+            'n' => {},
+        }
     }
 }
