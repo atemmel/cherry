@@ -3,6 +3,7 @@ const algo = @import("algo.zig");
 const pipeline = @import("pipeline.zig");
 const terminal = @import("term.zig");
 const symtable = @import("symtable.zig");
+const strings = @import("strings.zig");
 const Term = terminal.Term;
 const Color = terminal.Color;
 const Hi = terminal.Hi;
@@ -341,7 +342,6 @@ fn eval(state: *State) !void {
         }
     };
     state.flush();
-    state.history_scroll_idx = state.history.items.len;
 
     appendHistory(state) catch |e| {
         try state.writer().print("Could not write history, {any}\r\n", .{e});
@@ -377,6 +377,7 @@ fn appendHistory(state: *State) !void {
 
     const cmd_copy = try state.ally.dupe(u8, state.line());
     try state.history.append(cmd_copy);
+    state.history_scroll_idx = state.history.items.len;
 
     var file = try std.fs.cwd().createFile(state.histfile_path, .{
         .truncate = false,
@@ -449,68 +450,9 @@ fn tryAutocomplete(state: *State) !void {
     }
 }
 
-fn tryAutocompleteCmd(state: *State) !void {
-    if (state.length == 0) {
-        return;
-    }
-    const path = std.posix.getenv("PATH") orelse {
-        return;
-    };
-
-    var n_hits: usize = 0;
-    var buf: [128]u8 = undefined;
-    var slice: []const u8 = "";
-
-    var it = std.mem.tokenize(u8, path, ":");
-    const out = state.writer();
-    while (it.next()) |p| {
-        var dir = std.fs.cwd().openDir(p, .{ .iterate = true }) catch {
-            continue;
-        };
-        defer dir.close();
-        var dir_it = dir.iterate();
-        while (try dir_it.next()) |entry| {
-            if (entry.kind != .file and entry.kind != .sym_link) {
-                continue;
-            }
-
-            const stat = dir.statFile(entry.name) catch {
-                continue;
-            };
-
-            if (stat.mode & 0b1 == 0) {
-                continue;
-            }
-
-            if (startsWith(u8, entry.name, state.line())) {
-                n_hits += 1;
-                if (n_hits == 1) {
-                    slice = try std.fmt.bufPrint(&buf, "{s}", .{entry.name});
-                } else if (n_hits == 2) {
-                    fmt(out, "\r\n{s} ", .{slice});
-                }
-
-                if (n_hits > 1) {
-                    fmt(out, "\r\n{s} ", .{entry.name});
-                }
-            }
-        }
-    }
-
-    if (n_hits > 1) {
-        fmts(out, "\r\n");
-        state.flush();
-    }
-
-    if (n_hits == 1) {
-        _ = try std.fmt.bufPrint(&state.buffer, "{s}", .{slice});
-        state.length = slice.len;
-        state.cursor = slice.len;
-    }
-}
-
 fn tryAutocompleteCmd2(state: *State) !void {
     defer _ = state.completion_arena.reset(.retain_capacity);
+    const arena = state.completion_arena.allocator();
 
     const line = state.line();
 
@@ -522,7 +464,7 @@ fn tryAutocompleteCmd2(state: *State) !void {
 
     var cmp_ctx: CompletionContext = .{
         .source = last_cmd,
-        .arena = state.completion_arena.allocator(),
+        .arena = arena,
     };
     const result = try tryAutocompleteCmdImpl(&cmp_ctx);
     try displayCompletionResults(state, result);
@@ -530,8 +472,10 @@ fn tryAutocompleteCmd2(state: *State) !void {
 
 fn tryAutocompletePath2(state: *State) !void {
     defer _ = state.completion_arena.reset(.retain_capacity);
+    const arena = state.completion_arena.allocator();
 
-    const line = state.line();
+    const original_line = state.line();
+    const line = try strings.contextualizeStrArena(state.pipeline_state, arena, original_line);
 
     var last_cmd_begin = std.mem.lastIndexOfScalar(u8, line, ' ') orelse 0;
     if (last_cmd_begin < line.len and last_cmd_begin != 0) {
