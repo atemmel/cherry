@@ -290,6 +290,11 @@ fn lexIntegerLiteral(state: *LexState) ?Token {
         int_prospect = state.slice(begin + 1, end);
     }
 
+    if (int_prospect.len == 0) {
+        state.idx = begin;
+        return null;
+    }
+
     for (int_prospect) |c| {
         if (!std.ascii.isDigit(c)) {
             state.idx = begin;
@@ -649,4 +654,25 @@ test "lex negative number" {
     try expectEqualStrings("say", tokens[0].value);
     try expectEqual(.IntegerLiteral, tokens[1].kind);
     try expectEqualStrings("-1", tokens[1].value);
+}
+
+test "lex subtraction" {
+    const ally = std.testing.allocator_instance.allocator();
+
+    var state = testState(
+        \\(- 3 2)
+    );
+
+    const tokens = try lex(&state);
+    defer ally.free(tokens);
+
+    try expectEqual(5, tokens.len);
+    try expectEqual(.LParens, tokens[0].kind);
+    try expectEqual(.Bareword, tokens[1].kind);
+    try expectEqualStrings("-", tokens[1].value);
+    try expectEqual(.IntegerLiteral, tokens[2].kind);
+    try expectEqualStrings("3", tokens[2].value);
+    try expectEqual(.IntegerLiteral, tokens[3].kind);
+    try expectEqualStrings("2", tokens[3].value);
+    try expectEqual(.RParens, tokens[4].kind);
 }
