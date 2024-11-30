@@ -122,8 +122,8 @@ pub fn lex(state: *PipelineState) LexerError![]Token {
             try lstate.list.append(keyword);
         } else if (lexStringLiteral(&lstate)) |string_literal| {
             try lstate.list.append(string_literal);
-        } else if (lexIntegerLiteral(&lstate)) |string_literal| {
-            try lstate.list.append(string_literal);
+        } else if (lexIntegerLiteral(&lstate)) |integer_literal| {
+            try lstate.list.append(integer_literal);
         } else if (lexBareword(&lstate)) |bareword| {
             try lstate.list.append(bareword);
         }
@@ -276,30 +276,31 @@ fn lexMultiLineStringLiteral(state: *LexState) ?Token {
 }
 
 fn lexIntegerLiteral(state: *LexState) ?Token {
-    if (!state.isNum()) {
+    if (!state.isNum() and state.get() != '-') {
         return null;
     }
     const begin = state.idx;
     while (!state.eof() and !state.isUnallowedBarewordChar()) : (state.next()) {}
     const end = state.idx;
 
-    const int_prospect = state.slice(begin, end);
+    const original_prospect = state.slice(begin, end);
+    var int_prospect = original_prospect;
+
+    if (int_prospect.len > 0 and int_prospect[0] == '-') {
+        int_prospect = state.slice(begin + 1, end);
+    }
 
     for (int_prospect) |c| {
         if (!std.ascii.isDigit(c)) {
-            std.debug.print("{s}\n", .{int_prospect});
-            if (state.isSymbolChar()) {
-                break;
-            }
-            //TODO: bad token
-            unreachable;
+            state.idx = begin;
+            return null;
         }
     }
 
     state.idx -= 1;
 
     return .{
-        .value = int_prospect,
+        .value = original_prospect,
         .kind = .IntegerLiteral,
     };
 }
@@ -606,6 +607,7 @@ test "lex block comment" {
     try expectEqual(.Bareword, tokens[2].kind);
     try expectEqualStrings("bye", tokens[2].value);
 }
+
 test "lex nested block comment" {
     const ally = std.testing.allocator_instance.allocator();
 
@@ -630,4 +632,21 @@ test "lex nested block comment" {
     try expectEqual(.Newline, tokens[1].kind);
     try expectEqual(.Bareword, tokens[2].kind);
     try expectEqualStrings("bye", tokens[2].value);
+}
+
+test "lex negative number" {
+    const ally = std.testing.allocator_instance.allocator();
+
+    var state = testState(
+        \\say -1
+    );
+
+    const tokens = try lex(&state);
+    defer ally.free(tokens);
+
+    try expectEqual(2, tokens.len);
+    try expectEqual(.Bareword, tokens[0].kind);
+    try expectEqualStrings("say", tokens[0].value);
+    try expectEqual(.IntegerLiteral, tokens[1].kind);
+    try expectEqualStrings("-1", tokens[1].value);
 }
