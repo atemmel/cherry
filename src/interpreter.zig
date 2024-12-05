@@ -7,6 +7,8 @@ const builtins = @import("builtins.zig");
 const values = @import("value.zig");
 const tokens = @import("tokens.zig");
 
+const assert = std.debug.assert;
+
 const Value = values.Value;
 const Result = values.Result;
 
@@ -277,7 +279,7 @@ fn evalFunctionCall(ctx: *Context, func: ast.Func, call: ast.Call) !Result {
     var args = try evalArgs(ctx, call.arguments);
     defer args.deinit();
 
-    std.debug.assert(func.signature.parameters.len == args.items.len);
+    assert(func.signature.parameters.len == args.items.len);
 
     for (func.signature.parameters, args.items) |par, arg| {
         try symtable.put(par.name, arg);
@@ -313,7 +315,7 @@ fn evalProc(ctx: *Context, call: ast.Call) !Result {
     }
 
     for (procs.items, 0..) |*p, idx| {
-        if (procs.items.len > 1) {
+        if (capturing or procs.items.len > 1) {
             if (idx > 0) {
                 p.stdin_behavior = .Pipe;
             }
@@ -360,6 +362,7 @@ fn evalProc(ctx: *Context, call: ast.Call) !Result {
     }
 
     if (capturing) {
+        assert(procs.getLast().stdout != null);
         capture = try procs.getLast().stdout.?.readToEndAlloc(ctx.ally, std.math.maxInt(u64));
     }
 
