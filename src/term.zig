@@ -42,14 +42,9 @@ pub const BoldHi = struct {
 // shoutout to big man over at:
 // https://zig.news/lhp/want-to-create-a-tui-application-the-basics-of-uncooked-terminal-io-17gm
 
-pub const Cursor = struct {
-    row: u16,
-    column: u16,
-};
-
-pub const Window = struct {
-    row: u16,
-    column: u16,
+pub const Vec2 = struct {
+    x: u16,
+    y: u16,
 };
 
 pub const Term = struct {
@@ -153,7 +148,7 @@ pub const Term = struct {
         return buffer[0];
     }
 
-    pub fn getCursor(self: Term) !Cursor {
+    pub fn getCursor(self: Term) !Vec2 {
         try self.tty.writeAll("\x1b[6n");
         var buf: ["\x1b[256;256R".len]u8 = undefined;
         const output = try self.tty.reader().readUntilDelimiter(&buf, 'R');
@@ -164,12 +159,12 @@ pub const Term = struct {
         const row = try std.fmt.parseUnsigned(u16, row_half, 10);
         const column = try std.fmt.parseUnsigned(u16, column_half, 10);
         return .{
-            .column = column - 1, // it's one-based
-            .row = row - 1,
+            .x = column - 1, // it's one-based
+            .y = row - 1,
         };
     }
 
-    pub fn size(self: Term) Window {
+    pub fn size(self: Term) Vec2 {
         const linux = std.os.linux;
         var l_size = std.mem.zeroes(linux.winsize);
         const err = linux.ioctl(self.tty.handle, linux.T.IOCGWINSZ, @intFromPtr(&l_size));
@@ -177,8 +172,8 @@ pub const Term = struct {
             unreachable;
         }
         return .{
-            .column = l_size.ws_col,
-            .row = l_size.ws_row,
+            .x = l_size.ws_col,
+            .y = l_size.ws_row,
         };
     }
 
@@ -391,4 +386,13 @@ pub fn moveLeft(writer: anytype, steps: usize) void {
 
 pub fn clear(writer: anytype) void {
     _ = writer.print("\x1B[2J", .{}) catch unreachable;
+}
+
+pub fn clearRect(writer: anytype, pos: Vec2, rect: Vec2) void {
+    for (0..rect.y) |y| {
+        moveCursor(writer, pos.x, pos.y + y);
+        for (0..rect.x) |_| {
+            writer.writeByte(' ');
+        }
+    }
 }

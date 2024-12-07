@@ -543,10 +543,10 @@ fn displayCompletionResults(state: *State, result: CompletionResult) !void {
 
             const column_width = longest_match + 2;
 
-            const n_columns = @divTrunc(terminal_size.column, column_width);
+            const n_columns = @divTrunc(terminal_size.x, column_width);
             const max_items_per_column = @divTrunc(all.potential_matches.len, @max(3, n_columns) - 2);
 
-            const y_begin = cursor_position.row + 1;
+            const y_begin = cursor_position.y + 1;
 
             var x: usize = 0;
             var y: usize = y_begin;
