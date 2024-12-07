@@ -118,6 +118,7 @@ comptime {
     refAllDecls(@import("algo.zig"));
     refAllDecls(@import("ast.zig"));
     refAllDecls(@import("repl.zig"));
+    refAllDecls(@import("strings.zig"));
     refAllDecls(@import("tokens.zig"));
     refAllDecls(@import("value.zig"));
 }
