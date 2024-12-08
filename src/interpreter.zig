@@ -255,7 +255,7 @@ fn evalCall(ctx: *Context, call: ast.Call) !Result {
 
 fn isLocalScript(ctx: *Context, call: ast.Call) !bool {
     const file = try std.fs.cwd().openFile(call.token.value, .{});
-    _ = file; // autofix
+    defer file.close();
     _ = ctx; // autofix
 }
 
