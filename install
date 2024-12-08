@@ -1,0 +1,4 @@
+#!/usr/bin/cherry
+zig build -Doptimize=Debug
+sudo cp zig-out/bin/cherry /usr/bin/cherry
+sudo ln -rs /usr/bin/cherry /bin/cherry

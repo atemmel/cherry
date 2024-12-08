@@ -260,7 +260,7 @@ fn isLocalScript(ctx: *Context, call: ast.Call) !bool {
     }
     //TODO: check what kind of local file it is, if it contains cherry script, then read the script and execute
     const file = try std.fs.cwd().openFile(call.token.value, .{});
-    _ = file; // autofix
+    defer file.close();
     _ = ctx; // autofix
 }
 

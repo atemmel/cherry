@@ -20,7 +20,7 @@ pub const ErrorReport = struct {
 };
 
 pub const State = struct {
-    arena_source: std.heap.ArenaAllocator,
+    arena_source: *std.heap.ArenaAllocator,
     arena: std.mem.Allocator,
     ally: std.mem.Allocator,
     source: []const u8,
