@@ -253,6 +253,12 @@ fn evalCall(ctx: *Context, call: ast.Call) !Result {
     }
 }
 
+fn isLocalScript(ctx: *Context, call: ast.Call) !bool {
+    const file = try std.fs.cwd().openFile(call.token.value, .{});
+    _ = file; // autofix
+    _ = ctx; // autofix
+}
+
 fn evalBuiltin(ctx: *Context, call: ast.Call, builtin: *const builtins.BuiltinFn) !Result {
     var args = try evalArgs(ctx, call.arguments);
     defer args.deinit();
