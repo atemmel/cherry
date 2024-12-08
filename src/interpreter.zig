@@ -254,6 +254,11 @@ fn evalCall(ctx: *Context, call: ast.Call) !Result {
 }
 
 fn isLocalScript(ctx: *Context, call: ast.Call) !bool {
+    // local must be prefixed with './'
+    if (std.mem.startsWith(u8, call.token.value, "./")) {
+        return false;
+    }
+    //TODO: check what kind of local file it is, if it contains cherry script, then read the script and execute
     const file = try std.fs.cwd().openFile(call.token.value, .{});
     _ = file; // autofix
     _ = ctx; // autofix
