@@ -83,7 +83,7 @@ pub fn main() !u8 {
     defer symtable.deinit();
 
     var state = pipeline.State{
-        .arena_source = arena,
+        .arena_source = &arena,
         .arena = arena_allocator,
         .ally = ally,
         .source = "",
