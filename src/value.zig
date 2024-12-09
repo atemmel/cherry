@@ -161,7 +161,11 @@ pub const Value = struct {
                 },
                 .string, .float, .boolean, .list, .record => return InterpreterError.TypeMismatch,
             },
-            .float => unreachable,
+            .float => |lhs| {
+                std.debug.print("this was float: {} {any}", .{ lhs, other });
+
+                unreachable;
+            },
             .boolean => |lhs| switch (other.as) {
                 .boolean => |rhs| {
                     if (lhs and rhs) {

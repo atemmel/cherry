@@ -153,6 +153,7 @@ fn dumpLoop(loop: ast.Loop) void {
     if (loop.post_op) |post_op| {
         dumpPostOp(post_op);
     }
+    dumpScope(loop.scope);
 }
 
 fn dumpBreak(_: ast.Break) void {

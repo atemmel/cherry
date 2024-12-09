@@ -51,7 +51,7 @@ pub fn collect() void {
 }
 
 fn shouldCollect() bool {
-    return n_allocs > 100;
+    return n_allocs > 8000;
 }
 
 fn push(value: values.Value) !*values.Value {

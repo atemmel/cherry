@@ -6,6 +6,7 @@ const gc = @import("gc.zig");
 const builtins = @import("builtins.zig");
 const values = @import("value.zig");
 const tokens = @import("tokens.zig");
+const strings = @import("strings.zig");
 
 const assert = std.debug.assert;
 
@@ -460,17 +461,22 @@ fn evalBareword(bw: ast.Bareword) !*Value {
 }
 
 fn evalStringLiteral(ctx: *Context, str: ast.StringLiteral) !*Value {
+    var arena = std.heap.ArenaAllocator.init(ctx.ally);
+    defer arena.deinit();
+
+    const escaped = try strings.escape(arena.allocator(), str.token.value, null);
+
     if (str.interpolates) {
         const value = Value{
             .as = .{
-                .string = str.token.value,
+                .string = escaped,
             },
         };
         const interpolated_value = try value.interpolate(ctx.ally);
         try symtable.appendRoot(interpolated_value);
         return interpolated_value;
     }
-    const value = try gc.string(str.token.value);
+    const value = try gc.string(escaped);
     try symtable.appendRoot(value);
     return value;
 }
