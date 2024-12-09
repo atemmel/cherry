@@ -80,6 +80,8 @@ const builtins_table = std.StaticStringMap(BuiltinInfo).initComptime(
         .{ "lt", unchecked(less) },
         .{ "gt", unchecked(greater) },
         .{ "ne", unchecked(notEqual) },
+        .{ "and", unchecked(andFn) },
+        .{ "or", unchecked(orFn) },
         // operations (symbols)
         .{ "+", unchecked(add) },
         .{ "-", unchecked(sub) },
@@ -411,6 +413,42 @@ fn notEqual(state: *State, args: []const *Value) !Result {
         }
     }
     return something(try gc.boolean(true));
+}
+
+fn andFn(state: *State, args: []const *Value) !Result {
+    for (args, 0..) |arg, idx| {
+        //TODO: handle type error
+        const boolean = switch (arg.as) {
+            .boolean => |b| b,
+            .list => return typeMismatchError(state, "bool", "list", idx),
+            .float => return typeMismatchError(state, "bool", "float", idx),
+            .string => return typeMismatchError(state, "bool", "string", idx),
+            .record => return typeMismatchError(state, "bool", "record", idx),
+            .integer => return typeMismatchError(state, "bool", "int", idx),
+        };
+        if (!boolean) {
+            return something(try gc.boolean(false));
+        }
+    }
+    return something(try gc.boolean(true));
+}
+
+fn orFn(state: *State, args: []const *Value) !Result {
+    for (args, 0..) |arg, idx| {
+        //TODO: handle type error
+        const boolean = switch (arg.as) {
+            .boolean => |b| b,
+            .list => return typeMismatchError(state, "bool", "list", idx),
+            .float => return typeMismatchError(state, "bool", "float", idx),
+            .string => return typeMismatchError(state, "bool", "string", idx),
+            .record => return typeMismatchError(state, "bool", "record", idx),
+            .integer => return typeMismatchError(state, "bool", "int", idx),
+        };
+        if (boolean) {
+            return something(try gc.boolean(true));
+        }
+    }
+    return something(try gc.boolean(false));
 }
 
 fn len(_: *State, args: []const *Value) !Result {
