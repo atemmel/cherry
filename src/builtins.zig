@@ -306,7 +306,11 @@ fn sub(state: *State, args: []const *Value) !Result {
             .integer => |i| {
                 diff_value -= i;
             },
-            else => unreachable, //TODO: hmmm...
+            .string => return typeMismatchError(state, "int", "string", 1),
+            .list => return typeMismatchError(state, "int", "list", 1),
+            .float => return typeMismatchError(state, "int", "float", 1),
+            .boolean => return typeMismatchError(state, "int", "bool", 1),
+            .record => return typeMismatchError(state, "int", "record", 1),
         }
     }
     return something(try gc.integer(diff_value));
