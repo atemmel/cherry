@@ -291,11 +291,15 @@ fn concatenateStrings(_: *State, args: []const *Value) !*Value {
     return try gc.allocedString(try result.toOwnedSlice());
 }
 
-fn sub(_: *State, args: []const *Value) !Result {
-    if (args.len < 2) unreachable;
+fn sub(state: *State, args: []const *Value) !Result {
+    try validateArgsCount(state, &.{2}, args.len);
     var diff_value: i64 = switch (args[0].as) {
         .integer => |i| i,
-        else => unreachable,
+        .string => return typeMismatchError(state, "int", "string", 0),
+        .list => return typeMismatchError(state, "int", "list", 0),
+        .float => return typeMismatchError(state, "int", "float", 0),
+        .boolean => return typeMismatchError(state, "int", "bool", 0),
+        .record => return typeMismatchError(state, "int", "record", 0),
     };
     for (args[1..]) |arg| {
         switch (arg.as) {
