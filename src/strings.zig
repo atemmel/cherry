@@ -139,7 +139,7 @@ test "dealias tilde" {
 
     var state: pipeline.State = .{
         .arena = arena.allocator(),
-        .arena_source = arena,
+        .arena_source = &arena,
         .ally = std.testing.allocator,
         .source = "",
         .verboseLexer = false,

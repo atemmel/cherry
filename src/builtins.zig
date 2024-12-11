@@ -91,6 +91,8 @@ const builtins_table = std.StaticStringMap(BuiltinInfo).initComptime(
         .{ "<", unchecked(less) },
         .{ ">", unchecked(greater) },
         .{ "!=", unchecked(notEqual) },
+        // types
+        .{ "int", unchecked(int) },
     },
 );
 
@@ -292,7 +294,6 @@ fn concatenateStrings(_: *State, args: []const *Value) !*Value {
 }
 
 fn sub(state: *State, args: []const *Value) !Result {
-    try validateArgsCount(state, &.{2}, args.len);
     var diff_value: i64 = switch (args[0].as) {
         .integer => |i| i,
         .string => return typeMismatchError(state, "int", "string", 0),
@@ -679,6 +680,27 @@ fn envExport(state: *State, args: []const *Value) !Result {
     try state.env_map.putMove(name, value);
 
     return nothing;
+}
+
+fn int(state: *State, args: []const *Value) !Result {
+    try validateArgsCount(state, &.{1}, args.len);
+
+    const arg = args[0];
+    const ok_string = "string, int, bool or float";
+
+    const int_result = arg.asInt() catch |e| {
+        return switch (e) {
+            error.Overflow => unreachable,
+            error.InvalidCharacter => unreachable,
+            error.InvalidIntConversion => switch (arg.as) {
+                .string, .float, .integer, .boolean => unreachable,
+                .record => return typeMismatchError(state, ok_string, "record", 0),
+                .list => return typeMismatchError(state, ok_string, "list", 0),
+            },
+        };
+    };
+
+    return something(try gc.integer(int_result));
 }
 
 fn validateArgsCount(

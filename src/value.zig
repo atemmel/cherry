@@ -122,6 +122,16 @@ pub const Value = struct {
         };
     }
 
+    pub fn asInt(self: Value) !i64 {
+        return switch (self.as) {
+            .string => |s| try std.fmt.parseInt(i64, s, 10),
+            .integer => |i| i,
+            .float => |f| @as(i64, @intFromFloat(f)),
+            .boolean => |b| if (b) 1 else 0,
+            .list, .record => error.InvalidIntConversion,
+        };
+    }
+
     const Order = union(enum) {
         less,
         greater,
