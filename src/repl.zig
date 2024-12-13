@@ -171,10 +171,13 @@ pub fn repl(pipeline_state: *pipeline.State) !void {
 
     const home = state.homeOrEmpty();
 
-    state.histfile_path = try std.fs.path.join(
-        state.arena.allocator(),
-        &.{ home, ".local/state/cherry-hist" },
-    );
+    if (state.histfile_path.len == 0) {
+        state.histfile_path = try std.fs.path.join(
+            state.arena.allocator(),
+            &.{ home, ".local/state/cherry-hist" },
+        );
+    }
+
     state.rc_path = try std.fs.path.join(
         state.arena.allocator(),
         &.{ home, ".config/cherryrc" },

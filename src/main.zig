@@ -6,18 +6,9 @@ const pipeline = @import("pipeline.zig");
 const repl = @import("repl.zig").repl;
 const symtable = @import("symtable.zig");
 const tokens = @import("tokens.zig");
+const clap = @import("clap");
 
 const assert = std.debug.assert;
-const eq = std.mem.eql;
-
-fn in(needle: []const u8, haystack: []const []const u8) bool {
-    for (haystack) |hay| {
-        if (eq(u8, hay, needle)) {
-            return true;
-        }
-    }
-    return false;
-}
 
 fn readfile(ally: std.mem.Allocator, name: []const u8) ![]const u8 {
     const file = try std.fs.cwd().openFile(name, .{});
@@ -54,26 +45,53 @@ pub fn main() !u8 {
 
     var file: ?[]const u8 = null;
 
-    for (args[1..args.len]) |arg| {
-        if (in(arg, &.{
-            "--help",
-            "-h",
-            "-help",
-            "help",
-        })) {
-            //TODO: show help
-            return 0;
-        } else if (eq(u8, "--verbose", arg)) {
-            verboseLexer = true;
-            verboseParser = true;
-            verboseAnalysis = true;
-            verboseInterpretation = true;
-            std.debug.print("args: {s}\n", .{args});
-        } else if (eq(u8, "--types", arg)) {
-            useSemanticAnalysis = true;
-        } else {
-            file = arg;
-        }
+    // First we specify what parameters our program can take.
+    // We can use `parseParamsComptime` to parse a string into an array of `Param(Help)`.
+    const params = comptime clap.parseParamsComptime(
+        \\-h, --help             Display this help and exit.
+        \\    --verbose          Log verbose messages.
+        \\    --types            Enables experimental type-checking.
+        \\<FILE>                  Script to run.
+        \\
+    );
+
+    const parsers = comptime .{
+        .FILE = clap.parsers.string,
+    };
+
+    // Initialize our diagnostics, which can be used for reporting useful errors.
+    // This is optional. You can also pass `.{}` to `clap.parse` if you don't
+    // care about the extra information `Diagnostics` provides.
+    var diag = clap.Diagnostic{};
+    var res = clap.parse(clap.Help, &params, parsers, .{
+        .diagnostic = &diag,
+        .allocator = arena_allocator,
+    }) catch |err| {
+        // Report useful error and exit.
+        diag.report(std.io.getStdErr().writer(), err) catch {};
+        return 0;
+    };
+    defer res.deinit();
+
+    if (res.args.help != 0) {
+        try clap.help(std.io.getStdErr().writer(), clap.Help, &params, .{});
+        return 0;
+    }
+
+    if (res.args.verbose != 0) {
+        verboseLexer = true;
+        verboseParser = true;
+        verboseAnalysis = true;
+        verboseInterpretation = true;
+        std.debug.print("args: {s}\n", .{args});
+    }
+
+    if (res.args.types != 0) {
+        useSemanticAnalysis = true;
+    }
+
+    if (res.positionals.len > 0) {
+        file = res.positionals[0];
     }
 
     try gc.init(ally);
