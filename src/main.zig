@@ -7,6 +7,9 @@ const repl = @import("repl.zig").repl;
 const symtable = @import("symtable.zig");
 const tokens = @import("tokens.zig");
 const clap = @import("clap");
+const build_options = @import("build_options");
+
+const git_latest_commit_hash = std.mem.trim(u8, @embedFile("git_latest_commit_hash"), " \n\r\t");
 
 const assert = std.debug.assert;
 
@@ -49,11 +52,17 @@ pub fn main() !u8 {
     // First we specify what parameters our program can take.
     // We can use `parseParamsComptime` to parse a string into an array of `Param(Help)`.
     const params = comptime clap.parseParamsComptime(
+        \\
         \\-h, --help             Display this help and exit.
-        \\    --verbose          Log verbose messages.
-        \\    --types            Enables experimental type-checking.
         \\<FILE>                  Script to run.
         \\
+        \\ Dev flags
+        \\    --types               (dev) Enables experimental type-checking.
+        \\    --verbose             (dev) Log verbose messages. (equal to --verbose-ast, --verbose-tokens)
+        \\    --verbose-ast         (dev) Log the AST before interpreting, debug builds log a stacktrace of eventual parsing errors.
+        \\    --verbose-tokens      (dev) Log the lexed tokens before parsing.
+        \\    --verbose-analysis    (dev) Log a summary of the type analysis performed before interpreting.
+        \\    --verbose-gc          (dev) Periodically log GC updates during runtime.
     );
 
     const parsers = comptime .{
@@ -75,17 +84,41 @@ pub fn main() !u8 {
     defer res.deinit();
 
     if (res.args.help != 0) {
-        try clap.help(std.io.getStdErr().writer(), clap.Help, &params, .{});
+        const writer = std.io.getStdErr().writer();
+        writer.print(
+            "\n +--------+\n | cherry |    version {s} (built {s})\n +--------+\n\n",
+            .{ git_latest_commit_hash, build_options.build_date },
+        ) catch {};
+        clap.help(writer, clap.Help, &params, .{
+            .description_on_new_line = false,
+            .spacing_between_parameters = 0,
+        }) catch {};
         return 0;
     }
 
     if (res.args.verbose != 0) {
         verboseLexer = true;
         verboseParser = true;
-        verboseAnalysis = true;
         verboseInterpretation = true;
-        verboseGc = true;
         std.debug.print("args: {s}\n", .{args});
+    }
+
+    if (false) {
+        if (res.args.@"verbose-ast" != 0) {
+            verboseParser = true;
+        }
+
+        if (res.args.@"verbose-tokens" != 0) {
+            verboseLexer = true;
+        }
+
+        if (res.args.@"verbose-analysis" != 0) {
+            verboseAnalysis = true;
+        }
+
+        if (res.args.@"verbose-gc" != 0) {
+            verboseGc = true;
+        }
     }
 
     if (res.args.types != 0) {

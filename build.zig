@@ -1,5 +1,22 @@
 const std = @import("std");
 
+fn dateStr(b: *std.Build) []const u8 {
+    const now: u64 = @intCast(std.time.timestamp());
+    const epoch = std.time.epoch.EpochSeconds{ .secs = now };
+    const epoch_day = epoch.getEpochDay();
+    const year_day = epoch_day.calculateYearDay();
+    const month_day = year_day.calculateMonthDay();
+    const day_seconds = epoch.getDaySeconds();
+
+    const year = year_day.year;
+    const month = month_day.month.numeric();
+    const day = month_day.day_index + 1;
+    const hour = day_seconds.getHoursIntoDay();
+    const minute = day_seconds.getMinutesIntoHour();
+
+    return std.fmt.allocPrint(b.allocator, "{}-{}-{} {:0>2}:{:0>2}", .{ year, month, day, hour, minute }) catch unreachable;
+}
+
 // Although this function looks imperative, note that its job is to
 // declaratively construct a build graph that will be executed by an external
 // runner.
@@ -21,6 +38,22 @@ pub fn build(b: *std.Build) void {
         .target = target,
         .optimize = optimize,
     });
+
+    const options = b.addOptions();
+    options.addOption([]const u8, "build_date", dateStr(b));
+    exe.root_module.addOptions("build_options", options);
+
+    //git log --format="%H" -n 1
+    const git = b.addSystemCommand(&.{"git"});
+    git.addArgs(&.{
+        "log",
+        \\--format=%H
+        ,
+        "-n",
+        "1",
+    });
+    const git_latest_commit_hash = git.captureStdOut();
+    exe.root_module.addAnonymousImport("git_latest_commit_hash", .{ .root_source_file = git_latest_commit_hash });
 
     const clap = b.dependency("clap", .{});
     exe.root_module.addImport("clap", clap.module("clap"));
