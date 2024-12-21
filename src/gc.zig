@@ -9,7 +9,7 @@ const Stack = std.ArrayList(*values.Value);
 var stack: Stack = undefined;
 pub var backing_allocator: std.mem.Allocator = undefined;
 var n_allocs: usize = 0;
-var allocs_until_collect: usize = 0;
+var allocs_until_collect: usize = 800;
 var pipeline_state: *PipelineState = undefined;
 
 pub fn init(ally: std.mem.Allocator, state: *PipelineState) !void {
