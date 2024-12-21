@@ -2,6 +2,7 @@ const std = @import("std");
 const gc = @import("gc.zig");
 const symtable = @import("symtable.zig");
 const interpreter = @import("interpreter.zig");
+const tokens = @import("tokens.zig");
 
 const InterpreterError = interpreter.InterpreterError;
 
@@ -32,6 +33,7 @@ pub const Value = struct {
         record: Record,
     },
     marked: bool = false,
+    origin: *const tokens.Token,
 
     pub fn mark(self: *Value) void {
         if (self.marked) {
@@ -172,7 +174,7 @@ pub const Value = struct {
                 .string, .float, .boolean, .list, .record => return InterpreterError.TypeMismatch,
             },
             .float => |lhs| {
-                std.debug.print("this was float: {} {any}", .{ lhs, other });
+                std.debug.print("this ({*}) was float: {} {any}", .{ self, lhs, other });
 
                 unreachable;
             },
@@ -297,7 +299,7 @@ pub const Value = struct {
             try result.appendSlice(variable_string);
             idx = rbrace + 1;
         }
-        return try gc.allocedString(try result.toOwnedSlice());
+        return try gc.allocedString(try result.toOwnedSlice(), self.origin);
     }
 };
 

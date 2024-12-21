@@ -40,6 +40,10 @@ pub fn deinit() void {
     }
 }
 
+pub fn stackDepth() usize {
+    return stack.items.len;
+}
+
 fn topFrame() *Frame {
     return &stack.items[stack.items.len - 1];
 }
@@ -81,6 +85,26 @@ pub fn put(key: []const u8, value: *Value) !void {
 
 pub fn appendRoot(value: *Value) !void {
     try topFrame().root_values.append(value);
+}
+
+pub fn appendToFrameRoot(root_idx: usize, value: *Value) !void {
+    std.debug.assert(stack.items.len > root_idx);
+    try stack.items[root_idx].root_values.append(value);
+}
+
+pub fn dump() void {
+    std.debug.print("+--------------+\n|   var dump   |\n+--------------+\n", .{});
+    for (stack.items, 0..) |frame, idx| {
+        std.debug.print("| frame {}:\n", .{idx});
+        for (frame.root_values.items) |v| {
+            std.debug.print("root value {s} ({*})\n", .{ v, v });
+        }
+        var it = frame.symtable.iterator();
+        while (it.next()) |entry| {
+            std.debug.print("variable: {s}, is: {s} ({*})\n", .{ entry.key_ptr.*, entry.value_ptr.*, entry.value_ptr.* });
+        }
+    }
+    std.debug.print("+--------------+\n| end var dump |\n+--------------+\n", .{});
 }
 
 pub fn mark() void {

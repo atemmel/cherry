@@ -31,7 +31,7 @@ pub const BuiltinError = error{
     AssertionFailed,
 } || std.mem.Allocator.Error || std.fs.File.WriteError || InterpreterError || Utf8Error;
 
-pub const BuiltinFn = fn (ctx: *State, args: []const *Value) BuiltinError!Result;
+pub const BuiltinFn = fn (ctx: *State, args: []const *Value, call: ast.Call) BuiltinError!Result;
 
 pub const BuiltinInfo = struct {
     func: *const BuiltinFn,
@@ -93,6 +93,9 @@ const builtins_table = std.StaticStringMap(BuiltinInfo).initComptime(
         .{ "!=", unchecked(notEqual) },
         // types
         .{ "int", unchecked(int) },
+        // dev
+        .{ "vardump", unchecked(vardump) },
+        .{ "gcdump", unchecked(gcdump) },
     },
 );
 
@@ -116,7 +119,7 @@ const say_info: BuiltinInfo = .{
     },
 };
 
-fn say(_: *State, args: []const *Value) !Result {
+fn say(_: *State, args: []const *Value, _: ast.Call) !Result {
     const stdout = std.io.getStdOut().writer();
 
     var trailing_newline = false;
@@ -156,7 +159,7 @@ const assert_info: BuiltinInfo = .{
     },
 };
 
-fn assert(_: *State, args: []const *Value) !Result {
+fn assert(_: *State, args: []const *Value, _: ast.Call) !Result {
     const stderr = std.io.getStdErr().writer();
     var all_passed = true;
     for (args, 0..) |arg, idx| {
@@ -198,7 +201,7 @@ const alias_info: BuiltinInfo = .{
     },
 };
 
-fn alias(state: *State, args: []const *Value) !Result {
+fn alias(state: *State, args: []const *Value, _: ast.Call) !Result {
     try validateArgsCount(state, &.{2}, args.len);
 
     const alias_from = switch (args[0].as) {
@@ -232,7 +235,7 @@ const cd_info: BuiltinInfo = .{
     },
 };
 
-fn cd(state: *State, args: []const *Value) !Result {
+fn cd(state: *State, args: []const *Value, _: ast.Call) !Result {
     try validateArgsCount(state, &.{1}, args.len);
     const path = switch (args[0].as) {
         .string => |str| str,
@@ -256,18 +259,18 @@ fn cd(state: *State, args: []const *Value) !Result {
     return nothing;
 }
 
-fn add(state: *State, args: []const *Value) !Result {
+fn add(state: *State, args: []const *Value, call: ast.Call) !Result {
     if (args.len < 1) {
         unreachable;
     }
     return something(switch (args[0].as) {
-        .integer => try addIntegers(state, args),
-        .string => try concatenateStrings(state, args),
+        .integer => try addIntegers(state, args, call),
+        .string => try concatenateStrings(state, args, call),
         else => unreachable,
     });
 }
 
-fn addIntegers(_: *State, args: []const *Value) !*Value {
+fn addIntegers(_: *State, args: []const *Value, call: ast.Call) !*Value {
     var sum_value: i64 = 0;
     for (args) |arg| {
         switch (arg.as) {
@@ -277,10 +280,10 @@ fn addIntegers(_: *State, args: []const *Value) !*Value {
             else => unreachable,
         }
     }
-    return try gc.integer(sum_value);
+    return try gc.integer(sum_value, call.token);
 }
 
-fn concatenateStrings(_: *State, args: []const *Value) !*Value {
+fn concatenateStrings(_: *State, args: []const *Value, call: ast.Call) !*Value {
     var result = std.ArrayList(u8).init(gc.backing_allocator);
     for (args) |arg| {
         switch (arg.as) {
@@ -290,10 +293,10 @@ fn concatenateStrings(_: *State, args: []const *Value) !*Value {
             else => unreachable,
         }
     }
-    return try gc.allocedString(try result.toOwnedSlice());
+    return try gc.allocedString(try result.toOwnedSlice(), call.token);
 }
 
-fn sub(state: *State, args: []const *Value) !Result {
+fn sub(state: *State, args: []const *Value, call: ast.Call) !Result {
     var diff_value: i64 = switch (args[0].as) {
         .integer => |i| i,
         .string => return typeMismatchError(state, "int", "string", 0),
@@ -314,10 +317,10 @@ fn sub(state: *State, args: []const *Value) !Result {
             .record => return typeMismatchError(state, "int", "record", 1),
         }
     }
-    return something(try gc.integer(diff_value));
+    return something(try gc.integer(diff_value, call.token));
 }
 
-fn mul(_: *State, args: []const *Value) !Result {
+fn mul(_: *State, args: []const *Value, call: ast.Call) !Result {
     if (args.len < 2) unreachable;
     var product_value: i64 = switch (args[0].as) {
         .integer => |i| i,
@@ -331,10 +334,10 @@ fn mul(_: *State, args: []const *Value) !Result {
             else => unreachable, //TODO: hmmm...
         }
     }
-    return something(try gc.integer(product_value));
+    return something(try gc.integer(product_value, call.token));
 }
 
-fn div(_: *State, args: []const *Value) !Result {
+fn div(_: *State, args: []const *Value, call: ast.Call) !Result {
     if (args.len < 2) unreachable;
     var quotient_value: i64 = switch (args[0].as) {
         .integer => |i| i,
@@ -349,12 +352,12 @@ fn div(_: *State, args: []const *Value) !Result {
             else => unreachable, //TODO: hmmm...
         }
     }
-    return something(try gc.integer(quotient_value));
+    return something(try gc.integer(quotient_value, call.token));
 }
 
-fn equals(state: *State, args: []const *Value) !Result {
+fn equals(state: *State, args: []const *Value, call: ast.Call) !Result {
     if (args.len == 0) {
-        return something(try gc.boolean(true));
+        return something(try gc.boolean(true, call.token));
     }
 
     const first = args[0];
@@ -364,13 +367,13 @@ fn equals(state: *State, args: []const *Value) !Result {
         switch (order) {
             .equal => {},
             .failure => |fail| return typeMismatchError(state, fail.wants, fail.got, idx),
-            else => return something(try gc.boolean(false)),
+            else => return something(try gc.boolean(false, call.token)),
         }
     }
-    return something(try gc.boolean(true));
+    return something(try gc.boolean(true, call.token));
 }
 
-fn less(state: *State, args: []const *Value) !Result {
+fn less(state: *State, args: []const *Value, call: ast.Call) !Result {
     if (args.len < 2) {
         unreachable;
     }
@@ -382,13 +385,13 @@ fn less(state: *State, args: []const *Value) !Result {
         switch (order) {
             .less => {},
             .failure => |fail| return typeMismatchError(state, fail.wants, fail.got, idx),
-            else => return something(try gc.boolean(false)),
+            else => return something(try gc.boolean(false, call.token)),
         }
     }
-    return something(try gc.boolean(true));
+    return something(try gc.boolean(true, call.token));
 }
 
-fn greater(state: *State, args: []const *Value) !Result {
+fn greater(state: *State, args: []const *Value, call: ast.Call) !Result {
     if (args.len < 2) {
         unreachable;
     }
@@ -400,15 +403,15 @@ fn greater(state: *State, args: []const *Value) !Result {
         switch (order) {
             .greater => {},
             .failure => |fail| return typeMismatchError(state, fail.wants, fail.got, idx),
-            else => return something(try gc.boolean(false)),
+            else => return something(try gc.boolean(false, call.token)),
         }
     }
-    return something(try gc.boolean(true));
+    return something(try gc.boolean(true, call.token));
 }
 
-fn notEqual(state: *State, args: []const *Value) !Result {
+fn notEqual(state: *State, args: []const *Value, call: ast.Call) !Result {
     if (args.len < 2) {
-        return something(try gc.boolean(true));
+        return something(try gc.boolean(true, call.token));
     }
 
     const first = args[0];
@@ -416,15 +419,15 @@ fn notEqual(state: *State, args: []const *Value) !Result {
         //TODO: handle type error
         const order = first.compare(arg) catch unreachable;
         switch (order) {
-            .equal => return something(try gc.boolean(false)),
+            .equal => return something(try gc.boolean(false, call.token)),
             .failure => |fail| return typeMismatchError(state, fail.wants, fail.got, idx),
             else => {},
         }
     }
-    return something(try gc.boolean(true));
+    return something(try gc.boolean(true, call.token));
 }
 
-fn andFn(state: *State, args: []const *Value) !Result {
+fn andFn(state: *State, args: []const *Value, call: ast.Call) !Result {
     for (args, 0..) |arg, idx| {
         //TODO: handle type error
         const boolean = switch (arg.as) {
@@ -436,13 +439,13 @@ fn andFn(state: *State, args: []const *Value) !Result {
             .integer => return typeMismatchError(state, "bool", "int", idx),
         };
         if (!boolean) {
-            return something(try gc.boolean(false));
+            return something(try gc.boolean(false, call.token));
         }
     }
-    return something(try gc.boolean(true));
+    return something(try gc.boolean(true, call.token));
 }
 
-fn orFn(state: *State, args: []const *Value) !Result {
+fn orFn(state: *State, args: []const *Value, call: ast.Call) !Result {
     for (args, 0..) |arg, idx| {
         //TODO: handle type error
         const boolean = switch (arg.as) {
@@ -454,13 +457,13 @@ fn orFn(state: *State, args: []const *Value) !Result {
             .integer => return typeMismatchError(state, "bool", "int", idx),
         };
         if (boolean) {
-            return something(try gc.boolean(true));
+            return something(try gc.boolean(true, call.token));
         }
     }
-    return something(try gc.boolean(false));
+    return something(try gc.boolean(false, call.token));
 }
 
-fn len(_: *State, args: []const *Value) !Result {
+fn len(_: *State, args: []const *Value, call: ast.Call) !Result {
     var length: i64 = 0;
     for (args) |arg| {
         switch (arg.as) {
@@ -481,7 +484,7 @@ fn len(_: *State, args: []const *Value) !Result {
             .record => |r| length += @intCast(r.count()),
         }
     }
-    return something(try gc.integer(length));
+    return something(try gc.integer(length, call.token));
 }
 
 const append_info_list_of: TypeInfo = .{
@@ -513,7 +516,7 @@ const wip_append_info: BuiltinInfo = .{
     },
 };
 
-fn append(_: *State, args: []const *Value) !Result {
+fn append(_: *State, args: []const *Value, _: ast.Call) !Result {
     if (args.len == 0) {
         unreachable;
     }
@@ -530,7 +533,7 @@ fn append(_: *State, args: []const *Value) !Result {
     return something(args[0]);
 }
 
-fn get(state: *State, args: []const *Value) !Result {
+fn get(state: *State, args: []const *Value, call: ast.Call) !Result {
     try validateArgsCount(state, &.{ 2, 3 }, args.len);
 
     const index = switch (args[1].as) {
@@ -548,7 +551,7 @@ fn get(state: *State, args: []const *Value) !Result {
             var i: i64 = 0;
             while (it.nextCodepointSlice()) |str| {
                 if (i == index) {
-                    return something(try gc.string(str));
+                    return something(try gc.string(str, call.token));
                 }
                 i += 1;
             }
@@ -558,7 +561,7 @@ fn get(state: *State, args: []const *Value) !Result {
     };
 }
 
-fn put(state: *State, args: []const *Value) !Result {
+fn put(state: *State, args: []const *Value, _: ast.Call) !Result {
     try validateArgsCount(state, &.{3}, args.len);
 
     const index = switch (args[1].as) {
@@ -582,11 +585,11 @@ fn put(state: *State, args: []const *Value) !Result {
     return something(args[0]);
 }
 
-fn slice(state: *State, args: []const *Value) !Result {
+fn slice(state: *State, args: []const *Value, call: ast.Call) !Result {
     try validateArgsCount(state, &.{ 1, 2, 3 }, args.len);
     return switch (args[0].as) {
-        .list => |list| sliceList(state, args, list),
-        .string => |string| sliceString(state, args, string),
+        .list => |list| sliceList(state, args, list, call),
+        .string => |string| sliceString(state, args, string, call),
         .boolean => return typeMismatchError(state, "list or string", "bool", 0),
         .float => return typeMismatchError(state, "list or string", "float", 0),
         .integer => return typeMismatchError(state, "list or string", "int", 0),
@@ -594,7 +597,7 @@ fn slice(state: *State, args: []const *Value) !Result {
     };
 }
 
-fn sliceList(state: *State, args: []const *Value, list: values.List) !Result {
+fn sliceList(state: *State, args: []const *Value, list: values.List, call: ast.Call) !Result {
     var from_idx: usize = 0;
     var to_idx: usize = @intCast(list.items.len);
 
@@ -617,10 +620,10 @@ fn sliceList(state: *State, args: []const *Value, list: values.List) !Result {
         try new_list.append(try gc.cloneOrReference(val));
     }
 
-    return something(try gc.list(new_list));
+    return something(try gc.list(new_list, call.token));
 }
 
-fn sliceString(state: *State, args: []const *Value, string: []const u8) !Result {
+fn sliceString(state: *State, args: []const *Value, string: []const u8, call: ast.Call) !Result {
     var from_idx: usize = 0;
     var to_idx: usize = @intCast(string.len);
 
@@ -638,7 +641,7 @@ fn sliceString(state: *State, args: []const *Value, string: []const u8) !Result 
         unreachable; //TODO: error message
     }
 
-    const new_string = try gc.string(string[from_idx..to_idx]);
+    const new_string = try gc.string(string[from_idx..to_idx], call.token);
     return something(new_string);
 }
 
@@ -654,7 +657,7 @@ fn getInt(state: *State, args: []const *Value, idx: usize) !i64 {
     };
 }
 
-fn envExport(state: *State, args: []const *Value) !Result {
+fn envExport(state: *State, args: []const *Value, _: ast.Call) !Result {
     try validateArgsCount(state, &.{2}, args.len);
 
     const name = switch (args[0].as) {
@@ -682,7 +685,7 @@ fn envExport(state: *State, args: []const *Value) !Result {
     return nothing;
 }
 
-fn int(state: *State, args: []const *Value) !Result {
+fn int(state: *State, args: []const *Value, call: ast.Call) !Result {
     try validateArgsCount(state, &.{1}, args.len);
 
     const arg = args[0];
@@ -700,7 +703,17 @@ fn int(state: *State, args: []const *Value) !Result {
         };
     };
 
-    return something(try gc.integer(int_result));
+    return something(try gc.integer(int_result, call.token));
+}
+
+fn vardump(_: *State, _: []const *Value, _: ast.Call) !Result {
+    symtable.dump();
+    return nothing;
+}
+
+fn gcdump(_: *State, _: []const *Value, _: ast.Call) !Result {
+    gc.dump();
+    return nothing;
 }
 
 fn validateArgsCount(

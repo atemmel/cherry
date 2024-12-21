@@ -37,6 +37,7 @@ const Context = struct {
     stmntArena: std.heap.ArenaAllocator,
     stmntAlly: std.mem.Allocator,
     root: ast.Root,
+    calling_ctx_stack_depth: usize = 0,
 };
 
 const Returns = union(enum) {
@@ -69,7 +70,12 @@ fn interpretRoot(ctx: *Context) EvalError!void {
 }
 
 fn interpretStatement(ctx: *Context, stmnt: ast.Statement) EvalError!Returns {
-    defer _ = ctx.stmntArena.reset(.retain_capacity);
+    defer {
+        _ = ctx.stmntArena.reset(.retain_capacity);
+        if (gc.shouldCollect()) {
+            gc.collect();
+        }
+    }
     switch (stmnt) {
         .call => |call| _ = try evalCall(ctx, call),
         .var_decl => |var_decl| try interpretVarDecl(ctx, var_decl),
@@ -77,9 +83,7 @@ fn interpretStatement(ctx: *Context, stmnt: ast.Statement) EvalError!Returns {
         .branches => |br| return try interpretBranches(ctx, br),
         .scope => |scope| return try interpretScope(ctx, scope),
         .func => unreachable, // this should never happen
-        .ret => |ret| {
-            return try evalReturn(ctx, ret);
-        },
+        .ret => |ret| return try evalReturn(ctx, ret),
         .loop => |loop| return try interpretLoop(ctx, loop),
         .brk => return .did_break,
         .cont => return .did_continue,
@@ -143,6 +147,7 @@ fn interpretAssign(ctx: *Context, assign: ast.Assignment) !void {
 fn interpretBranches(ctx: *Context, branches: ast.Branches) !Returns {
     try symtable.pushFrame();
     defer symtable.popFrame();
+    // frames are collected in interpretStatmenet
     for (branches) |branch| {
         if (branch.condition) |expr| {
             const value = try evalExpression(ctx, expr);
@@ -171,6 +176,7 @@ fn interpretBranches(ctx: *Context, branches: ast.Branches) !Returns {
 fn interpretScope(ctx: *Context, scope: ast.Scope) !Returns {
     try symtable.pushFrame();
     defer symtable.popFrame();
+    // frames are collected in interpretStatmenet
     for (scope) |stmnt| {
         const returns = try interpretStatement(ctx, stmnt);
         switch (returns) {
@@ -188,6 +194,7 @@ fn interpretScope(ctx: *Context, scope: ast.Scope) !Returns {
 fn interpretLoop(ctx: *Context, loop: ast.Loop) !Returns {
     try symtable.pushFrame();
     defer symtable.popFrame();
+    // frames are collected in interpretStatmenet
 
     if (loop.init_op) |init_op| {
         switch (init_op) {
@@ -236,24 +243,35 @@ fn interpretLoop(ctx: *Context, loop: ast.Loop) !Returns {
 
 fn evalReturn(ctx: *Context, ret: ast.Return) !Returns {
     if (ret.expression) |expr| {
-        return .{
-            .did_return = try evalExpression(ctx, expr),
-        };
+        const eval_expr: Result = try evalExpression(ctx, expr);
+        switch (eval_expr) {
+            .nothing => {},
+            .value => |value| {
+                // share frame with parent
+                try symtable.appendToFrameRoot(ctx.calling_ctx_stack_depth - 1, value);
+            },
+        }
+        return .{ .did_return = eval_expr };
     }
     return .{ .did_return = nothing };
 }
 
 fn evalCall(ctx: *Context, call: ast.Call) !Result {
+    const prev_calling_ctx_stack_depth = ctx.calling_ctx_stack_depth;
     const name = call.token.value;
+
     if (builtins.lookup(name)) |builtin_info| {
         return try evalBuiltin(ctx, call, builtin_info.func);
     } else if (ctx.root.functions.getPtr(name)) |func| {
+        ctx.calling_ctx_stack_depth = symtable.stackDepth();
+        defer ctx.calling_ctx_stack_depth = prev_calling_ctx_stack_depth;
         return try evalFunctionCall(ctx, func.*, call);
     } else {
         return try evalProc(ctx, call);
     }
 }
 
+//TODO: this
 fn isLocalScript(ctx: *Context, call: ast.Call) !bool {
     // local must be prefixed with './'
     if (std.mem.startsWith(u8, call.token.value, "./")) {
@@ -268,7 +286,7 @@ fn isLocalScript(ctx: *Context, call: ast.Call) !bool {
 fn evalBuiltin(ctx: *Context, call: ast.Call, builtin: *const builtins.BuiltinFn) !Result {
     var args = try evalArgs(ctx, call.arguments);
     defer args.deinit();
-    return builtin(ctx.state, args.items) catch |e| {
+    return builtin(ctx.state, args.items, call) catch |e| {
         switch (e) {
             error.TypeMismatch, error.ArgsCountMismatch => {
                 if (ctx.state.error_report.?.offending_expr_idx) |idx| {
@@ -397,7 +415,7 @@ fn evalProc(ctx: *Context, call: ast.Call) !Result {
     }
 
     if (capturing) {
-        return something(try gc.allocedString(capture.?));
+        return something(try gc.allocedString(capture.?, call.token));
     }
     return nothing;
 }
@@ -455,7 +473,7 @@ fn evalExpression(ctx: *Context, expr: ast.Expression) EvalError!Result {
 }
 
 fn evalBareword(bw: ast.Bareword) !*Value {
-    const value = try gc.string(bw.token.value);
+    const value = try gc.string(bw.token.value, bw.token);
     try symtable.appendRoot(value);
     return value;
 }
@@ -471,12 +489,13 @@ fn evalStringLiteral(ctx: *Context, str: ast.StringLiteral) !*Value {
             .as = .{
                 .string = escaped,
             },
+            .origin = str.token,
         };
         const interpolated_value = try value.interpolate(ctx.ally);
         try symtable.appendRoot(interpolated_value);
         return interpolated_value;
     }
-    const value = try gc.string(escaped);
+    const value = try gc.string(escaped, str.token);
     try symtable.appendRoot(value);
     return value;
 }
@@ -484,13 +503,13 @@ fn evalStringLiteral(ctx: *Context, str: ast.StringLiteral) !*Value {
 fn evalIntegerLiteral(int: ast.IntegerLiteral) !*Value {
     //TODO: this should not be done here...
     const i = std.fmt.parseInt(i64, int.token.value, 10) catch unreachable;
-    const value = try gc.integer(i);
+    const value = try gc.integer(i, int.token);
     try symtable.appendRoot(value);
     return value;
 }
 
 fn evalBoolLiteral(bl: ast.BoolLiteral) !*Value {
-    const value = try gc.boolean(bl.token.kind == .True);
+    const value = try gc.boolean(bl.token.kind == .True, bl.token);
     try symtable.appendRoot(value);
     return value;
 }
@@ -512,15 +531,14 @@ fn evalListLiteral(ctx: *Context, list_literal: ast.ListLiteral) !*Value {
             .nothing => unreachable, // Construct needs value
         }
     }
-    const value = try gc.list(list);
+    const value = try gc.list(list, list_literal.token);
     try symtable.appendRoot(value);
     return value;
 }
 
 fn evalRecordLiteral(ctx: *Context, record_literal: ast.RecordLiteral) !*Value {
     _ = ctx; // autofix
-    _ = record_literal; // autofix
-    return gc.emptyRecord();
+    return gc.emptyRecord(record_literal.token);
 }
 
 fn errNeverDeclared(ctx: *Context, token: *const tokens.Token) InterpreterError {

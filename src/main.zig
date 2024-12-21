@@ -41,6 +41,7 @@ pub fn main() !u8 {
     var verboseParser = false;
     var verboseAnalysis = false;
     var verboseInterpretation = false;
+    var verboseGc = false;
     var useSemanticAnalysis = false;
 
     var file: ?[]const u8 = null;
@@ -83,6 +84,7 @@ pub fn main() !u8 {
         verboseParser = true;
         verboseAnalysis = true;
         verboseInterpretation = true;
+        verboseGc = true;
         std.debug.print("args: {s}\n", .{args});
     }
 
@@ -94,12 +96,6 @@ pub fn main() !u8 {
         file = res.positionals[0];
     }
 
-    try gc.init(ally);
-    defer gc.deinit();
-
-    symtable.init(ally);
-    defer symtable.deinit();
-
     var state = pipeline.State{
         .arena_source = &arena,
         .arena = arena_allocator,
@@ -109,11 +105,18 @@ pub fn main() !u8 {
         .verboseParser = verboseParser,
         .verboseAnalysis = verboseAnalysis,
         .verboseInterpretation = verboseInterpretation,
+        .verboseGc = verboseGc,
         .useSemanticAnalysis = useSemanticAnalysis,
         .color = std.io.tty.detectConfig(std.io.getStdOut()),
         .filename = file orelse "repl",
         .env_map = try std.process.getEnvMap(ally),
     };
+
+    try gc.init(ally, &state);
+    defer gc.deinit();
+
+    symtable.init(ally);
+    defer symtable.deinit();
 
     defer state.env_map.deinit();
 

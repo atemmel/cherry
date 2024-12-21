@@ -33,6 +33,7 @@ pub const State = struct {
     verboseParser: bool,
     verboseAnalysis: bool,
     verboseInterpretation: bool,
+    verboseGc: bool,
     useSemanticAnalysis: bool,
     filename: []const u8,
     color: std.io.tty.Config = std.io.tty.Config.no_color,
@@ -94,6 +95,54 @@ pub const State = struct {
             .msg = report.msg,
             .trailing_error = report.trailing,
         };
+    }
+
+    fn errorInfoPtr(state: *const State, token: *const Token) ErrorInfo {
+        const src_ptr_begin = state.source.ptr;
+        const src_ptr_offset = token.value.ptr;
+        const src_offset = @intFromPtr(src_ptr_offset) - @intFromPtr(src_ptr_begin);
+        const left_slice = state.source[0..src_offset];
+        const right_slice = state.source[src_offset..];
+
+        var n_newlines_until_left_newline: usize = 0;
+        var last_left_newline: usize = 0;
+        var first_right_newline: usize = 0;
+
+        for (left_slice, 0..) |c, i| {
+            if (c != '\n') continue;
+            n_newlines_until_left_newline += 1;
+            last_left_newline = i;
+        }
+
+        if (last_left_newline > 0) {
+            last_left_newline += 1;
+        }
+
+        for (right_slice, 0..) |c, i| {
+            if (c != '\n') continue;
+            first_right_newline = src_offset + i;
+            break;
+        }
+
+        if (first_right_newline == 0) {
+            first_right_newline = state.source.len;
+        }
+
+        return .{
+            .col = src_offset - last_left_newline,
+            .row = n_newlines_until_left_newline + 1,
+            .row_str = state.source[last_left_newline..first_right_newline],
+            .row_error_token_idx = src_offset - last_left_newline,
+            .msg = "",
+            .trailing_error = false,
+        };
+    }
+
+    pub fn dumpSourceAtToken(state: *const State, token: *const Token) void {
+        const source_info = errorInfoPtr(state, token);
+        const writer = std.io.getStdErr().writer();
+        writer.print("{s}\n", .{source_info.row_str}) catch {};
+        writeErrorSource(source_info, writer) catch {};
     }
 };
 
