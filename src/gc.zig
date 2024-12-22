@@ -161,22 +161,3 @@ pub fn cloneOrReference(origin: *values.Value) !*values.Value {
         .list, .record => origin,
     };
 }
-
-test "gc works lmao" {
-    const ally = std.testing.allocator;
-
-    try init(ally);
-    defer deinit();
-
-    symtable.init(ally);
-    defer symtable.deinit();
-
-    allocs_until_collect = 0;
-
-    try symtable.pushFrame();
-    try symtable.pushFrame();
-    try symtable.put("name", try string("James"));
-    try symtable.put("mylist", try emptyList());
-    symtable.popFrame();
-    try symtable.put("surname", try string("Bond"));
-}

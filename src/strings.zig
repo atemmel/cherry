@@ -149,6 +149,7 @@ test "dealias tilde" {
         .useSemanticAnalysis = false,
         .filename = "",
         .env_map = env_map,
+        .verboseGc = false,
     };
 
     const dealiased = try dealias(&state, arena.allocator(), "ls ~/config");

@@ -3,6 +3,7 @@ const gc = @import("gc.zig");
 const symtable = @import("symtable.zig");
 const interpreter = @import("interpreter.zig");
 const tokens = @import("tokens.zig");
+const PipelineState = @import("pipeline.zig").State;
 
 const InterpreterError = interpreter.InterpreterError;
 
@@ -323,18 +324,36 @@ pub fn something(value: *Value) Result {
     return Result{ .value = value };
 }
 
+fn testState() PipelineState {
+    return PipelineState{
+        .ally = std.testing.allocator,
+        .arena = std.testing.allocator,
+        .source = "",
+        .filename = "",
+        .arena_source = undefined,
+        .verboseLexer = false,
+        .verboseParser = false,
+        .verboseAnalysis = false,
+        .verboseInterpretation = false,
+        .verboseGc = false,
+        .useSemanticAnalysis = false,
+        .env_map = std.process.EnvMap.init(std.testing.allocator),
+    };
+}
+
 test "interpolate single value" {
     const ally = std.testing.allocator;
 
-    try gc.init(ally);
+    var state = testState();
+    try gc.init(ally, &state);
     symtable.init(ally);
     defer gc.deinit();
     defer symtable.deinit();
     try symtable.pushFrame();
 
-    try symtable.insert("y", try gc.string("x"));
+    try symtable.insert("y", try gc.string("x", undefined));
 
-    const str = try gc.string("x {y}");
+    const str = try gc.string("x {y}", undefined);
 
     const result = try str.interpolate(ally);
     try std.testing.expectEqualStrings("x x", result.as.string);
@@ -343,15 +362,16 @@ test "interpolate single value" {
 test "interpolate multiple values" {
     const ally = std.testing.allocator;
 
-    try gc.init(ally);
+    var state = testState();
+    try gc.init(ally, &state);
     symtable.init(ally);
     defer gc.deinit();
     defer symtable.deinit();
     try symtable.pushFrame();
 
-    try symtable.insert("y", try gc.string("x"));
+    try symtable.insert("y", try gc.string("x", undefined));
 
-    const str = try gc.string("x {y} {y}");
+    const str = try gc.string("x {y} {y}", undefined);
 
     const result = try str.interpolate(ally);
     try std.testing.expectEqualStrings("x x x", result.as.string);
@@ -360,10 +380,11 @@ test "interpolate multiple values" {
 test "interpolate no values" {
     const ally = std.testing.allocator;
 
-    try gc.init(ally);
+    var state = testState();
+    try gc.init(ally, &state);
     defer gc.deinit();
 
-    const str = try gc.string("x");
+    const str = try gc.string("x", undefined);
 
     const result = try str.interpolate(ally);
     try std.testing.expectEqualStrings("x", result.as.string);
@@ -372,10 +393,11 @@ test "interpolate no values" {
 test "escape interpolation" {
     const ally = std.testing.allocator;
 
-    try gc.init(ally);
+    var state = testState();
+    try gc.init(ally, &state);
     defer gc.deinit();
 
-    const str = try gc.string("{{x}}");
+    const str = try gc.string("{{x}}", undefined);
 
     const result = try str.interpolate(ally);
     try std.testing.expectEqualStrings("{x}", result.as.string);

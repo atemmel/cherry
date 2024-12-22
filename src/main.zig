@@ -20,7 +20,7 @@ fn readfile(ally: std.mem.Allocator, name: []const u8) ![]const u8 {
 }
 
 pub fn main() !u8 {
-    var base_allocator = switch (builtin.mode) {
+    var base_allocator = comptime switch (builtin.mode) {
         .Debug => std.heap.GeneralPurposeAllocator(.{}){},
         else => .{},
     };
@@ -70,13 +70,25 @@ pub fn main() !u8 {
     // Initialize our diagnostics, which can be used for reporting useful errors.
     // This is optional. You can also pass `.{}` to `clap.parse` if you don't
     // care about the extra information `Diagnostics` provides.
-    var diag = clap.Diagnostic{};
+
+    var maybe_cl_diagnostics = comptime switch (builtin.mode) {
+        .Debug => clap.Diagnostic{},
+        else => void,
+    };
+
+    var diagnostic = comptime switch (builtin.mode) {
+        .Debug => &maybe_cl_diagnostics,
+        else => null,
+    };
+
     var res = clap.parse(clap.Help, &params, parsers, .{
-        .diagnostic = &diag,
+        .diagnostic = diagnostic,
         .allocator = arena_allocator,
     }) catch |err| {
         // Report useful error and exit.
-        diag.report(std.io.getStdErr().writer(), err) catch {};
+        if (builtin.mode == .Debug) {
+            diagnostic.report(std.io.getStdErr().writer(), err) catch {};
+        }
         return 0;
     };
     defer res.deinit();
