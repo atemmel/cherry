@@ -324,9 +324,9 @@ fn eval(state: *State) !void {
 
     const cmd = try aliasLookup(state, state.line());
 
-    state.pipeline_state.source = cmd;
-    pipeline.run(state.pipeline_state) catch |e| {
-        const tokens = state.pipeline_state.tokens;
+    pipeline.run(state.pipeline_state, "repl", cmd) catch |e| {
+        const maybe_module = state.pipeline_state.modules.get("repl");
+        const tokens = if (maybe_module != null) maybe_module.?.tokens else &.{};
         if (state.pipeline_state.verboseInterpretation) {
             std.debug.print("Error has occured while evaluating: {any}\nTokens: ", .{e});
             for (tokens) |tok| {
@@ -775,8 +775,7 @@ fn readRc(state: *State) !void {
     }
     state.flush();
 
-    state.pipeline_state.source = rc_src;
-    pipeline.run(state.pipeline_state) catch |e| {
+    pipeline.run(state.pipeline_state, "cherryrc", rc_src) catch |e| {
         try state.writer().print("Unexpected error when reading .cherryrc at {s}: {}\r\n", .{ state.rc_path, e });
     };
     state.flush();

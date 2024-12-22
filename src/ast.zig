@@ -173,10 +173,6 @@ pub const Module = struct {
     functions: std.StringHashMap(Func),
 };
 
-pub const Root = struct {
-    modules: std.StringHashMap(Module),
-};
-
 const Context = struct {
     tokens: []const Token,
     idx: usize = 0,
@@ -244,24 +240,16 @@ const Context = struct {
     }
 };
 
-pub fn parse(state: *PipelineState) !Root {
+pub fn parse(state: *PipelineState, tokens: []Token, name: []const u8) !Module {
     var ctx = Context{
-        .tokens = state.tokens,
+        .tokens = tokens,
         .ally = state.arena,
         .state = state,
     };
-
-    var root = Root{
-        .modules = std.StringHashMap(Module).init(state.arena),
-    };
-
-    const main = try parseModule(&ctx, "main");
-    try root.modules.put("main", main);
-
-    return root;
+    return parseModule(&ctx, name);
 }
 
-pub fn parseModule(ctx: *Context, name: []const u8) !Module {
+fn parseModule(ctx: *Context, name: []const u8) !Module {
     var statements = std.ArrayList(Statement).init(ctx.ally);
     defer statements.deinit();
     var functions = std.StringHashMap(Func).init(ctx.ally);

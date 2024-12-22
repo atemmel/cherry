@@ -141,15 +141,14 @@ test "dealias tilde" {
         .arena = arena.allocator(),
         .arena_source = &arena,
         .ally = std.testing.allocator,
-        .source = "",
         .verboseLexer = false,
         .verboseParser = false,
         .verboseAnalysis = false,
         .verboseInterpretation = false,
         .useSemanticAnalysis = false,
-        .filename = "",
         .env_map = env_map,
         .verboseGc = false,
+        .modules = undefined,
     };
 
     const dealiased = try dealias(&state, arena.allocator(), "ls ~/config");

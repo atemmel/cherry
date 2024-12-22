@@ -143,7 +143,7 @@ pub fn main() !u8 {
         .arena_source = &arena,
         .arena = arena_allocator,
         .ally = ally,
-        .source = "",
+        .modules = std.StringHashMap(pipeline.Module).init(arena_allocator),
         .verboseLexer = verboseLexer,
         .verboseParser = verboseParser,
         .verboseAnalysis = verboseAnalysis,
@@ -151,7 +151,6 @@ pub fn main() !u8 {
         .verboseGc = verboseGc,
         .useSemanticAnalysis = useSemanticAnalysis,
         .color = std.io.tty.detectConfig(std.io.getStdOut()),
-        .filename = file orelse "repl",
         .env_map = try std.process.getEnvMap(ally),
     };
 
@@ -168,9 +167,9 @@ pub fn main() !u8 {
         return 0;
     }
 
-    state.source = try readfile(arena_allocator, file.?);
+    const source = try readfile(arena_allocator, file.?);
 
-    pipeline.run(&state) catch |err| {
+    pipeline.run(&state, file.?, source) catch |err| {
         try pipeline.writeError(&state, err);
         return 1;
     };

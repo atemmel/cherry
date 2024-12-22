@@ -1,5 +1,5 @@
 const std = @import("std");
-const PipelineState = @import("pipeline.zig").State;
+const pipeline = @import("pipeline.zig");
 const ast = @import("ast.zig");
 const symtable = @import("symtable.zig");
 const gc = @import("gc.zig");
@@ -10,6 +10,8 @@ const strings = @import("strings.zig");
 
 const assert = std.debug.assert;
 
+const PipelineState = pipeline.State;
+const Module = pipeline.Module;
 const Value = values.Value;
 const Result = values.Result;
 
@@ -36,9 +38,8 @@ const Context = struct {
     arena: std.mem.Allocator,
     stmntArena: std.heap.ArenaAllocator,
     stmntAlly: std.mem.Allocator,
-    root: ast.Root,
     calling_ctx_stack_depth: usize = 0,
-    current_module: *const ast.Module,
+    root_module: *const pipeline.Module,
 };
 
 const Returns = union(enum) {
@@ -48,17 +49,16 @@ const Returns = union(enum) {
     did_continue: void,
 };
 
-pub fn interpret(state: *PipelineState) EvalError!void {
+pub fn interpret(state: *PipelineState, root_module_name: []const u8) EvalError!void {
     var stmntArena = std.heap.ArenaAllocator.init(state.ally);
     defer stmntArena.deinit();
     var ctx = Context{
         .state = state,
         .ally = state.ally,
         .arena = state.arena,
-        .root = state.root,
         .stmntArena = stmntArena,
         .stmntAlly = stmntArena.allocator(),
-        .current_module = state.root.modules.getPtr("main").?,
+        .root_module = state.modules.getPtr(root_module_name).?,
     };
     try interpretRoot(&ctx);
 }
@@ -67,7 +67,7 @@ fn interpretRoot(ctx: *Context) EvalError!void {
     try symtable.pushFrame();
     defer symtable.popFrame();
 
-    for (ctx.current_module.statements) |stmnt| {
+    for (ctx.root_module.ast.statements) |stmnt| {
         _ = try interpretStatement(ctx, stmnt);
     }
 }
@@ -265,7 +265,7 @@ fn evalCall(ctx: *Context, call: ast.Call) !Result {
 
     if (builtins.lookup(name)) |builtin_info| {
         return try evalBuiltin(ctx, call, builtin_info.func);
-    } else if (ctx.current_module.functions.getPtr(name)) |func| {
+    } else if (ctx.root_module.ast.functions.getPtr(name)) |func| {
         ctx.calling_ctx_stack_depth = symtable.stackDepth();
         defer ctx.calling_ctx_stack_depth = prev_calling_ctx_stack_depth;
         return try evalFunctionCall(ctx, func.*, call);

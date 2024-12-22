@@ -19,20 +19,26 @@ pub const ErrorReport = struct {
     offending_expr_idx: ?usize = null,
 };
 
+pub const Module = struct {
+    arena: std.mem.Allocator,
+    filename: []const u8,
+    source: []const u8,
+    tokens: []Token,
+    ast: ast.Module,
+};
+
 pub const State = struct {
     arena_source: *std.heap.ArenaAllocator,
     arena: std.mem.Allocator,
     ally: std.mem.Allocator,
-    source: []const u8,
-    tokens: []Token = &.{},
-    root: ast.Root = undefined,
+    modules: std.StringHashMap(Module),
+    current_module_in_process: []const u8 = "",
     verboseLexer: bool,
     verboseParser: bool,
     verboseAnalysis: bool,
     verboseInterpretation: bool,
     verboseGc: bool,
     useSemanticAnalysis: bool,
-    filename: []const u8,
     color: std.io.tty.Config = std.io.tty.Config.no_color,
     error_report: ?ErrorReport = null,
     analysis: semantics.Analysis = .{},
@@ -52,13 +58,14 @@ pub const State = struct {
     };
 
     pub fn errorInfo(state: *const State) ErrorInfo {
+        const module = state.modules.get(state.current_module_in_process) orelse unreachable;
         const report = state.error_report orelse @panic("Developer error: No error stored");
         const bad_token = report.offending_token;
-        const src_ptr_begin = state.source.ptr;
+        const src_ptr_begin = module.source.ptr;
         const src_ptr_offset = bad_token.value.ptr;
         const src_offset = @intFromPtr(src_ptr_offset) - @intFromPtr(src_ptr_begin);
-        const left_slice = state.source[0..src_offset];
-        const right_slice = state.source[src_offset..];
+        const left_slice = module.source[0..src_offset];
+        const right_slice = module.source[src_offset..];
 
         var n_newlines_until_left_newline: usize = 0;
         var last_left_newline: usize = 0;
@@ -81,13 +88,14 @@ pub const State = struct {
         }
 
         if (first_right_newline == 0) {
-            first_right_newline = state.source.len;
+            first_right_newline = module.source.len;
         }
 
+        //TODO: embed module origin in error
         return .{
             .col = src_offset - last_left_newline,
             .row = n_newlines_until_left_newline + 1,
-            .row_str = state.source[last_left_newline..first_right_newline],
+            .row_str = module.source[last_left_newline..first_right_newline],
             .row_error_token_idx = src_offset - last_left_newline,
             .msg = report.msg,
             .trailing_error = report.trailing,
@@ -95,11 +103,12 @@ pub const State = struct {
     }
 
     fn errorInfoPtr(state: *const State, token: *const Token) ErrorInfo {
-        const src_ptr_begin = state.source.ptr;
+        const module = state.modules.get(state.current_module_in_process) orelse unreachable;
+        const src_ptr_begin = module.source.ptr;
         const src_ptr_offset = token.value.ptr;
         const src_offset = @intFromPtr(src_ptr_offset) - @intFromPtr(src_ptr_begin);
-        const left_slice = state.source[0..src_offset];
-        const right_slice = state.source[src_offset..];
+        const left_slice = module.source[0..src_offset];
+        const right_slice = module.source[src_offset..];
 
         var n_newlines_until_left_newline: usize = 0;
         var last_left_newline: usize = 0;
@@ -122,13 +131,13 @@ pub const State = struct {
         }
 
         if (first_right_newline == 0) {
-            first_right_newline = state.source.len;
+            first_right_newline = module.source.len;
         }
 
         return .{
             .col = src_offset - last_left_newline,
             .row = n_newlines_until_left_newline + 1,
-            .row_str = state.source[last_left_newline..first_right_newline],
+            .row_str = module.source[last_left_newline..first_right_newline],
             .row_error_token_idx = src_offset - last_left_newline,
             .msg = "",
             .trailing_error = false,
@@ -247,12 +256,12 @@ pub fn writeLexerError(state: *State, writer: anytype) !void {
     //const file = state.filename;
     //try writer.print("<{s}>:{}:{}: lexer error: {s}\n{s}\n", .{ file, info.row, info.col, info.msg, info.row_str });
     //try writeErrorSource(info, writer);
-    try writer.print("<{s}>: lexer error\n", .{state.filename});
+    try writer.print("<{s}>: lexer error\n", .{state.current_module_in_process});
 }
 
 pub fn writeAstError(state: *State, writer: anytype) !void {
     const info = state.errorInfo();
-    const file = state.filename;
+    const file = state.current_module_in_process;
     try writer.print("<{s}>:{}:{}: syntax error: {s}\n{s}\n", .{ file, info.row, info.col, info.msg, info.row_str });
     try writeErrorSource(info, writer);
 }
@@ -262,7 +271,7 @@ pub fn writeSemanticsError(state: *State, writer: anytype) !void {
     for (state.analysis.errors) |error_report| {
         state.error_report = error_report;
         const info = state.errorInfo();
-        const file = state.filename;
+        const file = state.current_module_in_process;
         try writer.print("<{s}>:{}:{}: semantic error: {s}\n{s}\n", .{ file, info.row, info.col, info.msg, info.row_str });
         try writeErrorSource(info, writer);
     }
@@ -270,7 +279,7 @@ pub fn writeSemanticsError(state: *State, writer: anytype) !void {
 
 pub fn writeRuntimeError(state: *State, writer: anytype) !void {
     const info = state.errorInfo();
-    const file = state.filename;
+    const file = state.current_module_in_process;
     try writer.print("<{s}>:{}:{}: runtime error: {s}\n{s}\n", .{ file, info.row, info.col, info.msg, info.row_str });
     try writeErrorSource(info, writer);
 }
@@ -288,25 +297,13 @@ fn writeErrorSource(info: State.ErrorInfo, writer: anytype) !void {
     try writer.print("\n", .{});
 }
 
-pub fn run(state: *State) PipelineError!void {
-    const lexer_start_us = microTimestamp();
-    state.tokens = try tokens.lex(state);
-    const lexer_stop_us = microTimestamp();
-    if (state.verboseLexer) {
-        logTime("Lexing:  ", lexer_start_us, lexer_stop_us);
-        tokens.dump(state);
-    }
+pub fn run(state: *State, root_module_name: []const u8, root_module_source: []const u8) PipelineError!void {
+    state.current_module_in_process = root_module_name;
+    const module = try loadModuleFromSource(state, root_module_name, root_module_source);
+    try state.modules.put(root_module_name, module);
 
-    const ast_start_us = microTimestamp();
-    state.root = try ast.parse(state);
-
-    const ast_stop_us = microTimestamp();
-    if (state.verboseParser) {
-        logTime("Parsing: ", ast_start_us, ast_stop_us);
-        ast.dump(state.root);
-    }
-
-    if (state.useSemanticAnalysis) {
+    //TODO: all of this
+    if (false and state.useSemanticAnalysis) {
         const analyze_start_us = microTimestamp();
         try semantics.analyze(state);
 
@@ -317,10 +314,37 @@ pub fn run(state: *State) PipelineError!void {
     }
 
     const interpret_start_us = microTimestamp();
-    try interpreter.interpret(state);
+    try interpreter.interpret(state, root_module_name);
 
     const interpret_stop_us = microTimestamp();
     if (state.verboseInterpretation) {
         logTime("Interpretation: ", interpret_start_us, interpret_stop_us);
     }
+}
+
+pub fn loadModuleFromSource(state: *State, name: []const u8, source: []const u8) !Module {
+    const lexer_start_us = microTimestamp();
+    const lexed_tokens = try tokens.lex(state, source);
+    const lexer_stop_us = microTimestamp();
+    if (state.verboseLexer) {
+        logTime("Lexing:  ", lexer_start_us, lexer_stop_us);
+        tokens.dump(lexed_tokens);
+    }
+
+    const ast_start_us = microTimestamp();
+    const parsed_ast = try ast.parse(state, lexed_tokens, name);
+
+    const ast_stop_us = microTimestamp();
+    if (state.verboseParser) {
+        logTime("Parsing: ", ast_start_us, ast_stop_us);
+        ast.dump(parsed_ast);
+    }
+
+    return Module{
+        .arena = state.arena,
+        .filename = name,
+        .source = source,
+        .tokens = lexed_tokens,
+        .ast = parsed_ast,
+    };
 }

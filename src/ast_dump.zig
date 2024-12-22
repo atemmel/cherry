@@ -26,17 +26,7 @@ fn leaf(comptime str: []const u8, args: anytype) void {
     down();
 }
 
-pub fn dump(root: ast.Root) void {
-    defer up();
-    leaf("Root:\n", .{});
-
-    var it = root.modules.valueIterator();
-    while (it.next()) |module| {
-        dumpModule(module.*);
-    }
-}
-
-fn dumpModule(module: ast.Module) void {
+pub fn dump(module: ast.Module) void {
     defer up();
     leaf("Module: {s}\n", .{module.name});
 

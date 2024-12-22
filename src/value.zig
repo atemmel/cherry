@@ -328,8 +328,6 @@ fn testState() PipelineState {
     return PipelineState{
         .ally = std.testing.allocator,
         .arena = std.testing.allocator,
-        .source = "",
-        .filename = "",
         .arena_source = undefined,
         .verboseLexer = false,
         .verboseParser = false,
@@ -338,6 +336,7 @@ fn testState() PipelineState {
         .verboseGc = false,
         .useSemanticAnalysis = false,
         .env_map = std.process.EnvMap.init(std.testing.allocator),
+        .modules = undefined,
     };
 }
 
