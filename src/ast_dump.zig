@@ -30,12 +30,22 @@ pub fn dump(root: ast.Root) void {
     defer up();
     leaf("Root:\n", .{});
 
-    var it = root.functions.valueIterator();
+    var it = root.modules.valueIterator();
+    while (it.next()) |module| {
+        dumpModule(module.*);
+    }
+}
+
+fn dumpModule(module: ast.Module) void {
+    defer up();
+    leaf("Module: {s}\n", .{module.name});
+
+    var it = module.functions.valueIterator();
     while (it.next()) |func| {
         dumpFunc(func.*);
     }
 
-    for (root.statements) |stmnt| {
+    for (module.statements) |stmnt| {
         dumpStatement(stmnt);
     }
 }

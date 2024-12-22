@@ -49,8 +49,6 @@ pub fn main() !u8 {
 
     var file: ?[]const u8 = null;
 
-    // First we specify what parameters our program can take.
-    // We can use `parseParamsComptime` to parse a string into an array of `Param(Help)`.
     const params = comptime clap.parseParamsComptime(
         \\
         \\-h, --help             Display this help and exit.

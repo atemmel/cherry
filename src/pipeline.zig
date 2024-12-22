@@ -25,10 +25,7 @@ pub const State = struct {
     ally: std.mem.Allocator,
     source: []const u8,
     tokens: []Token = &.{},
-    root: ast.Root = .{
-        .statements = &.{},
-        .functions = undefined,
-    },
+    root: ast.Root = undefined,
     verboseLexer: bool,
     verboseParser: bool,
     verboseAnalysis: bool,

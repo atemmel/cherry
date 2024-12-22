@@ -38,6 +38,7 @@ const Context = struct {
     stmntAlly: std.mem.Allocator,
     root: ast.Root,
     calling_ctx_stack_depth: usize = 0,
+    current_module: *const ast.Module,
 };
 
 const Returns = union(enum) {
@@ -57,6 +58,7 @@ pub fn interpret(state: *PipelineState) EvalError!void {
         .root = state.root,
         .stmntArena = stmntArena,
         .stmntAlly = stmntArena.allocator(),
+        .current_module = state.root.modules.getPtr("main").?,
     };
     try interpretRoot(&ctx);
 }
@@ -64,7 +66,8 @@ pub fn interpret(state: *PipelineState) EvalError!void {
 fn interpretRoot(ctx: *Context) EvalError!void {
     try symtable.pushFrame();
     defer symtable.popFrame();
-    for (ctx.root.statements) |stmnt| {
+
+    for (ctx.current_module.statements) |stmnt| {
         _ = try interpretStatement(ctx, stmnt);
     }
 }
@@ -262,7 +265,7 @@ fn evalCall(ctx: *Context, call: ast.Call) !Result {
 
     if (builtins.lookup(name)) |builtin_info| {
         return try evalBuiltin(ctx, call, builtin_info.func);
-    } else if (ctx.root.functions.getPtr(name)) |func| {
+    } else if (ctx.current_module.functions.getPtr(name)) |func| {
         ctx.calling_ctx_stack_depth = symtable.stackDepth();
         defer ctx.calling_ctx_stack_depth = prev_calling_ctx_stack_depth;
         return try evalFunctionCall(ctx, func.*, call);

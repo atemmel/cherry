@@ -166,9 +166,15 @@ pub const Statement = union(enum) {
     cont: Continue,
 };
 
-pub const Root = struct {
+pub const Module = struct {
+    name: []const u8,
+    // should only 'main' module may have statements?
     statements: []Statement,
     functions: std.StringHashMap(Func),
+};
+
+pub const Root = struct {
+    modules: std.StringHashMap(Module),
 };
 
 const Context = struct {
@@ -245,12 +251,23 @@ pub fn parse(state: *PipelineState) !Root {
         .state = state,
     };
 
+    var root = Root{
+        .modules = std.StringHashMap(Module).init(state.arena),
+    };
+
+    const main = try parseModule(&ctx, "main");
+    try root.modules.put("main", main);
+
+    return root;
+}
+
+pub fn parseModule(ctx: *Context, name: []const u8) !Module {
     var statements = std.ArrayList(Statement).init(ctx.ally);
     defer statements.deinit();
     var functions = std.StringHashMap(Func).init(ctx.ally);
     defer functions.deinit();
 
-    while (try parseStatement(&ctx)) |stmnt| {
+    while (try parseStatement(ctx)) |stmnt| {
         switch (stmnt) {
             .func => |f| try functions.put(f.token.value, f),
             else => try statements.append(stmnt),
@@ -262,7 +279,8 @@ pub fn parse(state: *PipelineState) !Root {
         return ctx.err(.{ .msg = "Expected statement" });
     }
 
-    return Root{
+    return Module{
+        .name = name,
         .statements = try statements.toOwnedSlice(),
         .functions = functions.move(),
     };

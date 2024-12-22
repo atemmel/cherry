@@ -38,6 +38,7 @@ const Context = struct {
     root: *const ast.Root,
     errors: std.ArrayList(ErrorReport),
     scopes: std.ArrayList(Scope),
+    current_module: *const ast.Module,
 
     pub fn errFmt(
         ctx: *Context,
@@ -90,6 +91,7 @@ pub fn analyze(state: *PipelineState) SemanticsError!void {
         .root = &state.root,
         .errors = std.ArrayList(ErrorReport).init(state.arena),
         .scopes = std.ArrayList(Context.Scope).init(state.arena),
+        .current_module = state.root.modules.getPtr("main").?, // must 'main' always exist?
     };
     try analyzeRoot(&ctx);
     state.analysis = .{
@@ -102,9 +104,16 @@ pub fn analyze(state: *PipelineState) SemanticsError!void {
 }
 
 fn analyzeRoot(ctx: *Context) !void {
+    var it = ctx.root.modules.valueIterator();
+    while (it.next()) |module| {
+        try analyzeModule(ctx, module.*);
+    }
+}
+
+fn analyzeModule(ctx: *Context, module: ast.Module) !void {
     try ctx.addScope();
     defer ctx.dropScope();
-    for (ctx.root.statements) |stmnt| {
+    for (module.statements) |stmnt| {
         try analyzeStatement(ctx, stmnt);
     }
 }
@@ -129,7 +138,7 @@ fn analyzeCall(ctx: *Context, call: ast.Call) !TypeInfo {
     const builtin_info = builtins.lookup(name);
     if (builtin_info) |bi| {
         return analyzeBuiltinCall(ctx, call, bi);
-    } else if (ctx.root.functions.getPtr(name)) |func| {
+    } else if (ctx.current_module.functions.getPtr(name)) |func| {
         return func.signature.produces;
     }
 
