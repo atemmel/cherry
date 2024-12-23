@@ -153,6 +153,12 @@ pub const Continue = struct {
     token: *const Token,
 };
 
+pub const Import = struct {
+    token: *const Token,
+    name: []const u8,
+    alias: ?[]const u8,
+};
+
 pub const Statement = union(enum) {
     call: Call,
     var_decl: VarDecl,
@@ -160,6 +166,7 @@ pub const Statement = union(enum) {
     branches: Branches,
     scope: Scope,
     func: Func,
+    import: Import,
     ret: Return,
     loop: Loop,
     brk: Break,
@@ -168,9 +175,10 @@ pub const Statement = union(enum) {
 
 pub const Module = struct {
     name: []const u8,
-    // should only 'main' module may have statements?
+    // should only 'main' or 'repl' module be allowed to have statements?
     statements: []Statement,
     functions: std.StringHashMap(Func),
+    imports: std.StringHashMap(Import),
 };
 
 const Context = struct {
@@ -254,10 +262,13 @@ fn parseModule(ctx: *Context, name: []const u8) !Module {
     defer statements.deinit();
     var functions = std.StringHashMap(Func).init(ctx.ally);
     defer functions.deinit();
+    var imports = std.StringHashMap(Import).init(ctx.ally);
+    defer imports.deinit();
 
     while (try parseStatement(ctx)) |stmnt| {
         switch (stmnt) {
             .func => |f| try functions.put(f.token.value, f),
+            .import => |i| try imports.put(i.name, i),
             else => try statements.append(stmnt),
         }
     }
@@ -271,6 +282,7 @@ fn parseModule(ctx: *Context, name: []const u8) !Module {
         .name = name,
         .statements = try statements.toOwnedSlice(),
         .functions = functions.move(),
+        .imports = imports.move(),
     };
 }
 
@@ -302,6 +314,10 @@ fn parseStatement(ctx: *Context) errors!?Statement {
     } else if (try parseFunc(ctx)) |func| {
         return Statement{
             .func = func,
+        };
+    } else if (try parseImport(ctx)) |import| {
+        return Statement{
+            .import = import,
         };
     } else if (try parseScope(ctx, true)) |scope| {
         return Statement{
@@ -623,6 +639,37 @@ fn parseProducingType(ctx: *Context) !?semantics.TypeInfo {
     };
 
     return parsed_type.type_info;
+}
+
+fn parseImport(ctx: *Context) !?Import {
+    const token = ctx.getIf(.Import) orelse return null;
+    const name_bareword = parseBareword(ctx) orelse {
+        return ctx.err(.{
+            .msg = "expected name of valid import as bareword",
+        });
+    };
+    const maybe_alias = parseBareword(ctx);
+    const maybe_newline = ctx.getIf(.Newline);
+
+    if (maybe_newline == null) {
+        if (maybe_alias == null) {
+            return ctx.err(.{
+                .msg = "expected newline (\\n) or alias of import",
+            });
+        } else {
+            return ctx.err(.{
+                .msg = "expected newline (\\n)",
+            });
+        }
+    }
+
+    const alias = if (maybe_alias != null) maybe_alias.?.token.value else null;
+
+    return Import{
+        .token = token,
+        .name = name_bareword.token.value,
+        .alias = alias,
+    };
 }
 
 fn parseInitOp(ctx: *Context) !?InitOp {

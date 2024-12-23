@@ -39,6 +39,8 @@ pub const Token = struct {
         Continue,
         True,
         False,
+        Import,
+        Pub,
     };
 
     kind: Kind,
@@ -55,6 +57,8 @@ const string_keyword_map = std.StaticStringMap(Token.Kind).initComptime(&.{
     .{ "continue", .Continue },
     .{ "true", .True },
     .{ "false", .False },
+    .{ "import", .Import },
+    .{ "pub", .Pub },
 });
 
 const LexState = struct {

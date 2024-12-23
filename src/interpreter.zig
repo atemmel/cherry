@@ -86,6 +86,7 @@ fn interpretStatement(ctx: *Context, stmnt: ast.Statement) EvalError!Returns {
         .branches => |br| return try interpretBranches(ctx, br),
         .scope => |scope| return try interpretScope(ctx, scope),
         .func => unreachable, // this should never happen
+        .import => unreachable, // - " -
         .ret => |ret| return try evalReturn(ctx, ret),
         .loop => |loop| return try interpretLoop(ctx, loop),
         .brk => return .did_break,

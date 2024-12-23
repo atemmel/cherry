@@ -50,6 +50,7 @@ fn dumpStatement(stmnt: ast.Statement) void {
         .branches => |br| dumpBranches(br),
         .scope => |scope| dumpScope(scope),
         .func => |func| dumpFunc(func),
+        .import => |import| dumpImport(import),
         .ret => |ret| dumpReturn(ret),
         .loop => |loop| dumpLoop(loop),
         .brk => |brk| dumpBreak(brk),
@@ -113,6 +114,15 @@ fn dumpFunc(func: ast.Func) void {
         up();
     }
     dumpScope(func.scope);
+}
+
+fn dumpImport(import: ast.Import) void {
+    defer up();
+    leaf("Import: {s}\n", .{import.name});
+    if (import.alias) |alias| {
+        defer up();
+        leaf("Alias: {s}\n", .{alias});
+    }
 }
 
 fn dumpReturn(ret: ast.Return) void {

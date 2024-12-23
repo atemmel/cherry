@@ -1,0 +1,4 @@
+import str
+
+#idx := (str:index-of "hello" "h")
+#assert (== 1 $idx)
