@@ -1,6 +1,6 @@
-# Design
+# Reference
 
-This is an ongoing design document dissecting the various pieces of the Cherry shell.
+This is an ongoing language reference document dissecting the various pieces of the Cherry shell.
 
 # Syntax
 
