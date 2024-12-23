@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="images/logo.png" alt="Cherry logo">
+  <img src="fluff/logo.png" alt="Cherry logo">
 </p>
 
 <div>&nbsp;</div>
