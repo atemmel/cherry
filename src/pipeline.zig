@@ -299,8 +299,7 @@ fn writeErrorSource(info: State.ErrorInfo, writer: anytype) !void {
 
 pub fn run(state: *State, root_module_name: []const u8, root_module_source: []const u8) PipelineError!void {
     state.current_module_in_process = root_module_name;
-    const root_module = try loadModuleFromSource(state, root_module_name, root_module_source);
-    loadImportsFromModule(state, root_module);
+    _ = try loadModuleFromSource(state, root_module_name, root_module_source);
 
     //TODO: all of this
     if (false and state.useSemanticAnalysis) {
