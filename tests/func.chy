@@ -1,5 +1,5 @@
 fn my-func {
-    say I'm in the func
+    say I am in the func
 }
 
 my-func
