@@ -56,7 +56,7 @@ pub fn main() !u8 {
         \\
         \\ Dev flags
         \\    --types               (dev) Enables experimental type-checking.
-        \\    --verbose             (dev) Log verbose messages. (equal to --verbose-ast, --verbose-tokens)
+        \\-v, --verbose             (dev) Log verbose messages. (equal to --verbose-ast, --verbose-tokens)
         \\    --verbose-ast         (dev) Log the AST before interpreting, debug builds log a stacktrace of eventual parsing errors.
         \\    --verbose-tokens      (dev) Log the lexed tokens before parsing.
         \\    --verbose-analysis    (dev) Log a summary of the type analysis performed before interpreting.

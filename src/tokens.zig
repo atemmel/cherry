@@ -29,6 +29,7 @@ pub const Token = struct {
         RBracket,
         RedirectOut, // |>
         RedirectIn, // <|
+        SingleQuote, // '
         // Keywords
         If,
         Else,
@@ -80,7 +81,7 @@ const LexState = struct {
 
     pub fn isSymbolChar(self: LexState) bool {
         return switch (self.get()) {
-            ':', ';', '=', '|', '(', ')', '{', '}', '[', ']' => true,
+            ':', ';', '=', '|', '(', ')', '{', '}', '[', ']', '\'' => true,
             else => false,
         };
     }
@@ -92,7 +93,7 @@ const LexState = struct {
     pub fn isUnallowedBarewordChar(self: LexState) bool {
         // chars that are never allowed to appear in the middle of a bareword
         return switch (self.get()) {
-            ':', ';', '|', '(', ')', '{', '}', '[', ']', ' ', '\n', '\t', '\r', '#', '"', '`' => true,
+            ':', ';', '|', '(', ')', '{', '}', '[', ']', ' ', '\n', '\t', '\r', '#', '"', '`', '\'' => true,
             else => false,
         };
     }
@@ -183,6 +184,7 @@ fn lexSymbol(state: *LexState) ?Token {
             break :blk .EmptyRecord;
         },
         ']' => .RBracket,
+        '\'' => .SingleQuote,
         else => unreachable,
     };
 

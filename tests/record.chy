@@ -4,12 +4,20 @@ assert (== [=] $record)
 
 say $record
 
-$record:name = bond
+$record'name = bond
 
-say $record:name
+say $record'name
 
-assert (== bond $record:name)
+assert (== bond $record'name)
 
 # Not sure if I like these two:
 #$record[foo] = baz
 #say $record[foo]
+
+# But this could perhaps work?
+#$record'[$foo] = baz
+#say $record'[$foo]
+
+# Or maybe drop the '[]' alltogether?
+#$record'$foo = baz
+#say $record'$foo

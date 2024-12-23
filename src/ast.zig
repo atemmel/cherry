@@ -79,6 +79,7 @@ pub const Call = struct {
     arguments: []Expression,
     pipe: ?*Call,
     capturing_external_cmd: bool,
+    accessor: ?Accessor,
 };
 
 pub const VarDecl = struct {
@@ -808,10 +809,9 @@ fn parseIndividualPipeline(ctx: *Context, capturing: bool) !?Call {
 }
 
 fn parseIndividualCall(ctx: *Context, capturing: bool) !?Call {
-    const token = ctx.getIf(.Bareword);
-    if (token == null) {
-        return null;
-    }
+    const token = ctx.getIf(.Bareword) orelse return null;
+
+    const accessor = try parseAccessorChain(ctx);
 
     var args = std.ArrayList(Expression).init(ctx.ally);
     defer args.deinit();
@@ -820,10 +820,11 @@ fn parseIndividualCall(ctx: *Context, capturing: bool) !?Call {
     }
 
     return Call{
-        .token = token.?,
+        .token = token,
         .arguments = try args.toOwnedSlice(),
         .pipe = null,
         .capturing_external_cmd = capturing,
+        .accessor = accessor,
     };
 }
 
@@ -1011,7 +1012,7 @@ fn parseAccessorChain(ctx: *Context) !?Accessor {
 }
 
 fn parseMember(ctx: *Context) !?Member {
-    _ = ctx.getIf(.Colon) orelse {
+    _ = ctx.getIf(.SingleQuote) orelse {
         return null;
     };
 

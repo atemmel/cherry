@@ -58,11 +58,6 @@ pub const State = struct {
     };
 
     pub fn errorInfo(state: *const State) ErrorInfo {
-        std.debug.print("error info for {s}\n", .{state.current_module_in_process});
-        var it = state.modules.iterator();
-        while (it.next()) |mod| {
-            std.debug.print("{s}", .{mod.key_ptr.*});
-        }
         const module = state.modules.get(state.current_module_in_process) orelse unreachable;
         const report = state.error_report orelse @panic("Developer error: No error stored");
         const bad_token = report.offending_token;
@@ -304,7 +299,8 @@ fn writeErrorSource(info: State.ErrorInfo, writer: anytype) !void {
 
 pub fn run(state: *State, root_module_name: []const u8, root_module_source: []const u8) PipelineError!void {
     state.current_module_in_process = root_module_name;
-    try loadModuleFromSource(state, root_module_name, root_module_source);
+    const root_module = try loadModuleFromSource(state, root_module_name, root_module_source);
+    loadImportsFromModule(state, root_module);
 
     //TODO: all of this
     if (false and state.useSemanticAnalysis) {
@@ -326,7 +322,7 @@ pub fn run(state: *State, root_module_name: []const u8, root_module_source: []co
     }
 }
 
-pub fn loadModuleFromSource(state: *State, name: []const u8, source: []const u8) !void {
+pub fn loadModuleFromSource(state: *State, name: []const u8, source: []const u8) !Module {
     try state.modules.put(name, .{
         .ast = undefined,
         .arena = state.arena,
@@ -334,27 +330,32 @@ pub fn loadModuleFromSource(state: *State, name: []const u8, source: []const u8)
         .source = source,
         .tokens = &.{},
     });
+
+    // incrementally build up the pieces that make up a module
     var partial_module = state.modules.getPtr(name).?; // this should never be null as we just set it
-    //
+
+    // text -> tokens
     const lexer_start_us = microTimestamp();
     const lexed_tokens = try tokens.lex(state, source);
     const lexer_stop_us = microTimestamp();
 
     partial_module.tokens = lexed_tokens;
-
     if (state.verboseLexer) {
         logTime("Lexing:  ", lexer_start_us, lexer_stop_us);
         tokens.dump(lexed_tokens);
     }
 
+    // tokens -> ast
     const ast_start_us = microTimestamp();
     const parsed_ast = try ast.parse(state, lexed_tokens, name);
     const ast_stop_us = microTimestamp();
 
     partial_module.ast = parsed_ast;
-
     if (state.verboseParser) {
         logTime("Parsing: ", ast_start_us, ast_stop_us);
         ast.dump(parsed_ast);
     }
+
+    // partial module is now complete
+    return partial_module.*;
 }
