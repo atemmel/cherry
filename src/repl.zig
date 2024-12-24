@@ -311,11 +311,10 @@ pub fn repl(pipeline_state: *pipeline.State, persistent_allocator: std.mem.Alloc
 
 fn eval(state: *State) !void {
     // clearing the scratch arena resets GC debug info, among other things
-    // could perhaps be done for release builds?
-    //
-    //defer if (builtin.mode != .Debug) {
-    //_ = state.pipeline_state.scratch_arena.reset(.retain_capacity);
-    //};
+    // only done for release builds
+    defer if (builtin.mode != .Debug) {
+        _ = state.pipeline_state.scratch_arena.reset(.retain_capacity);
+    };
     try state.writer().print("\r\n", .{});
     terminal.clearLine(state.writer(), state.prefixLen());
     try state.term.restore();

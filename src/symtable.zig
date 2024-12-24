@@ -35,9 +35,17 @@ pub fn deinit() void {
     aliases.deinit();
     defer stack.deinit();
     for (stack.items) |*frame| {
-        frame.symtable.deinit();
-        frame.root_values.deinit();
+        deinitFrame(frame);
     }
+}
+
+fn deinitFrame(frame: *Frame) void {
+    var it = frame.symtable.keyIterator();
+    while (it.next()) |key| {
+        ally.free(key.*);
+    }
+    frame.symtable.deinit();
+    frame.root_values.deinit();
 }
 
 pub fn stackDepth() usize {
@@ -57,8 +65,7 @@ pub fn pushFrame() !void {
 
 pub fn popFrame() void {
     var old_frame = stack.pop();
-    old_frame.root_values.deinit();
-    old_frame.symtable.deinit();
+    deinitFrame(&old_frame);
 }
 
 pub fn get(key: []const u8) ?*Value {
@@ -126,5 +133,5 @@ pub fn insert(key: []const u8, value: *Value) !void {
     return if (frame.symtable.get(key) != null)
         InterpreterError.VariableAlreadyDeclared
     else
-        frame.symtable.put(key, value);
+        frame.symtable.put(try ally.dupe(u8, key), value);
 }

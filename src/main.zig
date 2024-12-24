@@ -109,22 +109,20 @@ pub fn main() !u8 {
         std.debug.print("args: {s}\n", .{args});
     }
 
-    if (false) {
-        if (res.args.@"verbose-ast" != 0) {
-            verboseParser = true;
-        }
+    if (res.args.@"verbose-ast" != 0) {
+        verboseParser = true;
+    }
 
-        if (res.args.@"verbose-tokens" != 0) {
-            verboseLexer = true;
-        }
+    if (res.args.@"verbose-tokens" != 0) {
+        verboseLexer = true;
+    }
 
-        if (res.args.@"verbose-analysis" != 0) {
-            verboseAnalysis = true;
-        }
+    if (res.args.@"verbose-analysis" != 0) {
+        verboseAnalysis = true;
+    }
 
-        if (res.args.@"verbose-gc" != 0) {
-            verboseGc = true;
-        }
+    if (res.args.@"verbose-gc" != 0) {
+        verboseGc = true;
     }
 
     if (res.args.types != 0) {
