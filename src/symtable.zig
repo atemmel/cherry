@@ -92,12 +92,14 @@ pub fn appendToFrameRoot(root_idx: usize, value: *Value) !void {
     try stack.items[root_idx].root_values.append(value);
 }
 
-pub fn dump() void {
+pub fn dump(dump_root_values: bool) void {
     std.debug.print("+--------------+\n|   var dump   |\n+--------------+\n", .{});
     for (stack.items, 0..) |frame, idx| {
         std.debug.print("| frame {}:\n", .{idx});
-        for (frame.root_values.items) |v| {
-            std.debug.print("root value {s} ({*})\n", .{ v, v });
+        if (dump_root_values) {
+            for (frame.root_values.items) |v| {
+                std.debug.print("root value {s} ({*})\n", .{ v, v });
+            }
         }
         var it = frame.symtable.iterator();
         while (it.next()) |entry| {

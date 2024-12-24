@@ -776,8 +776,15 @@ fn int(state: *State, args: []const *Value, call: ast.Call) !Result {
     return something(try gc.integer(int_result, opt));
 }
 
-fn vardump(_: *State, _: []const *Value, _: ast.Call) !Result {
-    symtable.dump();
+fn vardump(_: *State, args: []const *Value, _: ast.Call) !Result {
+    var show_root_values = false;
+    if (args.len > 0) {
+        switch (args[0].as) {
+            .boolean => |b| show_root_values = b,
+            else => {},
+        }
+    }
+    symtable.dump(show_root_values);
     return nothing;
 }
 
