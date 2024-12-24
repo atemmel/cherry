@@ -1,5 +1,6 @@
 const std = @import("std");
 const algo = @import("algo.zig");
+const builtin = @import("builtin");
 const pipeline = @import("pipeline.zig");
 const terminal = @import("term.zig");
 const symtable = @import("symtable.zig");
@@ -20,7 +21,7 @@ const Mode = enum {
 
 const State = struct {
     pipeline_state: *pipeline.State,
-    ally: std.mem.Allocator,
+    //ally: std.mem.Allocator,
     out_writer: std.io.BufferedWriter(4096, std.fs.File.Writer),
     history: History,
     cwd_buffer: [std.fs.max_path_bytes]u8 = undefined,
@@ -34,7 +35,7 @@ const State = struct {
     search_idx: ?usize = null,
     search_reached_end: bool = false,
     rc_path: []const u8 = "",
-    arena: std.heap.ArenaAllocator,
+    persistent_arena: std.heap.ArenaAllocator,
     completion_arena: std.heap.ArenaAllocator,
 
     mode: Mode = .prompt,
@@ -42,11 +43,7 @@ const State = struct {
     auto_cd: bool = true,
 
     pub fn deinit(self: *State) void {
-        for (self.history.items) |item| {
-            self.ally.free(item);
-        }
-        self.history.deinit();
-        self.arena.deinit();
+        self.persistent_arena.deinit();
         self.completion_arena.deinit();
         self.term.restore() catch unreachable; // no balls
     }
@@ -155,17 +152,16 @@ fn fmts(writer: anytype, comptime str: []const u8) void {
 //TODO
 // - display commands in a nice way (colors, etc)
 
-pub fn repl(pipeline_state: *pipeline.State) !void {
-    const arena = std.heap.ArenaAllocator.init(pipeline_state.ally);
+pub fn repl(pipeline_state: *pipeline.State, persistent_allocator: std.mem.Allocator) !void {
+    var persistent_arena = std.heap.ArenaAllocator.init(persistent_allocator);
     var state = State{
-        .ally = pipeline_state.ally,
-        .history = try History.initCapacity(pipeline_state.ally, 512),
+        .history = try History.initCapacity(persistent_arena.allocator(), 512),
         .out_writer = std.io.bufferedWriter(std.io.getStdOut().writer()),
         .pipeline_state = pipeline_state,
         .term = try Term.init(),
         .history_scroll_idx = 0,
-        .arena = arena,
-        .completion_arena = std.heap.ArenaAllocator.init(pipeline_state.ally),
+        .persistent_arena = persistent_arena,
+        .completion_arena = std.heap.ArenaAllocator.init(persistent_allocator),
     };
     defer state.deinit();
 
@@ -173,18 +169,21 @@ pub fn repl(pipeline_state: *pipeline.State) !void {
 
     if (state.histfile_path.len == 0) {
         state.histfile_path = try std.fs.path.join(
-            state.arena.allocator(),
+            state.persistent_arena.allocator(),
             &.{ home, ".local/state/cherry-hist" },
         );
     }
 
     state.rc_path = try std.fs.path.join(
-        state.arena.allocator(),
+        state.persistent_arena.allocator(),
         &.{ home, ".config/cherryrc" },
     );
 
     try readHistory(&state);
     state.history_scroll_idx = state.history.items.len;
+
+    try symtable.pushFrame();
+    defer symtable.popFrame();
 
     try readRc(&state);
 
@@ -311,7 +310,12 @@ pub fn repl(pipeline_state: *pipeline.State) !void {
 }
 
 fn eval(state: *State) !void {
-    defer _ = state.pipeline_state.arena_source.reset(.retain_capacity);
+    // clearing the scratch arena resets GC debug info, among other things
+    // could perhaps be done for release builds?
+    //
+    //defer if (builtin.mode != .Debug) {
+    //_ = state.pipeline_state.scratch_arena.reset(.retain_capacity);
+    //};
     try state.writer().print("\r\n", .{});
     terminal.clearLine(state.writer(), state.prefixLen());
     try state.term.restore();
@@ -323,8 +327,13 @@ fn eval(state: *State) !void {
     }
 
     const cmd = try aliasLookup(state, state.line());
+    const source = try state.pipeline_state.scratch_arena.allocator().dupe(u8, cmd);
 
-    pipeline.run(state.pipeline_state, "repl", cmd) catch |e| {
+    pipeline.run(state.pipeline_state, .{
+        .root_module_name = "interactive",
+        .root_module_source = source,
+        .root_scope_already_exists = true,
+    }) catch |e| {
         const maybe_module = state.pipeline_state.modules.get("repl");
         const tokens = if (maybe_module != null) maybe_module.?.tokens else &.{};
         if (state.pipeline_state.verboseInterpretation) {
@@ -378,7 +387,9 @@ fn appendHistory(state: *State) !void {
         }
     }
 
-    const cmd_copy = try state.ally.dupe(u8, state.line());
+    const ally = state.persistent_arena.allocator();
+
+    const cmd_copy = try ally.dupe(u8, state.line());
     try state.history.append(cmd_copy);
     state.history_scroll_idx = state.history.items.len;
 
@@ -408,11 +419,13 @@ fn readHistory(state: *State) !void {
     };
     defer file.close();
 
+    const ally = state.persistent_arena.allocator();
+
     const underlying_reader = file.reader();
     var buffered_reader = std.io.bufferedReader(underlying_reader);
     const reader = buffered_reader.reader();
     while (true) {
-        const line = reader.readUntilDelimiterAlloc(state.ally, '\n', state.buffer.len) catch return;
+        const line = reader.readUntilDelimiterAlloc(ally, '\n', state.buffer.len) catch return;
         try state.history.append(line);
     }
 }
@@ -427,7 +440,7 @@ fn previousCommand(state: *State) void {
 }
 
 fn nextCommand(state: *State) void {
-    if (state.history_scroll_idx == state.history.items.len - 1) {
+    if (state.history_scroll_idx >= state.history.items.len - 1) {
         return;
     }
     state.history_scroll_idx += 1;
@@ -765,7 +778,8 @@ fn readRc(state: *State) !void {
     };
     defer file.close();
 
-    const rc_src = file.readToEndAlloc(state.arena.allocator(), 1_000_000_000) catch return;
+    const ally = state.persistent_arena.allocator();
+    const rc_src = file.readToEndAlloc(ally, 1_000_000_000) catch return;
 
     try state.term.restore();
     defer {
@@ -775,7 +789,11 @@ fn readRc(state: *State) !void {
     }
     state.flush();
 
-    pipeline.run(state.pipeline_state, "cherryrc", rc_src) catch |e| {
+    pipeline.run(state.pipeline_state, .{
+        .root_module_name = "cherryrc",
+        .root_module_source = rc_src,
+        .root_scope_already_exists = true,
+    }) catch |e| {
         try state.writer().print("Unexpected error when reading .cherryrc at {s}: {}\r\n", .{ state.rc_path, e });
     };
     state.flush();
@@ -816,9 +834,8 @@ const expectEqualStrings = std.testing.expectEqualStrings;
 
 fn testState() State {
     return State{
-        .arena = undefined,
+        .persistent_arena = undefined,
         .completion_arena = undefined,
-        .ally = undefined,
         .out_writer = undefined,
         .history = undefined,
         .term = undefined,

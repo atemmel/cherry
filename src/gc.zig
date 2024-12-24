@@ -26,11 +26,15 @@ pub fn deinit() void {
     }
 }
 
+pub fn allocator() std.mem.Allocator {
+    return backing_allocator;
+}
+
 pub fn dump() void {
     std.debug.print("Begin GC dump\n", .{});
     for (stack.items) |value| {
         std.debug.print("{*} {any} {s}\n", .{ value, value.origin.kind, value.origin.value });
-        pipeline_state.dumpSourceAtToken(value.origin);
+        pipeline_state.dumpSourceAtToken(value.origin, value.origin_module);
     }
 }
 
@@ -49,7 +53,7 @@ fn sweep() void {
         } else { // collect
             if (pipeline_state.verboseGc) {
                 std.debug.print("collecting: {*} {any} {s}\n", .{ ptr, ptr.origin.kind, ptr.origin.value });
-                pipeline_state.dumpSourceAtToken(ptr.origin);
+                pipeline_state.dumpSourceAtToken(ptr.origin, ptr.origin_module);
             }
             ptr.deinit(backing_allocator);
             backing_allocator.destroy(ptr);
@@ -79,85 +83,101 @@ fn push(value: values.Value) !*values.Value {
     return ptr;
 }
 
-pub fn integer(i: i64, origin: *const tokens.Token) !*values.Value {
+pub const ValueOptions = struct {
+    origin: *const tokens.Token,
+    origin_module: []const u8,
+};
+
+pub fn integer(i: i64, opt: ValueOptions) !*values.Value {
     return push(.{
         .as = .{
             .integer = i,
         },
-        .origin = origin,
+        .origin = opt.origin,
+        .origin_module = opt.origin_module,
     });
 }
 
-pub fn floating(f: f64, origin: *const tokens.Token) !*values.Value {
+pub fn floating(f: f64, opt: ValueOptions) !*values.Value {
     return push(.{
         .as = .{
             .float = f,
         },
-        .origin = origin,
+        .origin = opt.origin,
+        .origin_module = opt.origin_module,
     });
 }
 
-pub fn string(s: []const u8, origin: *const tokens.Token) !*values.Value {
+pub fn string(s: []const u8, opt: ValueOptions) !*values.Value {
     return push(.{
         .as = .{
             .string = try backing_allocator.dupe(u8, s),
         },
-        .origin = origin,
+        .origin = opt.origin,
+        .origin_module = opt.origin_module,
     });
 }
 
-pub fn allocedString(s: []const u8, origin: *const tokens.Token) !*values.Value {
+pub fn allocedString(s: []const u8, opt: ValueOptions) !*values.Value {
     return push(.{
         .as = .{
             .string = s,
         },
-        .origin = origin,
+        .origin = opt.origin,
+        .origin_module = opt.origin_module,
     });
 }
 
-pub fn boolean(b: bool, origin: *const tokens.Token) !*values.Value {
+pub fn boolean(b: bool, opt: ValueOptions) !*values.Value {
     return push(.{
         .as = .{
             .boolean = b,
         },
-        .origin = origin,
+        .origin = opt.origin,
+        .origin_module = opt.origin_module,
     });
 }
 
-pub fn list(l: values.List, origin: *const tokens.Token) !*values.Value {
+pub fn list(l: values.List, opt: ValueOptions) !*values.Value {
     return push(.{
         .as = .{
             .list = l,
         },
-        .origin = origin,
+        .origin = opt.origin,
+        .origin_module = opt.origin_module,
     });
 }
 
-pub fn emptyList(origin: *const tokens.Token) !*values.Value {
-    return list(values.List.init(backing_allocator), origin);
+pub fn emptyList(opt: ValueOptions) !*values.Value {
+    return list(values.List.init(backing_allocator), opt);
 }
 
-pub fn record(r: values.Record, origin: *const tokens.Token) !*values.Value {
+pub fn record(r: values.Record, opt: ValueOptions) !*values.Value {
     return push(.{
         .as = .{
             .record = r,
         },
-        .origin = origin,
+        .origin = opt.origin,
+        .origin_module = opt.origin_module,
     });
 }
 
-pub fn emptyRecord(origin: *const tokens.Token) !*values.Value {
-    return record(values.Record.init(backing_allocator), origin);
+pub fn emptyRecord(opt: ValueOptions) !*values.Value {
+    return record(values.Record.init(backing_allocator), opt);
 }
 
-pub fn cloneOrReference(origin: *values.Value) !*values.Value {
-    return switch (origin.as) {
+pub fn cloneOrReference(origin_value: *values.Value) !*values.Value {
+    const opt = ValueOptions{
+        .origin_module = origin_value.origin_module,
+        .origin = origin_value.origin,
+    };
+    return switch (origin_value.as) {
         // clone
-        .string => |s| try string(s, origin.origin),
-        .integer => |i| try integer(i, origin.origin),
-        .float => |f| try floating(f, origin.origin),
-        .boolean => |b| try boolean(b, origin.origin),
+        .string => |s| try string(s, opt),
+        .integer => |i| try integer(i, opt),
+        .float => |f| try floating(f, opt),
+        .boolean => |b| try boolean(b, opt),
         // reference
-        .list, .record => origin,
+        .list, .record => origin_value,
     };
 }

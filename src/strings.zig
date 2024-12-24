@@ -129,29 +129,12 @@ test "escape backslash" {
 }
 
 test "dealias tilde" {
-    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
-    defer arena.deinit();
+    var state = pipeline.testState();
+    defer state.deinit();
+    try state.env_map.put("HOME", "/home/person");
+    defer state.env_map.deinit();
 
-    var env_map = std.process.EnvMap.init(std.testing.allocator);
-    defer env_map.deinit();
-
-    try env_map.put("HOME", "/home/person");
-
-    var state: pipeline.State = .{
-        .arena = arena.allocator(),
-        .arena_source = &arena,
-        .ally = std.testing.allocator,
-        .verboseLexer = false,
-        .verboseParser = false,
-        .verboseAnalysis = false,
-        .verboseInterpretation = false,
-        .useSemanticAnalysis = false,
-        .env_map = env_map,
-        .verboseGc = false,
-        .modules = undefined,
-    };
-
-    const dealiased = try dealias(&state, arena.allocator(), "ls ~/config");
+    const dealiased = try dealias(&state, state.scratch_arena.allocator(), "ls ~/config");
 
     try std.testing.expectEqualStrings("ls /home/person/config", dealiased);
 }

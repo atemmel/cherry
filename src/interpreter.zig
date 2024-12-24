@@ -35,7 +35,6 @@ pub const EvalError = builtins.BuiltinError || std.process.Child.RunError;
 const Context = struct {
     state: *PipelineState,
     ally: std.mem.Allocator,
-    arena: std.mem.Allocator,
     stmntArena: std.heap.ArenaAllocator,
     stmntAlly: std.mem.Allocator,
     calling_ctx_stack_depth: usize = 0,
@@ -49,24 +48,31 @@ const Returns = union(enum) {
     did_continue: void,
 };
 
-pub fn interpret(state: *PipelineState, root_module_name: []const u8) EvalError!void {
-    var stmntArena = std.heap.ArenaAllocator.init(state.ally);
+pub const InterpreterOptions = struct {
+    root_module_name: []const u8,
+    root_scope_already_exists: bool,
+};
+
+pub fn interpret(state: *PipelineState, opt: InterpreterOptions) EvalError!void {
+    var stmntArena = std.heap.ArenaAllocator.init(state.scratch_arena.allocator());
     defer stmntArena.deinit();
     var ctx = Context{
         .state = state,
-        .ally = state.ally,
-        .arena = state.arena,
+        .ally = state.scratch_arena.allocator(),
         .stmntArena = stmntArena,
         .stmntAlly = stmntArena.allocator(),
-        .root_module = state.modules.getPtr(root_module_name).?,
+        .root_module = state.modules.getPtr(opt.root_module_name).?,
     };
+
+    if (!opt.root_scope_already_exists) {
+        try symtable.pushFrame();
+    }
+    defer if (!opt.root_scope_already_exists) symtable.popFrame();
+
     try interpretRoot(&ctx);
 }
 
 fn interpretRoot(ctx: *Context) EvalError!void {
-    try symtable.pushFrame();
-    defer symtable.popFrame();
-
     for (ctx.root_module.ast.statements) |stmnt| {
         _ = try interpretStatement(ctx, stmnt);
     }
@@ -366,7 +372,7 @@ fn evalProc(ctx: *Context, call: ast.Call) !Result {
                     ctx.state.error_report = .{
                         .trailing = false,
                         .offending_token = call.token,
-                        .msg = try std.fmt.allocPrint(ctx.state.arena, "Could not find command in system", .{}),
+                        .msg = try std.fmt.allocPrint(ctx.ally, "Could not find command in system", .{}),
                     };
                     return error.CommandNotFound;
                 },
@@ -377,7 +383,7 @@ fn evalProc(ctx: *Context, call: ast.Call) !Result {
     }
 
     var capture: ?[]const u8 = null;
-    errdefer if (capture) |c| ctx.ally.free(c);
+    errdefer if (capture) |c| gc.allocator().free(c);
 
     if (procs.items.len > 1) {
         var idx: usize = 0;
@@ -397,7 +403,7 @@ fn evalProc(ctx: *Context, call: ast.Call) !Result {
 
     if (capturing) {
         assert(procs.getLast().stdout != null);
-        capture = try procs.getLast().stdout.?.readToEndAlloc(ctx.ally, std.math.maxInt(u64));
+        capture = try procs.getLast().stdout.?.readToEndAlloc(gc.allocator(), std.math.maxInt(u64));
     }
 
     for (procs.items) |*p| {
@@ -408,7 +414,7 @@ fn evalProc(ctx: *Context, call: ast.Call) !Result {
                     ctx.state.error_report = .{
                         .trailing = false,
                         .offending_token = call.token,
-                        .msg = try std.fmt.allocPrint(ctx.state.arena, "Could not find command in system", .{}),
+                        .msg = try std.fmt.allocPrint(ctx.ally, "Could not find command in system", .{}),
                     };
                     return error.CommandNotFound;
                 },
@@ -419,7 +425,10 @@ fn evalProc(ctx: *Context, call: ast.Call) !Result {
     }
 
     if (capturing) {
-        return something(try gc.allocedString(capture.?, call.token));
+        return something(try gc.allocedString(capture.?, .{
+            .origin = call.token,
+            .origin_module = ctx.root_module.filename,
+        }));
     }
     return nothing;
 }
@@ -452,10 +461,10 @@ fn evalArgs(ctx: *Context, arguments: []const ast.Expression) !std.ArrayList(*Va
 
 fn evalExpression(ctx: *Context, expr: ast.Expression) EvalError!Result {
     const base_expr = switch (expr.as) {
-        .bareword => |bw| something(try evalBareword(bw)),
+        .bareword => |bw| something(try evalBareword(ctx, bw)),
         .string_literal => |str| something(try evalStringLiteral(ctx, str)),
-        .integer_literal => |int| something(try evalIntegerLiteral(int)),
-        .bool_literal => |bl| something(try evalBoolLiteral(bl)),
+        .integer_literal => |int| something(try evalIntegerLiteral(ctx, int)),
+        .bool_literal => |bl| something(try evalBoolLiteral(ctx, bl)),
         .variable => |variable| something(try evalVariable(ctx, variable)),
         .capturing_call => |cap_inv| try evalCall(ctx, cap_inv),
         .list_literal => |list| something(try evalListLiteral(ctx, list)),
@@ -476,8 +485,13 @@ fn evalExpression(ctx: *Context, expr: ast.Expression) EvalError!Result {
     }
 }
 
-fn evalBareword(bw: ast.Bareword) !*Value {
-    const value = try gc.string(bw.token.value, bw.token);
+fn evalBareword(ctx: *Context, bw: ast.Bareword) !*Value {
+    const opt = gc.ValueOptions{
+        .origin = bw.token,
+        .origin_module = ctx.root_module.filename,
+    };
+
+    const value = try gc.string(bw.token.value, opt);
     try symtable.appendRoot(value);
     return value;
 }
@@ -486,6 +500,11 @@ fn evalStringLiteral(ctx: *Context, str: ast.StringLiteral) !*Value {
     var arena = std.heap.ArenaAllocator.init(ctx.ally);
     defer arena.deinit();
 
+    const opt = gc.ValueOptions{
+        .origin = str.token,
+        .origin_module = ctx.root_module.filename,
+    };
+
     const escaped = try strings.escape(arena.allocator(), str.token.value, null);
 
     if (str.interpolates) {
@@ -493,27 +512,36 @@ fn evalStringLiteral(ctx: *Context, str: ast.StringLiteral) !*Value {
             .as = .{
                 .string = escaped,
             },
-            .origin = str.token,
+            .origin = opt.origin,
+            .origin_module = opt.origin_module,
         };
-        const interpolated_value = try value.interpolate(ctx.ally);
+        const interpolated_value = try value.interpolate(gc.allocator());
         try symtable.appendRoot(interpolated_value);
         return interpolated_value;
     }
-    const value = try gc.string(escaped, str.token);
+    const value = try gc.string(escaped, opt);
     try symtable.appendRoot(value);
     return value;
 }
 
-fn evalIntegerLiteral(int: ast.IntegerLiteral) !*Value {
+fn evalIntegerLiteral(ctx: *Context, int: ast.IntegerLiteral) !*Value {
+    const opt = gc.ValueOptions{
+        .origin = int.token,
+        .origin_module = ctx.root_module.filename,
+    };
     //TODO: this should not be done here...
     const i = std.fmt.parseInt(i64, int.token.value, 10) catch unreachable;
-    const value = try gc.integer(i, int.token);
+    const value = try gc.integer(i, opt);
     try symtable.appendRoot(value);
     return value;
 }
 
-fn evalBoolLiteral(bl: ast.BoolLiteral) !*Value {
-    const value = try gc.boolean(bl.token.kind == .True, bl.token);
+fn evalBoolLiteral(ctx: *Context, bl: ast.BoolLiteral) !*Value {
+    const opt = gc.ValueOptions{
+        .origin = bl.token,
+        .origin_module = ctx.root_module.filename,
+    };
+    const value = try gc.boolean(bl.token.kind == .True, opt);
     try symtable.appendRoot(value);
     return value;
 }
@@ -525,8 +553,11 @@ fn evalVariable(ctx: *Context, variable: ast.Variable) !*Value {
 }
 
 fn evalListLiteral(ctx: *Context, list_literal: ast.ListLiteral) !*Value {
-    // Perhaps 'wrong' allocator? Perhaps does not matter? Who knows.
-    var list = try values.List.initCapacity(ctx.ally, list_literal.items.len);
+    const opt = gc.ValueOptions{
+        .origin = list_literal.token,
+        .origin_module = ctx.root_module.filename,
+    };
+    var list = try values.List.initCapacity(gc.allocator(), list_literal.items.len);
     errdefer list.deinit();
     for (list_literal.items) |item| {
         const value = try evalExpression(ctx, item);
@@ -535,14 +566,17 @@ fn evalListLiteral(ctx: *Context, list_literal: ast.ListLiteral) !*Value {
             .nothing => unreachable, // Construct needs value
         }
     }
-    const value = try gc.list(list, list_literal.token);
+    const value = try gc.list(list, opt);
     try symtable.appendRoot(value);
     return value;
 }
 
 fn evalRecordLiteral(ctx: *Context, record_literal: ast.RecordLiteral) !*Value {
-    _ = ctx; // autofix
-    return gc.emptyRecord(record_literal.token);
+    const opt = gc.ValueOptions{
+        .origin = record_literal.token,
+        .origin_module = ctx.root_module.filename,
+    };
+    return gc.emptyRecord(opt);
 }
 
 fn errNeverDeclared(ctx: *Context, token: *const tokens.Token) InterpreterError {

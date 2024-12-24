@@ -270,7 +270,7 @@ fn add(state: *State, args: []const *Value, call: ast.Call) !Result {
     });
 }
 
-fn addIntegers(_: *State, args: []const *Value, call: ast.Call) !*Value {
+fn addIntegers(state: *State, args: []const *Value, call: ast.Call) !*Value {
     var sum_value: i64 = 0;
     for (args) |arg| {
         switch (arg.as) {
@@ -280,10 +280,15 @@ fn addIntegers(_: *State, args: []const *Value, call: ast.Call) !*Value {
             else => unreachable,
         }
     }
-    return try gc.integer(sum_value, call.token);
+    const opt = gc.ValueOptions{
+        .origin = call.token,
+        .origin_module = state.current_module_in_process,
+    };
+
+    return try gc.integer(sum_value, opt);
 }
 
-fn concatenateStrings(_: *State, args: []const *Value, call: ast.Call) !*Value {
+fn concatenateStrings(state: *State, args: []const *Value, call: ast.Call) !*Value {
     var result = std.ArrayList(u8).init(gc.backing_allocator);
     for (args) |arg| {
         switch (arg.as) {
@@ -293,7 +298,11 @@ fn concatenateStrings(_: *State, args: []const *Value, call: ast.Call) !*Value {
             else => unreachable,
         }
     }
-    return try gc.allocedString(try result.toOwnedSlice(), call.token);
+    const opt = gc.ValueOptions{
+        .origin = call.token,
+        .origin_module = state.current_module_in_process,
+    };
+    return try gc.allocedString(try result.toOwnedSlice(), opt);
 }
 
 fn sub(state: *State, args: []const *Value, call: ast.Call) !Result {
@@ -317,10 +326,16 @@ fn sub(state: *State, args: []const *Value, call: ast.Call) !Result {
             .record => return typeMismatchError(state, "int", "record", 1),
         }
     }
-    return something(try gc.integer(diff_value, call.token));
+
+    const opt = gc.ValueOptions{
+        .origin = call.token,
+        .origin_module = state.current_module_in_process,
+    };
+
+    return something(try gc.integer(diff_value, opt));
 }
 
-fn mul(_: *State, args: []const *Value, call: ast.Call) !Result {
+fn mul(state: *State, args: []const *Value, call: ast.Call) !Result {
     if (args.len < 2) unreachable;
     var product_value: i64 = switch (args[0].as) {
         .integer => |i| i,
@@ -334,10 +349,14 @@ fn mul(_: *State, args: []const *Value, call: ast.Call) !Result {
             else => unreachable, //TODO: hmmm...
         }
     }
-    return something(try gc.integer(product_value, call.token));
+    const opt = gc.ValueOptions{
+        .origin = call.token,
+        .origin_module = state.current_module_in_process,
+    };
+    return something(try gc.integer(product_value, opt));
 }
 
-fn div(_: *State, args: []const *Value, call: ast.Call) !Result {
+fn div(state: *State, args: []const *Value, call: ast.Call) !Result {
     if (args.len < 2) unreachable;
     var quotient_value: i64 = switch (args[0].as) {
         .integer => |i| i,
@@ -352,12 +371,20 @@ fn div(_: *State, args: []const *Value, call: ast.Call) !Result {
             else => unreachable, //TODO: hmmm...
         }
     }
-    return something(try gc.integer(quotient_value, call.token));
+    const opt = gc.ValueOptions{
+        .origin = call.token,
+        .origin_module = state.current_module_in_process,
+    };
+    return something(try gc.integer(quotient_value, opt));
 }
 
 fn equals(state: *State, args: []const *Value, call: ast.Call) !Result {
+    const opt = gc.ValueOptions{
+        .origin = call.token,
+        .origin_module = state.current_module_in_process,
+    };
     if (args.len == 0) {
-        return something(try gc.boolean(true, call.token));
+        return something(try gc.boolean(true, opt));
     }
 
     const first = args[0];
@@ -367,13 +394,17 @@ fn equals(state: *State, args: []const *Value, call: ast.Call) !Result {
         switch (order) {
             .equal => {},
             .failure => |fail| return typeMismatchError(state, fail.wants, fail.got, idx),
-            else => return something(try gc.boolean(false, call.token)),
+            else => return something(try gc.boolean(false, opt)),
         }
     }
-    return something(try gc.boolean(true, call.token));
+    return something(try gc.boolean(true, opt));
 }
 
 fn less(state: *State, args: []const *Value, call: ast.Call) !Result {
+    const opt = gc.ValueOptions{
+        .origin = call.token,
+        .origin_module = state.current_module_in_process,
+    };
     if (args.len < 2) {
         unreachable;
     }
@@ -385,13 +416,17 @@ fn less(state: *State, args: []const *Value, call: ast.Call) !Result {
         switch (order) {
             .less => {},
             .failure => |fail| return typeMismatchError(state, fail.wants, fail.got, idx),
-            else => return something(try gc.boolean(false, call.token)),
+            else => return something(try gc.boolean(false, opt)),
         }
     }
-    return something(try gc.boolean(true, call.token));
+    return something(try gc.boolean(true, opt));
 }
 
 fn greater(state: *State, args: []const *Value, call: ast.Call) !Result {
+    const opt = gc.ValueOptions{
+        .origin = call.token,
+        .origin_module = state.current_module_in_process,
+    };
     if (args.len < 2) {
         unreachable;
     }
@@ -403,15 +438,19 @@ fn greater(state: *State, args: []const *Value, call: ast.Call) !Result {
         switch (order) {
             .greater => {},
             .failure => |fail| return typeMismatchError(state, fail.wants, fail.got, idx),
-            else => return something(try gc.boolean(false, call.token)),
+            else => return something(try gc.boolean(false, opt)),
         }
     }
-    return something(try gc.boolean(true, call.token));
+    return something(try gc.boolean(true, opt));
 }
 
 fn notEqual(state: *State, args: []const *Value, call: ast.Call) !Result {
+    const opt = gc.ValueOptions{
+        .origin = call.token,
+        .origin_module = state.current_module_in_process,
+    };
     if (args.len < 2) {
-        return something(try gc.boolean(true, call.token));
+        return something(try gc.boolean(true, opt));
     }
 
     const first = args[0];
@@ -419,15 +458,19 @@ fn notEqual(state: *State, args: []const *Value, call: ast.Call) !Result {
         //TODO: handle type error
         const order = first.compare(arg) catch unreachable;
         switch (order) {
-            .equal => return something(try gc.boolean(false, call.token)),
+            .equal => return something(try gc.boolean(false, opt)),
             .failure => |fail| return typeMismatchError(state, fail.wants, fail.got, idx),
             else => {},
         }
     }
-    return something(try gc.boolean(true, call.token));
+    return something(try gc.boolean(true, opt));
 }
 
 fn andFn(state: *State, args: []const *Value, call: ast.Call) !Result {
+    const opt = gc.ValueOptions{
+        .origin = call.token,
+        .origin_module = state.current_module_in_process,
+    };
     for (args, 0..) |arg, idx| {
         //TODO: handle type error
         const boolean = switch (arg.as) {
@@ -439,13 +482,18 @@ fn andFn(state: *State, args: []const *Value, call: ast.Call) !Result {
             .integer => return typeMismatchError(state, "bool", "int", idx),
         };
         if (!boolean) {
-            return something(try gc.boolean(false, call.token));
+            return something(try gc.boolean(false, opt));
         }
     }
-    return something(try gc.boolean(true, call.token));
+    return something(try gc.boolean(true, opt));
 }
 
 fn orFn(state: *State, args: []const *Value, call: ast.Call) !Result {
+    const opt = gc.ValueOptions{
+        .origin = call.token,
+        .origin_module = state.current_module_in_process,
+    };
+
     for (args, 0..) |arg, idx| {
         //TODO: handle type error
         const boolean = switch (arg.as) {
@@ -457,13 +505,13 @@ fn orFn(state: *State, args: []const *Value, call: ast.Call) !Result {
             .integer => return typeMismatchError(state, "bool", "int", idx),
         };
         if (boolean) {
-            return something(try gc.boolean(true, call.token));
+            return something(try gc.boolean(true, opt));
         }
     }
-    return something(try gc.boolean(false, call.token));
+    return something(try gc.boolean(false, opt));
 }
 
-fn len(_: *State, args: []const *Value, call: ast.Call) !Result {
+fn len(state: *State, args: []const *Value, call: ast.Call) !Result {
     var length: i64 = 0;
     for (args) |arg| {
         switch (arg.as) {
@@ -484,7 +532,11 @@ fn len(_: *State, args: []const *Value, call: ast.Call) !Result {
             .record => |r| length += @intCast(r.count()),
         }
     }
-    return something(try gc.integer(length, call.token));
+    const opt = gc.ValueOptions{
+        .origin = call.token,
+        .origin_module = state.current_module_in_process,
+    };
+    return something(try gc.integer(length, opt));
 }
 
 const append_info_list_of: TypeInfo = .{
@@ -551,7 +603,11 @@ fn get(state: *State, args: []const *Value, call: ast.Call) !Result {
             var i: i64 = 0;
             while (it.nextCodepointSlice()) |str| {
                 if (i == index) {
-                    return something(try gc.string(str, call.token));
+                    const opt = gc.ValueOptions{
+                        .origin = call.token,
+                        .origin_module = state.current_module_in_process,
+                    };
+                    return something(try gc.string(str, opt));
                 }
                 i += 1;
             }
@@ -615,12 +671,16 @@ fn sliceList(state: *State, args: []const *Value, list: values.List, call: ast.C
         unreachable; //TODO: error message
     }
 
-    var new_list = try std.ArrayList(*Value).initCapacity(state.ally, to_idx - from_idx);
+    var new_list = try std.ArrayList(*Value).initCapacity(gc.allocator(), to_idx - from_idx);
     for (list.items[from_idx..to_idx]) |val| {
         try new_list.append(try gc.cloneOrReference(val));
     }
 
-    return something(try gc.list(new_list, call.token));
+    const opt = gc.ValueOptions{
+        .origin = call.token,
+        .origin_module = state.current_module_in_process,
+    };
+    return something(try gc.list(new_list, opt));
 }
 
 fn sliceString(state: *State, args: []const *Value, string: []const u8, call: ast.Call) !Result {
@@ -641,7 +701,11 @@ fn sliceString(state: *State, args: []const *Value, string: []const u8, call: as
         unreachable; //TODO: error message
     }
 
-    const new_string = try gc.string(string[from_idx..to_idx], call.token);
+    const opt = gc.ValueOptions{
+        .origin = call.token,
+        .origin_module = state.current_module_in_process,
+    };
+    const new_string = try gc.string(string[from_idx..to_idx], opt);
     return something(new_string);
 }
 
@@ -659,9 +723,10 @@ fn getInt(state: *State, args: []const *Value, idx: usize) !i64 {
 
 fn envExport(state: *State, args: []const *Value, _: ast.Call) !Result {
     try validateArgsCount(state, &.{2}, args.len);
+    const ally = gc.allocator();
 
     const name = switch (args[0].as) {
-        .string => |string| try state.ally.dupe(u8, string),
+        .string => |string| try ally.dupe(u8, string),
         .record => return typeMismatchError(state, "string", "record", 0),
         .list => return typeMismatchError(state, "string", "list", 0),
         .float => return typeMismatchError(state, "string", "float", 0),
@@ -669,16 +734,16 @@ fn envExport(state: *State, args: []const *Value, _: ast.Call) !Result {
         .integer => return typeMismatchError(state, "string", "integer", 0),
     };
 
-    errdefer state.ally.free(name);
+    errdefer ally.free(name);
 
     const value = switch (args[1].as) {
-        .string, .boolean, .integer => try args[1].asStr(state.ally),
+        .string, .boolean, .integer => try args[1].asStr(ally),
         .record => return typeMismatchError(state, "string, boolean or integer", "record", 0),
         .list => return typeMismatchError(state, "string, boolean or integer", "list", 0),
         .float => return typeMismatchError(state, "string, boolean or integer", "float", 0),
     };
 
-    errdefer state.ally.free(value);
+    errdefer ally.free(value);
 
     try state.env_map.putMove(name, value);
 
@@ -703,7 +768,12 @@ fn int(state: *State, args: []const *Value, call: ast.Call) !Result {
         };
     };
 
-    return something(try gc.integer(int_result, call.token));
+    const opt = gc.ValueOptions{
+        .origin = call.token,
+        .origin_module = state.current_module_in_process,
+    };
+
+    return something(try gc.integer(int_result, opt));
 }
 
 fn vardump(_: *State, _: []const *Value, _: ast.Call) !Result {
@@ -727,7 +797,7 @@ fn validateArgsCount(
         }
     }
     state.error_report = .{
-        .msg = try std.fmt.allocPrint(state.arena, "Function expects {any} args, recieved {}", .{ accepted_counts, actual_count }),
+        .msg = try std.fmt.allocPrint(state.scratch_arena.allocator(), "Function expects {any} args, recieved {}", .{ accepted_counts, actual_count }),
         .offending_token = undefined, // Ok, caller will set the value
         .trailing = false,
     };
@@ -737,6 +807,6 @@ fn validateArgsCount(
 const TypeMismatchError = InterpreterError || std.mem.Allocator.Error;
 
 fn typeMismatchError(state: *State, wants: []const u8, got: []const u8, offending_value_idx: usize) TypeMismatchError {
-    state.error_report = try semantics.typeMismatchReportIdx(state.arena, wants, got, offending_value_idx);
+    state.error_report = try semantics.typeMismatchReportIdx(state.scratch_arena.allocator(), wants, got, offending_value_idx);
     return error.TypeMismatch;
 }

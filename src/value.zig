@@ -1,10 +1,12 @@
 const std = @import("std");
+const builtin = @import("builtin");
 const gc = @import("gc.zig");
 const symtable = @import("symtable.zig");
 const interpreter = @import("interpreter.zig");
 const tokens = @import("tokens.zig");
-const PipelineState = @import("pipeline.zig").State;
+const pipeline = @import("pipeline.zig");
 
+const PipelineState = pipeline.State;
 const InterpreterError = interpreter.InterpreterError;
 
 const indexOfPos = std.mem.indexOfPos;
@@ -34,7 +36,11 @@ pub const Value = struct {
         record: Record,
     },
     marked: bool = false,
+    //TODO: remove in release builds
+    //origin: if (builtin.mode == .Debug) *const tokens.Token else void,
+    //origin_module: if (builtin.mode == .Debug) []const u8 else void,
     origin: *const tokens.Token,
+    origin_module: []const u8,
 
     pub fn mark(self: *Value) void {
         if (self.marked) {
@@ -300,7 +306,11 @@ pub const Value = struct {
             try result.appendSlice(variable_string);
             idx = rbrace + 1;
         }
-        return try gc.allocedString(try result.toOwnedSlice(), self.origin);
+        const opt = gc.ValueOptions{
+            .origin = self.origin,
+            .origin_module = self.origin_module,
+        };
+        return try gc.allocedString(try result.toOwnedSlice(), opt);
     }
 };
 
@@ -324,21 +334,7 @@ pub fn something(value: *Value) Result {
     return Result{ .value = value };
 }
 
-fn testState() PipelineState {
-    return PipelineState{
-        .ally = std.testing.allocator,
-        .arena = std.testing.allocator,
-        .arena_source = undefined,
-        .verboseLexer = false,
-        .verboseParser = false,
-        .verboseAnalysis = false,
-        .verboseInterpretation = false,
-        .verboseGc = false,
-        .useSemanticAnalysis = false,
-        .env_map = std.process.EnvMap.init(std.testing.allocator),
-        .modules = undefined,
-    };
-}
+const testState = pipeline.testState;
 
 test "interpolate single value" {
     const ally = std.testing.allocator;
@@ -362,6 +358,7 @@ test "interpolate multiple values" {
     const ally = std.testing.allocator;
 
     var state = testState();
+    defer state.deinit();
     try gc.init(ally, &state);
     symtable.init(ally);
     defer gc.deinit();
@@ -380,6 +377,7 @@ test "interpolate no values" {
     const ally = std.testing.allocator;
 
     var state = testState();
+    defer state.deinit();
     try gc.init(ally, &state);
     defer gc.deinit();
 
@@ -393,6 +391,7 @@ test "escape interpolation" {
     const ally = std.testing.allocator;
 
     var state = testState();
+    defer state.deinit();
     try gc.init(ally, &state);
     defer gc.deinit();
 

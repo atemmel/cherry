@@ -20,7 +20,6 @@ pub const ErrorReport = struct {
 };
 
 pub const Module = struct {
-    arena: std.mem.Allocator,
     filename: []const u8,
     source: []const u8,
     tokens: []Token,
@@ -28,9 +27,7 @@ pub const Module = struct {
 };
 
 pub const State = struct {
-    arena_source: *std.heap.ArenaAllocator,
-    arena: std.mem.Allocator,
-    ally: std.mem.Allocator,
+    scratch_arena: std.heap.ArenaAllocator,
     modules: std.StringHashMap(Module),
     current_module_in_process: []const u8 = "",
     verboseLexer: bool,
@@ -43,6 +40,10 @@ pub const State = struct {
     error_report: ?ErrorReport = null,
     analysis: semantics.Analysis = .{},
     env_map: std.process.EnvMap,
+
+    pub fn deinit(self: *State) void {
+        self.scratch_arena.deinit();
+    }
 
     pub fn readEnv(state: *const State, env: []const u8) ?[]const u8 {
         return state.env_map.get(env);
@@ -102,8 +103,8 @@ pub const State = struct {
         };
     }
 
-    fn errorInfoPtr(state: *const State, token: *const Token) ErrorInfo {
-        const module = state.modules.get(state.current_module_in_process) orelse unreachable;
+    fn errorInfoPtr(state: *const State, token: *const Token, module_name: []const u8) ErrorInfo {
+        const module = state.modules.get(module_name) orelse unreachable;
         const src_ptr_begin = module.source.ptr;
         const src_ptr_offset = token.value.ptr;
         const src_offset = @intFromPtr(src_ptr_offset) - @intFromPtr(src_ptr_begin);
@@ -144,8 +145,8 @@ pub const State = struct {
         };
     }
 
-    pub fn dumpSourceAtToken(state: *const State, token: *const Token) void {
-        const source_info = errorInfoPtr(state, token);
+    pub fn dumpSourceAtToken(state: *const State, token: *const Token, module_name: []const u8) void {
+        const source_info = errorInfoPtr(state, token, module_name);
         const writer = std.io.getStdErr().writer();
         writer.print("{s}\n", .{source_info.row_str}) catch {};
         writeErrorSource(source_info, writer) catch {};
@@ -297,9 +298,15 @@ fn writeErrorSource(info: State.ErrorInfo, writer: anytype) !void {
     try writer.print("\n", .{});
 }
 
-pub fn run(state: *State, root_module_name: []const u8, root_module_source: []const u8) PipelineError!void {
-    state.current_module_in_process = root_module_name;
-    _ = try loadModuleFromSource(state, root_module_name, root_module_source);
+pub const RunOptions = struct {
+    root_module_name: []const u8,
+    root_module_source: []const u8,
+    root_scope_already_exists: bool,
+};
+
+pub fn run(state: *State, opt: RunOptions) PipelineError!void {
+    state.current_module_in_process = opt.root_module_name;
+    _ = try loadModuleFromSource(state, opt.root_module_name, opt.root_module_source);
 
     //TODO: all of this
     if (false and state.useSemanticAnalysis) {
@@ -313,7 +320,10 @@ pub fn run(state: *State, root_module_name: []const u8, root_module_source: []co
     }
 
     const interpret_start_us = microTimestamp();
-    try interpreter.interpret(state, root_module_name);
+    try interpreter.interpret(state, .{
+        .root_module_name = opt.root_module_name,
+        .root_scope_already_exists = opt.root_scope_already_exists,
+    });
 
     const interpret_stop_us = microTimestamp();
     if (state.verboseInterpretation) {
@@ -322,16 +332,20 @@ pub fn run(state: *State, root_module_name: []const u8, root_module_source: []co
 }
 
 pub fn loadModuleFromSource(state: *State, name: []const u8, source: []const u8) !Module {
-    try state.modules.put(name, .{
-        .ast = undefined,
-        .arena = state.arena,
-        .filename = name,
-        .source = source,
-        .tokens = &.{},
-    });
+    const result = try state.modules.getOrPut(name);
+
+    // never directly overwrite existing modules
+    if (!result.found_existing) {
+        result.value_ptr.* = .{
+            .ast = undefined,
+            .filename = name,
+            .source = source,
+            .tokens = &.{},
+        };
+    }
 
     // incrementally build up the pieces that make up a module
-    var partial_module = state.modules.getPtr(name).?; // this should never be null as we just set it
+    const partial_module = result.value_ptr;
 
     // text -> tokens
     const lexer_start_us = microTimestamp();
@@ -357,4 +371,18 @@ pub fn loadModuleFromSource(state: *State, name: []const u8, source: []const u8)
 
     // partial module is now complete
     return partial_module.*;
+}
+
+pub fn testState() State {
+    return .{
+        .scratch_arena = std.heap.ArenaAllocator.init(std.testing.allocator),
+        .verboseLexer = false,
+        .verboseParser = false,
+        .verboseAnalysis = false,
+        .verboseInterpretation = false,
+        .verboseGc = false,
+        .useSemanticAnalysis = false,
+        .env_map = std.process.EnvMap.init(std.testing.allocator),
+        .modules = undefined,
+    };
 }

@@ -110,7 +110,7 @@ const LexState = struct {
 pub fn lex(state: *PipelineState, source: []const u8) LexerError![]Token {
     var lstate = LexState{
         .source = source,
-        .list = std.ArrayList(Token).init(state.arena),
+        .list = std.ArrayList(Token).init(state.scratch_arena.allocator()),
     };
 
     while (!lstate.eof()) : (lstate.next()) {
@@ -404,32 +404,15 @@ pub fn dump(tokens: []const Token) void {
     }
 }
 
+const testState = @import("pipeline.zig").testState;
 const expectEqual = std.testing.expectEqual;
 const expectEqualStrings = std.testing.expectEqualStrings;
 
-fn testState() PipelineState {
-    return PipelineState{
-        .ally = std.testing.allocator,
-        .arena = std.testing.allocator,
-        .arena_source = undefined,
-        .verboseLexer = false,
-        .verboseParser = false,
-        .verboseAnalysis = false,
-        .verboseInterpretation = false,
-        .verboseGc = false,
-        .useSemanticAnalysis = false,
-        .env_map = std.process.EnvMap.init(std.testing.allocator),
-        .modules = undefined,
-    };
-}
-
 test "lex barewords" {
-    const ally = std.testing.allocator;
-
     var state = testState();
+    defer state.deinit();
 
     const tokens = try lex(&state, "ls -l -a");
-    defer ally.free(tokens);
 
     try expectEqual(3, tokens.len);
     try expectEqualStrings("ls", tokens[0].value);
@@ -441,12 +424,10 @@ test "lex barewords" {
 }
 
 test "lex string literals" {
-    const ally = std.testing.allocator;
-
     var state = testState();
+    defer state.deinit();
 
     const tokens = try lex(&state, "\"hi\" \"hello\"");
-    defer ally.free(tokens);
 
     try expectEqual(2, tokens.len);
     try expectEqualStrings("hi", tokens[0].value);
@@ -456,12 +437,10 @@ test "lex string literals" {
 }
 
 test "lex var declaration" {
-    const ally = std.testing.allocator;
-
     var state = testState();
+    defer state.deinit();
 
     const tokens = try lex(&state, "x := \"hello\"");
-    defer ally.free(tokens);
 
     try expectEqual(4, tokens.len);
     try expectEqual(Token.Kind.Bareword, tokens[0].kind);
@@ -471,12 +450,10 @@ test "lex var declaration" {
 }
 
 test "lex call with variable" {
-    const ally = std.testing.allocator;
-
     var state = testState();
+    defer state.deinit();
 
     const tokens = try lex(&state, "say $x");
-    defer ally.free(tokens);
 
     try expectEqual(2, tokens.len);
     try expectEqual(Token.Kind.Bareword, tokens[0].kind);
@@ -485,12 +462,10 @@ test "lex call with variable" {
 }
 
 test "lex equals" {
-    const ally = std.testing.allocator;
-
     var state = testState();
+    defer state.deinit();
 
     const tokens = try lex(&state, "== 1 2");
-    defer ally.free(tokens);
 
     try expectEqual(3, tokens.len);
     try expectEqual(.Bareword, tokens[0].kind);
@@ -502,12 +477,10 @@ test "lex equals" {
 }
 
 test "lex rpar rpar" {
-    const ally = std.testing.allocator;
-
     var state = testState();
+    defer state.deinit();
 
     const tokens = try lex(&state, "3))");
-    defer ally.free(tokens);
 
     try expectEqual(3, tokens.len);
     try expectEqual(.IntegerLiteral, tokens[0].kind);
@@ -516,11 +489,10 @@ test "lex rpar rpar" {
 }
 
 test "lex assert equals rpar" {
-    const ally = std.testing.allocator;
     var state = testState();
+    defer state.deinit();
 
     const tokens = try lex(&state, "assert (== \"hello\" $x)");
-    defer ally.free(tokens);
 
     try expectEqual(6, tokens.len);
     try expectEqual(.Bareword, tokens[0].kind);
@@ -532,12 +504,10 @@ test "lex assert equals rpar" {
 }
 
 test "lex assert str str" {
-    const ally = std.testing.allocator;
-
     var state = testState();
+    defer state.deinit();
 
     const tokens = try lex(&state, "assert (== \"H\" \"H\")");
-    defer ally.free(tokens);
 
     try expectEqual(6, tokens.len);
     try expectEqual(.Bareword, tokens[0].kind);
@@ -549,12 +519,10 @@ test "lex assert str str" {
 }
 
 test "lex x y newline }" {
-    const ally = std.testing.allocator;
-
     var state = testState();
+    defer state.deinit();
 
     const tokens = try lex(&state, "\tassert true\n}");
-    defer ally.free(tokens);
 
     try expectEqual(4, tokens.len);
     try expectEqual(.Bareword, tokens[0].kind);
@@ -564,12 +532,10 @@ test "lex x y newline }" {
 }
 
 test "lex integer" {
-    const ally = std.testing.allocator;
-
     var state = testState();
+    defer state.deinit();
 
     const tokens = try lex(&state, "3 5");
-    defer ally.free(tokens);
 
     try expectEqual(2, tokens.len);
     try expectEqual(.IntegerLiteral, tokens[0].kind);
@@ -579,16 +545,14 @@ test "lex integer" {
 }
 
 test "lex multiline string" {
-    const ally = std.testing.allocator;
-
     var state = testState();
+    defer state.deinit();
 
     const tokens = try lex(&state,
         \\say `
         \\
         \\guys`
     );
-    defer ally.free(tokens);
 
     try expectEqual(2, tokens.len);
     try expectEqual(.Bareword, tokens[0].kind);
@@ -598,9 +562,8 @@ test "lex multiline string" {
 }
 
 test "lex block comment" {
-    const ally = std.testing.allocator_instance.allocator();
-
     var state = testState();
+    defer state.deinit();
 
     const tokens = try lex(&state,
         \\hello
@@ -609,7 +572,6 @@ test "lex block comment" {
         \\#}
         \\bye
     );
-    defer ally.free(tokens);
 
     try expectEqual(3, tokens.len);
     try expectEqual(.Bareword, tokens[0].kind);
@@ -620,9 +582,8 @@ test "lex block comment" {
 }
 
 test "lex nested block comment" {
-    const ally = std.testing.allocator_instance.allocator();
-
     var state = testState();
+    defer state.deinit();
 
     const tokens = try lex(&state,
         \\hello
@@ -635,7 +596,6 @@ test "lex nested block comment" {
         \\#}
         \\bye
     );
-    defer ally.free(tokens);
 
     try expectEqual(3, tokens.len);
     try expectEqual(.Bareword, tokens[0].kind);
@@ -646,14 +606,12 @@ test "lex nested block comment" {
 }
 
 test "lex negative number" {
-    const ally = std.testing.allocator_instance.allocator();
-
     var state = testState();
+    defer state.deinit();
 
     const tokens = try lex(&state,
         \\say -1
     );
-    defer ally.free(tokens);
 
     try expectEqual(2, tokens.len);
     try expectEqual(.Bareword, tokens[0].kind);
@@ -663,14 +621,12 @@ test "lex negative number" {
 }
 
 test "lex subtraction" {
-    const ally = std.testing.allocator_instance.allocator();
-
     var state = testState();
+    defer state.deinit();
 
     const tokens = try lex(&state,
         \\(- 3 2)
     );
-    defer ally.free(tokens);
 
     try expectEqual(5, tokens.len);
     try expectEqual(.LParens, tokens[0].kind);

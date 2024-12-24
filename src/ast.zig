@@ -252,7 +252,7 @@ const Context = struct {
 pub fn parse(state: *PipelineState, tokens: []Token, name: []const u8) !Module {
     var ctx = Context{
         .tokens = tokens,
-        .ally = state.arena,
+        .ally = state.scratch_arena.allocator(),
         .state = state,
     };
     return parseModule(&ctx, name);
