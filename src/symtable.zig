@@ -86,10 +86,6 @@ pub fn getEntry(key: []const u8) ?Symtable.Entry {
     return null;
 }
 
-pub fn put(key: []const u8, value: *Value) !void {
-    try topFrame().symtable.put(key, value);
-}
-
 pub fn appendRoot(value: *Value) !void {
     try topFrame().root_values.append(value);
 }

@@ -322,7 +322,7 @@ fn evalFunctionCall(ctx: *Context, func: ast.Func, call: ast.Call) !Result {
     assert(func.signature.parameters.len == args.items.len);
 
     for (func.signature.parameters, args.items) |par, arg| {
-        try symtable.put(par.name, arg);
+        try symtable.insert(par.name, arg);
     }
 
     for (func.scope) |stmnt| {
