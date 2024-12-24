@@ -1,6 +1,5 @@
 const std = @import("std");
 const gc = @import("gc.zig");
-const symtable = @import("symtable.zig");
 const interpreter = @import("interpreter.zig");
 const pipeline = @import("pipeline.zig");
 
@@ -49,7 +48,7 @@ pub fn interpolate(arena: std.mem.Allocator, str: []const u8) ![]u8 {
         const rbrace = indexOfPos(u8, str, lbrace, "}") orelse return InterpreterError.MismatchedBraces;
 
         const variable_name = str[lbrace + 1 .. rbrace];
-        const variable_value = symtable.get(variable_name) orelse return InterpreterError.BadVariableLookup;
+        const variable_value = gc.getSymbol(variable_name) orelse return InterpreterError.BadVariableLookup;
 
         //TODO: arena allocator candidate
         const variable_string = try variable_value.asStr(arena);

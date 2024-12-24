@@ -4,7 +4,6 @@ const builtin = @import("builtin");
 const gc = @import("gc.zig");
 const pipeline = @import("pipeline.zig");
 const repl = @import("repl.zig").repl;
-const symtable = @import("symtable.zig");
 const tokens = @import("tokens.zig");
 const clap = @import("clap");
 const build_options = @import("build_options");
@@ -149,9 +148,6 @@ pub fn main() !u8 {
 
     try gc.init(ally, &state);
     defer gc.deinit();
-
-    symtable.init(ally);
-    defer symtable.deinit();
 
     defer state.env_map.deinit();
 

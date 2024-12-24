@@ -1,7 +1,6 @@
 const std = @import("std");
 const pipeline = @import("pipeline.zig");
 const ast = @import("ast.zig");
-const symtable = @import("symtable.zig");
 const gc = @import("gc.zig");
 const builtins = @import("builtins.zig");
 const values = @import("value.zig");
@@ -65,9 +64,9 @@ pub fn interpret(state: *PipelineState, opt: InterpreterOptions) EvalError!void 
     };
 
     if (!opt.root_scope_already_exists) {
-        try symtable.pushFrame();
+        try gc.pushFrame();
     }
-    defer if (!opt.root_scope_already_exists) symtable.popFrame();
+    defer if (!opt.root_scope_already_exists) gc.popFrame();
 
     try interpretRoot(&ctx);
 }
@@ -109,11 +108,11 @@ fn interpretVarDecl(ctx: *Context, var_decl: ast.VarDecl) !void {
             return errRequiresValue(ctx, ptr);
         },
     };
-    try symtable.insert(var_decl.token.value, value);
+    try gc.insertSymbol(var_decl.token.value, value);
 }
 
 fn interpretAssign(ctx: *Context, assign: ast.Assignment) !void {
-    const entry = symtable.getEntry(assign.variable.token.value) orelse {
+    const entry = gc.getEntry(assign.variable.token.value) orelse {
         return errNeverDeclared(ctx, assign.variable.token);
     };
 
@@ -155,8 +154,8 @@ fn interpretAssign(ctx: *Context, assign: ast.Assignment) !void {
 }
 
 fn interpretBranches(ctx: *Context, branches: ast.Branches) !Returns {
-    try symtable.pushFrame();
-    defer symtable.popFrame();
+    try gc.pushFrame();
+    defer gc.popFrame();
     // frames are collected in interpretStatmenet
     for (branches) |branch| {
         if (branch.condition) |expr| {
@@ -184,8 +183,8 @@ fn interpretBranches(ctx: *Context, branches: ast.Branches) !Returns {
 }
 
 fn interpretScope(ctx: *Context, scope: ast.Scope) !Returns {
-    try symtable.pushFrame();
-    defer symtable.popFrame();
+    try gc.pushFrame();
+    defer gc.popFrame();
     // frames are collected in interpretStatmenet
     for (scope) |stmnt| {
         const returns = try interpretStatement(ctx, stmnt);
@@ -202,8 +201,8 @@ fn interpretScope(ctx: *Context, scope: ast.Scope) !Returns {
 }
 
 fn interpretLoop(ctx: *Context, loop: ast.Loop) !Returns {
-    try symtable.pushFrame();
-    defer symtable.popFrame();
+    try gc.pushFrame();
+    defer gc.popFrame();
     // frames are collected in interpretStatmenet
 
     if (loop.init_op) |init_op| {
@@ -258,7 +257,7 @@ fn evalReturn(ctx: *Context, ret: ast.Return) !Returns {
             .nothing => {},
             .value => |value| {
                 // share frame with parent
-                try symtable.appendToFrameRoot(ctx.calling_ctx_stack_depth - 1, value);
+                try gc.appendToFrameRoot(ctx.calling_ctx_stack_depth - 1, value);
             },
         }
         return .{ .did_return = eval_expr };
@@ -273,7 +272,7 @@ fn evalCall(ctx: *Context, call: ast.Call) !Result {
     if (builtins.lookup(name)) |builtin_info| {
         return try evalBuiltin(ctx, call, builtin_info.func);
     } else if (ctx.root_module.ast.functions.getPtr(name)) |func| {
-        ctx.calling_ctx_stack_depth = symtable.stackDepth();
+        ctx.calling_ctx_stack_depth = gc.stackDepth();
         defer ctx.calling_ctx_stack_depth = prev_calling_ctx_stack_depth;
         return try evalFunctionCall(ctx, func.*, call);
     } else {
@@ -313,8 +312,8 @@ fn evalBuiltin(ctx: *Context, call: ast.Call, builtin: *const builtins.BuiltinFn
 }
 
 fn evalFunctionCall(ctx: *Context, func: ast.Func, call: ast.Call) !Result {
-    try symtable.pushFrame();
-    defer symtable.popFrame();
+    try gc.pushFrame();
+    defer gc.popFrame();
 
     var args = try evalArgs(ctx, call.arguments);
     defer args.deinit();
@@ -322,7 +321,7 @@ fn evalFunctionCall(ctx: *Context, func: ast.Func, call: ast.Call) !Result {
     assert(func.signature.parameters.len == args.items.len);
 
     for (func.signature.parameters, args.items) |par, arg| {
-        try symtable.insert(par.name, arg);
+        try gc.insertSymbol(par.name, arg);
     }
 
     for (func.scope) |stmnt| {
@@ -492,7 +491,7 @@ fn evalBareword(ctx: *Context, bw: ast.Bareword) !*Value {
     };
 
     const value = try gc.string(bw.token.value, opt);
-    try symtable.appendRoot(value);
+    try gc.appendRoot(value);
     return value;
 }
 
@@ -516,11 +515,11 @@ fn evalStringLiteral(ctx: *Context, str: ast.StringLiteral) !*Value {
             .origin_module = opt.origin_module,
         };
         const interpolated_value = try value.interpolate(gc.allocator());
-        try symtable.appendRoot(interpolated_value);
+        try gc.appendRoot(interpolated_value);
         return interpolated_value;
     }
     const value = try gc.string(escaped, opt);
-    try symtable.appendRoot(value);
+    try gc.appendRoot(value);
     return value;
 }
 
@@ -532,7 +531,7 @@ fn evalIntegerLiteral(ctx: *Context, int: ast.IntegerLiteral) !*Value {
     //TODO: this should not be done here...
     const i = std.fmt.parseInt(i64, int.token.value, 10) catch unreachable;
     const value = try gc.integer(i, opt);
-    try symtable.appendRoot(value);
+    try gc.appendRoot(value);
     return value;
 }
 
@@ -542,12 +541,12 @@ fn evalBoolLiteral(ctx: *Context, bl: ast.BoolLiteral) !*Value {
         .origin_module = ctx.root_module.filename,
     };
     const value = try gc.boolean(bl.token.kind == .True, opt);
-    try symtable.appendRoot(value);
+    try gc.appendRoot(value);
     return value;
 }
 
 fn evalVariable(ctx: *Context, variable: ast.Variable) !*Value {
-    return symtable.get(variable.token.value) orelse {
+    return gc.getSymbol(variable.token.value) orelse {
         return errNeverDeclared(ctx, variable.token);
     };
 }
@@ -567,7 +566,7 @@ fn evalListLiteral(ctx: *Context, list_literal: ast.ListLiteral) !*Value {
         }
     }
     const value = try gc.list(list, opt);
-    try symtable.appendRoot(value);
+    try gc.appendRoot(value);
     return value;
 }
 

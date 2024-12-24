@@ -3,7 +3,7 @@ const algo = @import("algo.zig");
 const builtin = @import("builtin");
 const pipeline = @import("pipeline.zig");
 const terminal = @import("term.zig");
-const symtable = @import("symtable.zig");
+const gc = @import("gc.zig");
 const strings = @import("strings.zig");
 const Term = terminal.Term;
 const Color = terminal.Color;
@@ -182,8 +182,8 @@ pub fn repl(pipeline_state: *pipeline.State, persistent_allocator: std.mem.Alloc
     try readHistory(&state);
     state.history_scroll_idx = state.history.items.len;
 
-    try symtable.pushFrame();
-    defer symtable.popFrame();
+    try gc.pushFrame();
+    defer gc.popFrame();
 
     try readRc(&state);
 
@@ -801,7 +801,7 @@ fn readRc(state: *State) !void {
 fn aliasLookup(state: *State, cmd_arg: []const u8) ![]const u8 {
     var cmd = cmd_arg;
 
-    const aliases = symtable.aliases.items;
+    const aliases = gc.aliases.items;
     if (aliases.len == 0) {
         return cmd;
     }
@@ -828,10 +828,11 @@ fn aliasLookup(state: *State, cmd_arg: []const u8) ![]const u8 {
     return cmd;
 }
 
+const pipelineTestState = pipeline.testState;
 const expectEqual = std.testing.expectEqual;
 const expectEqualStrings = std.testing.expectEqualStrings;
 
-fn testState() State {
+fn testReplState() State {
     return State{
         .persistent_arena = undefined,
         .completion_arena = undefined,
@@ -844,14 +845,15 @@ fn testState() State {
 }
 
 test "Single alias lookup" {
-    symtable.init(std.testing.allocator);
-    defer symtable.deinit();
+    var pipeline_state = pipelineTestState();
+    try gc.init(std.testing.allocator, &pipeline_state);
+    defer gc.deinit();
 
-    var state = testState();
+    var state = testReplState();
 
     const cmd = "ls";
 
-    try symtable.aliases.append(.{
+    try gc.aliases.append(.{
         .from = "ls",
         .to = "ls \"--color=auto\"",
     });
@@ -860,14 +862,14 @@ test "Single alias lookup" {
 }
 
 test "Single alias lookup failure" {
-    symtable.init(std.testing.allocator);
-    defer symtable.deinit();
-
-    var state = testState();
+    var pipeline_state = pipelineTestState();
+    try gc.init(std.testing.allocator, &pipeline_state);
+    defer gc.deinit();
+    var state = testReplState();
 
     const cmd = "lsblk";
 
-    try symtable.aliases.append(.{
+    try gc.aliases.append(.{
         .from = "ls",
         .to = "ls \"--color=auto\"",
     });
@@ -876,14 +878,14 @@ test "Single alias lookup failure" {
 }
 
 test "Single alias lookup success but keeps arg" {
-    symtable.init(std.testing.allocator);
-    defer symtable.deinit();
-
-    var state = testState();
+    var pipeline_state = pipelineTestState();
+    try gc.init(std.testing.allocator, &pipeline_state);
+    defer gc.deinit();
+    var state = testReplState();
 
     const cmd = "ls /tmp";
 
-    try symtable.aliases.append(.{
+    try gc.aliases.append(.{
         .from = "ls",
         .to = "ls \"--color=auto\"",
     });
@@ -892,14 +894,14 @@ test "Single alias lookup success but keeps arg" {
 }
 
 test "Nested alias lookup success" {
-    symtable.init(std.testing.allocator);
-    defer symtable.deinit();
-
-    var state = testState();
+    var pipeline_state = pipelineTestState();
+    try gc.init(std.testing.allocator, &pipeline_state);
+    defer gc.deinit();
+    var state = testReplState();
 
     const cmd = "ll";
 
-    try symtable.aliases.appendSlice(&.{
+    try gc.aliases.appendSlice(&.{
         .{ .from = "ls", .to = "ls \"--color=auto\"" },
         .{ .from = "ll", .to = "ls -l" },
     });

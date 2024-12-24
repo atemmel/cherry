@@ -5,7 +5,6 @@ const gc = @import("gc.zig");
 const interpreter = @import("interpreter.zig");
 const semantics = @import("semantics.zig");
 const pipeline = @import("pipeline.zig");
-const symtable = @import("symtable.zig");
 
 const Signature = ast.Signature;
 const TypeInfo = semantics.TypeInfo;
@@ -213,7 +212,7 @@ fn alias(state: *State, args: []const *Value, _: ast.Call) !Result {
         else => unreachable,
     };
 
-    try symtable.aliases.append(.{
+    try gc.aliases.append(.{
         .from = alias_from,
         .to = alias_to,
     });
@@ -289,7 +288,7 @@ fn addIntegers(state: *State, args: []const *Value, call: ast.Call) !*Value {
 }
 
 fn concatenateStrings(state: *State, args: []const *Value, call: ast.Call) !*Value {
-    var result = std.ArrayList(u8).init(gc.backing_allocator);
+    var result = std.ArrayList(u8).init(gc.allocator());
     for (args) |arg| {
         switch (arg.as) {
             .string => |s| {
@@ -784,7 +783,7 @@ fn vardump(_: *State, args: []const *Value, _: ast.Call) !Result {
             else => {},
         }
     }
-    symtable.dump(show_root_values);
+    gc.varDump(show_root_values);
     return nothing;
 }
 

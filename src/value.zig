@@ -1,7 +1,6 @@
 const std = @import("std");
 const builtin = @import("builtin");
 const gc = @import("gc.zig");
-const symtable = @import("symtable.zig");
 const interpreter = @import("interpreter.zig");
 const tokens = @import("tokens.zig");
 const pipeline = @import("pipeline.zig");
@@ -296,7 +295,7 @@ pub const Value = struct {
             const rbrace = indexOfPos(u8, str, lbrace, "}") orelse return InterpreterError.MismatchedBraces;
 
             const variable_name = str[lbrace + 1 .. rbrace];
-            const variable_value = symtable.get(variable_name) orelse return InterpreterError.BadVariableLookup;
+            const variable_value = gc.getSymbol(variable_name) orelse return InterpreterError.BadVariableLookup;
 
             //TODO: arena allocator candidate
             const variable_string = try variable_value.asStr(ally);
@@ -341,12 +340,10 @@ test "interpolate single value" {
 
     var state = testState();
     try gc.init(ally, &state);
-    symtable.init(ally);
     defer gc.deinit();
-    defer symtable.deinit();
-    try symtable.pushFrame();
+    try gc.pushFrame();
 
-    try symtable.insert("y", try gc.string("x", undefined));
+    try gc.insertSymbol("y", try gc.string("x", undefined));
 
     const str = try gc.string("x {y}", undefined);
 
@@ -360,12 +357,10 @@ test "interpolate multiple values" {
     var state = testState();
     defer state.deinit();
     try gc.init(ally, &state);
-    symtable.init(ally);
     defer gc.deinit();
-    defer symtable.deinit();
-    try symtable.pushFrame();
+    try gc.pushFrame();
 
-    try symtable.insert("y", try gc.string("x", undefined));
+    try gc.insertSymbol("y", try gc.string("x", undefined));
 
     const str = try gc.string("x {y} {y}", undefined);
 
