@@ -71,13 +71,9 @@ pub fn main() !u8 {
     // This is optional. You can also pass `.{}` to `clap.parse` if you don't
     // care about the extra information `Diagnostics` provides.
 
-    const maybe_cl_diagnostics = switch (builtin.mode) {
-        .Debug => clap.Diagnostic{},
-        else => void,
-    };
-
+    var cl_diagnostics = clap.Diagnostic{};
     const diagnostic = comptime switch (builtin.mode) {
-        .Debug => &maybe_cl_diagnostics,
+        .Debug => &cl_diagnostics,
         else => null,
     };
 
