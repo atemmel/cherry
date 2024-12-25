@@ -1,4 +1,3 @@
-#!zig-out/bin/cherry
-zig build -Doptimize=Debug
-sudo cp zig-out/bin/cherry /usr/bin/cherry
+#!./zig-out/bin/cherry
+sudo zig build install -Doptimize=Debug --prefix-exe-dir /usr/bin/
 sudo ln -s /usr/bin/cherry /bin/cherry
