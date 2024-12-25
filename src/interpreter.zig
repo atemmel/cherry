@@ -29,7 +29,10 @@ pub const InterpreterError = error{
     VariableAlreadyDeclared,
 };
 
-pub const EvalError = builtins.BuiltinError || std.process.Child.RunError;
+pub const EvalError = builtins.BuiltinError || std.process.Child.RunError || error{
+    ModuleNotFound,
+    FunctionNotFoundWithinModule,
+};
 
 const Context = struct {
     state: *PipelineState,
@@ -269,6 +272,30 @@ fn evalCall(ctx: *Context, call: ast.Call) !Result {
     const prev_calling_ctx_stack_depth = ctx.calling_ctx_stack_depth;
     const name = call.token.value;
 
+    if (call.accessor) |accessor| {
+        const owning_module_name = call.token.value;
+        const module = ctx.state.modules.get(owning_module_name) orelse {
+            ctx.state.error_report = .{
+                .trailing = false,
+                .offending_token = call.token,
+                .msg = try std.fmt.allocPrint(ctx.ally, "Module '{s}' was never imported.", .{owning_module_name}),
+            };
+            return error.ModuleNotFound;
+        };
+        const func_name = accessor.member.token.value;
+        const func = module.ast.functions.get(func_name) orelse {
+            ctx.state.error_report = .{
+                .trailing = false,
+                .offending_token = call.token,
+                .msg = try std.fmt.allocPrint(ctx.ally, "Module '{s}' does not export a function named '{s}'.", .{ owning_module_name, func_name }),
+            };
+            return error.FunctionNotFoundWithinModule;
+        };
+        ctx.calling_ctx_stack_depth = gc.stackDepth();
+        defer ctx.calling_ctx_stack_depth = prev_calling_ctx_stack_depth;
+        return try evalFunctionCall(ctx, func, call);
+    }
+
     if (builtins.lookup(name)) |builtin_info| {
         return try evalBuiltin(ctx, call, builtin_info.func);
     } else if (ctx.root_module.ast.functions.getPtr(name)) |func| {
@@ -410,11 +437,11 @@ fn evalProc(ctx: *Context, call: ast.Call) !Result {
         _ = p.wait() catch |e| {
             switch (e) {
                 error.FileNotFound => {
-                    ctx.state.error_report = .{
+                    ctx.state.reportError(.{
                         .trailing = false,
                         .offending_token = call.token,
                         .msg = try std.fmt.allocPrint(ctx.ally, "Could not find command in system", .{}),
-                    };
+                    });
                     return error.CommandNotFound;
                 },
                 else => {},

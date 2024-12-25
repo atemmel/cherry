@@ -1,22 +1,17 @@
 const std = @import("std");
+const algo = @import("algo.zig");
 const ast = @import("ast.zig");
+const build_options = @import("build_options");
 const builtin = @import("builtin");
+const clap = @import("clap");
 const gc = @import("gc.zig");
 const pipeline = @import("pipeline.zig");
 const repl = @import("repl.zig").repl;
 const tokens = @import("tokens.zig");
-const clap = @import("clap");
-const build_options = @import("build_options");
 
 const git_latest_commit_hash = std.mem.trim(u8, @embedFile("git_latest_commit_hash"), " \n\r\t");
 
 const assert = std.debug.assert;
-
-fn readfile(ally: std.mem.Allocator, name: []const u8) ![]const u8 {
-    const file = try std.fs.cwd().openFile(name, .{});
-    defer file.close();
-    return file.readToEndAlloc(ally, 1_000_000_000);
-}
 
 pub fn main() !u8 {
     var base_allocator = comptime switch (builtin.mode) {
@@ -156,7 +151,7 @@ pub fn main() !u8 {
         return 0;
     }
 
-    const source = try readfile(arena_allocator, file.?);
+    const source = try algo.readfile(arena_allocator, file.?);
 
     pipeline.run(&state, .{
         .root_module_name = file.?,

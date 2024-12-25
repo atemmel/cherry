@@ -1,4 +1,4 @@
 import str
 
-#idx := (str'index-of "hello" "h")
+idx := (str'index-of "hello" "h")
 #assert (== 1 $idx)

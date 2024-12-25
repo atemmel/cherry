@@ -1,4 +1,5 @@
 const std = @import("std");
+const algo = @import("algo.zig");
 const tokens = @import("tokens.zig");
 const ast = @import("ast.zig");
 const interpreter = @import("interpreter.zig");
@@ -47,6 +48,10 @@ pub const State = struct {
 
     pub fn readEnv(state: *const State, env: []const u8) ?[]const u8 {
         return state.env_map.get(env);
+    }
+
+    pub fn reportError(self: *State, report: ErrorReport) void {
+        self.error_report = report;
     }
 
     const ErrorInfo = struct {
@@ -192,6 +197,8 @@ pub fn writeError(state: *State, err: PipelineError) !void {
         error.TypeMismatch,
         error.ValueRequired,
         error.VariableAlreadyDeclared,
+        error.ModuleNotFound,
+        error.FunctionNotFoundWithinModule,
         => {
             try writeRuntimeError(state, writer);
         },
@@ -305,8 +312,9 @@ pub const RunOptions = struct {
 };
 
 pub fn run(state: *State, opt: RunOptions) PipelineError!void {
+    const root_module = try loadModuleFromSource(state, opt.root_module_name, opt.root_module_source);
+    try loadImports(state, root_module);
     state.current_module_in_process = opt.root_module_name;
-    _ = try loadModuleFromSource(state, opt.root_module_name, opt.root_module_source);
 
     //TODO: all of this
     if (false and state.useSemanticAnalysis) {
@@ -332,6 +340,7 @@ pub fn run(state: *State, opt: RunOptions) PipelineError!void {
 }
 
 pub fn loadModuleFromSource(state: *State, name: []const u8, source: []const u8) !Module {
+    state.current_module_in_process = name;
     const result = try state.modules.getOrPut(name);
 
     // never directly overwrite existing modules
@@ -371,6 +380,30 @@ pub fn loadModuleFromSource(state: *State, name: []const u8, source: []const u8)
 
     // partial module is now complete
     return partial_module.*;
+}
+
+fn loadImports(state: *State, module: Module) !void {
+    const scratch = state.scratch_arena.allocator();
+    const std_import_dir = "./lib/";
+    var it = module.ast.imports.valueIterator();
+    while (it.next()) |to_import| {
+        // for now, all imports are assumed to be std imports
+        const path = try std.fmt.allocPrint(scratch, "{s}{s}.chy", .{ std_import_dir, to_import.name });
+        //TODO: this should *absolutely* not be scratch allocated lololol
+        const source = algo.readfile(scratch, path) catch {
+            state.reportError(.{
+                .trailing = false,
+                .offending_token = to_import.token,
+                .msg = try std.fmt.allocPrint(scratch, "Could not import '{s}' (tried to import from {s})", .{ to_import.name, path }),
+            });
+            return error.ModuleNotFound;
+        };
+
+        //TODO: check if import already exists
+        const imported_module = try loadModuleFromSource(state, to_import.name, source);
+        //TODO: recursively import parent modules
+        try state.modules.put(to_import.name, imported_module);
+    }
 }
 
 pub fn testState() State {

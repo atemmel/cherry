@@ -30,6 +30,12 @@ pub fn lengthOfLongestSlice(slices: []const []const u8) usize {
     return longest;
 }
 
+pub fn readfile(ally: std.mem.Allocator, name: []const u8) ![]const u8 {
+    const file = try std.fs.cwd().openFile(name, .{});
+    defer file.close();
+    return file.readToEndAlloc(ally, 1_000_000_000);
+}
+
 const expectEqual = std.testing.expectEqual;
 
 test "index of diff strings" {
