@@ -1,4 +1,5 @@
 const std = @import("std");
+const builtin = @import("builtin");
 const values = @import("value.zig");
 const tokens = @import("tokens.zig");
 const PipelineState = @import("pipeline.zig").State;
@@ -36,8 +37,17 @@ var program_stack: ProgramStack = undefined;
 var persistent_allocator: std.mem.Allocator = undefined;
 var pipeline_state: *PipelineState = undefined;
 var n_allocs: usize = 0;
-var allocs_until_collect: usize = 0;
+var allocs_until_collect: usize = 800;
 var total_collections: usize = 0;
+var always_collect = false; // used to stress the gc, if enabled will perform a collection for every requested allocation
+
+// by allocating two booleans on startup, the gc can skip allocating future booleans by
+// always refering to either of them whenever necessary
+// the booleans are never gc:ed, instead manually deleted on deinit
+// however, using fast booleans prevents the gc from tracing the origins of boolean values
+const fast_booleans = builtin.mode != .Debug;
+var true_value: *Value = undefined;
+var false_value: *Value = undefined;
 
 pub var aliases: Aliases = undefined; // exposed for convenience
 
@@ -48,6 +58,29 @@ pub fn init(ally: std.mem.Allocator, state: *PipelineState) !void {
 
     persistent_allocator = ally;
     pipeline_state = state;
+
+    if (fast_booleans) {
+        true_value = try persistent_allocator.create(values.Value);
+        false_value = try persistent_allocator.create(values.Value);
+
+        true_value.* = .{
+            .origin_module = undefined,
+            .origin = undefined,
+            .as = .{
+                .boolean = true,
+            },
+            .marked = false,
+        };
+
+        false_value.* = .{
+            .origin_module = undefined,
+            .origin = undefined,
+            .as = .{
+                .boolean = false,
+            },
+            .marked = false,
+        };
+    }
 }
 
 pub fn deinit() void {
@@ -60,6 +93,11 @@ pub fn deinit() void {
     for (gc_list.items) |ptr| {
         ptr.deinit(persistent_allocator);
         persistent_allocator.destroy(ptr);
+    }
+
+    if (fast_booleans) {
+        persistent_allocator.destroy(false_value);
+        persistent_allocator.destroy(true_value);
     }
 }
 
@@ -123,7 +161,7 @@ pub fn maybeCollect() void {
 }
 
 pub fn shouldCollect() bool {
-    return n_allocs >= allocs_until_collect;
+    return always_collect or n_allocs >= allocs_until_collect;
 }
 
 fn push(value: values.Value) !*values.Value {
@@ -184,6 +222,9 @@ pub fn allocedString(s: []const u8, opt: ValueOptions) !*values.Value {
 }
 
 pub fn boolean(b: bool, opt: ValueOptions) !*values.Value {
+    if (fast_booleans) {
+        return if (b) true_value else false_value;
+    }
     return push(.{
         .as = .{
             .boolean = b,
