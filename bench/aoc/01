@@ -1,0 +1,118 @@
+#!./zig-out/bin/cherry
+
+input := (cat bench/aoc/01-input-medium.txt)
+
+say $input
+
+left  := []
+right := []
+total-distance := 0
+
+append-left := true
+input-start := 0
+
+read-input
+
+say left is $left
+say right is $right
+
+say sum of distances is (sum-distance $left $right)
+
+fn append-next what {
+    if $append-left {
+        $left = (append $left (int $what))
+        $append-left = false
+    } else {
+        $right = (append $right (int $what))
+        $append-left = true
+    }
+}
+
+fn is-blank char {
+    if (== $char " ") {
+        return true
+    } 
+    if (== $char "\n") {
+        return true
+    }
+    return false
+}
+
+fn read-input {
+    n := (len $input)
+    for i := 0; (< $i $n); $i = (+ $i 1){
+        c := (get $input $i)
+        if (== $c " ") {
+            number := (slice $input $input-start $i)
+            append-next $number
+            $input-start = (+ $i 1)
+        }
+        for ; (and (< $i $n) (is-blank (get $input $i))); $i = (+ $i 1) {
+            d := (get $input $i)
+            if (== (get $input $i) "\n") {
+                number := (slice $input $input-start $i)
+                append-next $number
+                break
+            }
+        }
+        $input-start = $i 
+        say "loop 1:" reading $i out of $n
+    }
+}
+
+fn index-of-min list {
+    assert (> (len $list) 0)
+
+    min-idx := 0
+
+    for i := 1; (< $i (len $list)); $i = (+ $i 1) {
+        if (< (get $list $i) (get $list $min-idx)) {
+            $min-idx = $i
+        }
+    }
+
+    return $min-idx
+}
+
+fn abs value {
+    if (< $value 0) {
+        return (- 0 $value)
+    }
+    return $value
+}
+
+fn remove list idx {
+    n := (len $list)
+
+    assert (> $n -1)
+    assert (< $idx $n)
+
+    l := (slice $list 0 $idx)
+    r := (slice $list (+ $idx 1) $n)
+    for i := 0; (< $i (len $r)); $i = (+ $i 1) {
+        $l = (append $l (get $r $i))
+    }
+    return $l
+}
+
+fn sum-distance a b {
+    assert (== (len $a) (len $b))
+    total-distance := 0
+
+    original-len := (len $a)
+
+    for (< 0 (len $a)) {
+        idx-min-a := (index-of-min $a)
+        idx-min-b := (index-of-min $b)
+        min-a := (get $a $idx-min-a)
+        min-b := (get $b $idx-min-b)
+
+        $total-distance = (+ $total-distance (abs (- $min-a $min-b)))
+
+        $a = (remove $a $idx-min-a)
+        $b = (remove $b $idx-min-b)
+        say "loop 2:" reading (len $a) out of $original-len
+    }
+
+    return $total-distance
+}
