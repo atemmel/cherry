@@ -133,3 +133,31 @@ jq <| my-file.json
 ```
 
 maybe the above are fine for now
+
+## generators
+
+the syntax/specifics below are absolutely not final
+
+```
+# generator function -> yields value to child in pipeline
+
+fn map $list $func {
+    for _, $v : $list {
+        yield ($func $v)
+    }
+    yield # terminating yield
+}
+
+[1 2 3] | map fn $v { (* $v 2) } | collect
+> [2 4 6]
+```
+
+```
+stdout, code := yield curl https://...
+
+say "Curl in progress"
+
+await stdout code
+
+say "Curl said
+```
