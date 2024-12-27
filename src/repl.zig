@@ -1,15 +1,15 @@
-const std = @import("std");
 const algo = @import("algo.zig");
 const builtin = @import("builtin");
-const pipeline = @import("pipeline.zig");
-const terminal = @import("term.zig");
 const gc = @import("gc.zig");
+const pipeline = @import("pipeline.zig");
+const std = @import("std");
 const strings = @import("strings.zig");
+const terminal = @import("term.zig");
+
 const Term = terminal.Term;
 const Color = terminal.Color;
 const Hi = terminal.Hi;
 const BoldHi = terminal.BoldHi;
-
 const startsWith = std.mem.startsWith;
 
 const History = std.ArrayList([]const u8);
@@ -54,6 +54,10 @@ const State = struct {
 
     pub fn writer(self: *State) @TypeOf(self.out_writer.writer()) {
         return self.out_writer.writer();
+    }
+
+    pub fn print(self: *State, comptime str: []const u8, args: anytype) void {
+        self.out_writer.writer().print(str, args) catch {};
     }
 
     pub fn flush(self: *State) void {
@@ -315,7 +319,7 @@ fn eval(state: *State) !void {
     defer if (builtin.mode != .Debug) {
         _ = state.pipeline_state.scratch_arena.reset(.retain_capacity);
     };
-    try state.writer().print("\r\n", .{});
+    state.print("\r\n", .{});
     terminal.clearLine(state.writer(), state.prefixLen());
     try state.term.restore();
     state.flush();
@@ -341,13 +345,14 @@ fn eval(state: *State) !void {
                 std.debug.print("{any}\n", .{tok.kind});
             }
         }
+        //TODO: autocd is currently broken, but this should be rewritten regardless
         const should_try_auto_cd = state.auto_cd and tokens.len == 1 and tokens[0].kind == .Bareword;
         if (should_try_auto_cd and tryAutoCd(state, tokens[0].value)) {
             // All ok
         } else {
             pipeline.writeError(state.pipeline_state, e) catch |err| {
                 //TODO: handle these
-                try state.writer().print("Error: {any}\r\n", .{err});
+                state.print("Error: {any}\r\n", .{err});
                 state.flush();
             };
         }
@@ -355,7 +360,7 @@ fn eval(state: *State) !void {
     state.flush();
 
     appendHistory(state) catch |e| {
-        try state.writer().print("Could not write history, {any}\r\n", .{e});
+        state.print("Could not write history, {any}\r\n", .{e});
         state.flush();
     };
 }
@@ -368,7 +373,7 @@ fn tryAutoCd(state: *State, path: []const u8) bool {
     };
     defer dir.close();
     dir.setAsCwd() catch |err| {
-        state.writer().print("auto-cd failed to change directory: {any}\r\n", .{err}) catch {};
+        state.print("auto-cd failed to change directory: {any}\r\n", .{err});
         state.flush();
         return false;
     };
@@ -793,7 +798,7 @@ fn readRc(state: *State) !void {
         .root_module_source = rc_src,
         .root_scope_already_exists = true,
     }) catch |e| {
-        try state.writer().print("Unexpected error when reading .cherryrc at {s}: {}\r\n", .{ state.rc_path, e });
+        state.print("Unexpected error when reading .cherryrc at {s}: {}\r\n", .{ state.rc_path, e });
     };
     state.flush();
 }
