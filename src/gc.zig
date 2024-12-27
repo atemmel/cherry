@@ -115,10 +115,17 @@ pub fn allocator() std.mem.Allocator {
 }
 
 pub fn dump() void {
-    std.debug.print("Begin GC dump\n", .{});
-    for (gc_list.items) |value| {
-        std.debug.print("{*} {any} {s}\n", .{ value, value.origin.kind, value.origin.value });
-        pipeline_state.dumpSourceAtToken(value.origin, value.origin_module);
+    switch (builtin.mode) {
+        .Debug => {
+            std.debug.print("Begin GC dump\n", .{});
+            for (gc_list.items) |value| {
+                std.debug.print("{*} {any} {s}\n", .{ value, value.origin.kind, value.origin.value });
+                pipeline_state.dumpSourceAtToken(value.origin, value.origin_module);
+            }
+        },
+        else => {
+            std.debug.print("GC dumps are disabled in release builds, as no garbage tracing is done.", .{});
+        },
     }
 }
 
@@ -320,7 +327,7 @@ pub fn appendRoot(value: *Value) !void {
 }
 
 pub fn appendRootV(value: *Value) !*Value {
-    try topFrame().root_values.append(value);
+    try appendRoot(value);
     return value;
 }
 
