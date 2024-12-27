@@ -38,8 +38,8 @@ pub const EvalError = builtins.BuiltinError || std.process.Child.RunError || err
 const Context = struct {
     state: *PipelineState,
     ally: std.mem.Allocator,
-    stmntArena: std.heap.ArenaAllocator,
-    stmntAlly: std.mem.Allocator,
+    stmnt_scratch_arena: std.heap.ArenaAllocator,
+    stmnt_scratch: std.mem.Allocator,
     root_module: *const pipeline.Module,
 };
 
@@ -56,13 +56,13 @@ pub const InterpreterOptions = struct {
 };
 
 pub fn interpret(state: *PipelineState, opt: InterpreterOptions) EvalError!void {
-    var stmntArena = std.heap.ArenaAllocator.init(state.scratch_arena.allocator());
-    defer stmntArena.deinit();
+    var stmnt_scratch_arena = std.heap.ArenaAllocator.init(state.scratch_arena.allocator());
+    defer stmnt_scratch_arena.deinit();
     var ctx = Context{
         .state = state,
         .ally = state.scratch_arena.allocator(),
-        .stmntArena = stmntArena,
-        .stmntAlly = stmntArena.allocator(),
+        .stmnt_scratch_arena = stmnt_scratch_arena,
+        .stmnt_scratch = stmnt_scratch_arena.allocator(),
         .root_module = state.modules.getPtr(opt.root_module_name).?,
     };
 
@@ -81,7 +81,7 @@ fn interpretRoot(ctx: *Context) EvalError!void {
 }
 
 fn interpretStatement(ctx: *Context, stmnt: ast.Statement) EvalError!Returns {
-    defer _ = ctx.stmntArena.reset(.retain_capacity);
+    defer _ = ctx.stmnt_scratch_arena.reset(.retain_capacity);
     switch (stmnt) {
         .call => |call| _ = try evalCall(ctx, call),
         .var_decl => |var_decl| try interpretVarDecl(ctx, var_decl),
@@ -371,7 +371,7 @@ fn evalFunctionCall(ctx: *Context, func: ast.Func, call: ast.Call) !Result {
 
 fn evalProc(ctx: *Context, call: ast.Call) !Result {
     const capturing = call.capturing_external_cmd;
-    var procs = try std.ArrayList(std.process.Child).initCapacity(ctx.stmntAlly, 4);
+    var procs = try std.ArrayList(std.process.Child).initCapacity(ctx.stmnt_scratch, 4);
 
     var ptr: ?*const ast.Call = &call;
     while (ptr) |call_ptr| {
@@ -463,21 +463,21 @@ fn evalProc(ctx: *Context, call: ast.Call) !Result {
 
 fn proc(ctx: *Context, call: *const ast.Call) !std.process.Child {
     const name = call.token.value;
-    var args = try std.ArrayList([]const u8).initCapacity(ctx.stmntAlly, call.arguments.len);
+    var args = try std.ArrayList([]const u8).initCapacity(ctx.stmnt_scratch, call.arguments.len);
 
     try args.append(name);
     for (call.arguments) |arg| {
         switch (try evalExpression(ctx, arg)) {
-            .value => |value| try args.append(try value.asStr(ctx.stmntAlly)),
+            .value => |value| try args.append(try value.asStr(ctx.stmnt_scratch)),
             .nothing => unreachable, // this construct expects only values
         }
     }
 
-    return std.process.Child.init(args.items, ctx.stmntAlly);
+    return std.process.Child.init(args.items, ctx.stmnt_scratch);
 }
 
 fn evalArgs(ctx: *Context, arguments: []const ast.Expression) !std.ArrayList(*Value) {
-    var args = try std.ArrayList(*Value).initCapacity(ctx.stmntAlly, arguments.len);
+    var args = try std.ArrayList(*Value).initCapacity(ctx.stmnt_scratch, arguments.len);
     for (arguments) |arg| {
         switch (try evalExpression(ctx, arg)) {
             .value => |value| try args.append(value),
@@ -525,29 +525,12 @@ fn evalBareword(ctx: *Context, bw: ast.Bareword) !*Value {
 }
 
 fn evalStringLiteral(ctx: *Context, str: ast.StringLiteral) !*Value {
-    var arena = std.heap.ArenaAllocator.init(ctx.ally);
-    defer arena.deinit();
-
     const opt = gc.ValueOptions{
         .origin = str.token,
         .origin_module = ctx.root_module.filename,
     };
-
-    const escaped = try strings.escape(arena.allocator(), str.token.value, null);
-
-    if (str.interpolates) {
-        const value = Value{
-            .as = .{
-                .string = escaped,
-            },
-            .origin = opt.origin,
-            .origin_module = opt.origin_module,
-        };
-        const interpolated_value = try value.interpolate(gc.allocator());
-        try gc.appendRoot(interpolated_value);
-        return interpolated_value;
-    }
-    const value = try gc.string(escaped, opt);
+    const contextualized = try strings.contextualizeStrArena(ctx.state, ctx.stmnt_scratch, str.token.value);
+    const value = try gc.string(contextualized, opt);
     try gc.appendRoot(value);
     return value;
 }

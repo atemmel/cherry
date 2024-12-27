@@ -52,7 +52,6 @@ pub fn interpolate(arena: std.mem.Allocator, str: []const u8) ![]u8 {
 
         //TODO: arena allocator candidate
         const variable_string = try variable_value.asStr(arena);
-        defer arena.free(variable_string);
 
         try result.appendSlice(str[idx..lbrace]);
         try result.appendSlice(variable_string);
@@ -136,4 +135,58 @@ test "dealias tilde" {
     const dealiased = try dealias(&state, state.scratch_arena.allocator(), "ls ~/config");
 
     try std.testing.expectEqualStrings("ls /home/person/config", dealiased);
+}
+
+test "interpolate single value" {
+    const ally = std.testing.allocator;
+
+    var state = pipeline.testState();
+    defer state.deinit();
+    try gc.init(ally, &state);
+    defer gc.deinit();
+    try gc.pushFrame();
+
+    try gc.insertSymbol("y", try gc.string("x", undefined));
+
+    const result = try interpolate(state.scratch_arena.allocator(), "x {y}");
+    try std.testing.expectEqualStrings("x x", result);
+}
+
+test "interpolate multiple values" {
+    const ally = std.testing.allocator;
+
+    var state = pipeline.testState();
+    defer state.deinit();
+    try gc.init(ally, &state);
+    defer gc.deinit();
+    try gc.pushFrame();
+
+    try gc.insertSymbol("y", try gc.string("x", undefined));
+
+    const result = try interpolate(state.scratch_arena.allocator(), "x {y} {y}");
+    try std.testing.expectEqualStrings("x x x", result);
+}
+
+test "interpolate no values" {
+    const ally = std.testing.allocator;
+
+    var state = pipeline.testState();
+    defer state.deinit();
+    try gc.init(ally, &state);
+    defer gc.deinit();
+
+    const result = try interpolate(state.scratch_arena.allocator(), "x");
+    try std.testing.expectEqualStrings("x", result);
+}
+
+test "escape interpolation" {
+    const ally = std.testing.allocator;
+
+    var state = pipeline.testState();
+    defer state.deinit();
+    try gc.init(ally, &state);
+    defer gc.deinit();
+
+    const result = try interpolate(state.scratch_arena.allocator(), "{{x}}");
+    try std.testing.expectEqualStrings("{x}", result);
 }
