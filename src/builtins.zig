@@ -284,7 +284,8 @@ fn addIntegers(state: *State, args: []const *Value, call: ast.Call) !*Value {
         .origin_module = state.current_module_in_process,
     };
 
-    return try gc.integer(sum_value, opt);
+    const i = try gc.integer(sum_value, opt);
+    return (i);
 }
 
 fn concatenateStrings(state: *State, args: []const *Value, call: ast.Call) !*Value {
@@ -331,7 +332,8 @@ fn sub(state: *State, args: []const *Value, call: ast.Call) !Result {
         .origin_module = state.current_module_in_process,
     };
 
-    return something(try gc.integer(diff_value, opt));
+    const i = try gc.integer(diff_value, opt);
+    return something(i);
 }
 
 fn mul(state: *State, args: []const *Value, call: ast.Call) !Result {
@@ -352,7 +354,8 @@ fn mul(state: *State, args: []const *Value, call: ast.Call) !Result {
         .origin = call.token,
         .origin_module = state.current_module_in_process,
     };
-    return something(try gc.integer(product_value, opt));
+    const i = try gc.integer(product_value, opt);
+    return something(i);
 }
 
 fn div(state: *State, args: []const *Value, call: ast.Call) !Result {
@@ -374,7 +377,8 @@ fn div(state: *State, args: []const *Value, call: ast.Call) !Result {
         .origin = call.token,
         .origin_module = state.current_module_in_process,
     };
-    return something(try gc.integer(quotient_value, opt));
+    const i = try gc.integer(quotient_value, opt);
+    return something(i);
 }
 
 fn equals(state: *State, args: []const *Value, call: ast.Call) !Result {
@@ -535,7 +539,8 @@ fn len(state: *State, args: []const *Value, call: ast.Call) !Result {
         .origin = call.token,
         .origin_module = state.current_module_in_process,
     };
-    return something(try gc.integer(length, opt));
+    const i = try gc.integer(length, opt);
+    return something(i);
 }
 
 const append_info_list_of: TypeInfo = .{
@@ -772,7 +777,9 @@ fn int(state: *State, args: []const *Value, call: ast.Call) !Result {
         .origin_module = state.current_module_in_process,
     };
 
-    return something(try gc.integer(int_result, opt));
+    //return something(try gc.integer(int_result, opt));
+    const integ = (try gc.integer(int_result, opt));
+    return something(integ);
 }
 
 fn vardump(_: *State, args: []const *Value, _: ast.Call) !Result {

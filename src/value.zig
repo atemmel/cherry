@@ -151,6 +151,12 @@ pub const Value = struct {
     };
 
     pub fn compare(self: *const Value, other: *const Value) !Order {
+        switch (other.as) {
+            .float => {
+                std.debug.print("other ({*}) was float: {any}", .{ other, other });
+            },
+            else => {},
+        }
         switch (self.as) {
             //TODO: needs more comparisons
             .string => |lhs| switch (other.as) {

@@ -40,7 +40,7 @@ pub fn dump(module: ast.Module) void {
     }
 }
 
-fn dumpStatement(stmnt: ast.Statement) void {
+pub fn dumpStatement(stmnt: ast.Statement) void {
     defer up();
     leaf("Statement:\n", .{});
     switch (stmnt) {

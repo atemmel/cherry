@@ -1,6 +1,7 @@
 const std = @import("std");
 const pipeline = @import("pipeline.zig");
 const ast = @import("ast.zig");
+const ast_dump = @import("ast_dump.zig");
 const gc = @import("gc.zig");
 const builtins = @import("builtins.zig");
 const values = @import("value.zig");
@@ -39,7 +40,6 @@ const Context = struct {
     ally: std.mem.Allocator,
     stmntArena: std.heap.ArenaAllocator,
     stmntAlly: std.mem.Allocator,
-    calling_ctx_stack_depth: usize = 0,
     root_module: *const pipeline.Module,
 };
 
@@ -81,18 +81,13 @@ fn interpretRoot(ctx: *Context) EvalError!void {
 }
 
 fn interpretStatement(ctx: *Context, stmnt: ast.Statement) EvalError!Returns {
-    defer {
-        _ = ctx.stmntArena.reset(.retain_capacity);
-        if (gc.shouldCollect()) {
-            gc.collect();
-        }
-    }
+    defer _ = ctx.stmntArena.reset(.retain_capacity);
     switch (stmnt) {
         .call => |call| _ = try evalCall(ctx, call),
         .var_decl => |var_decl| try interpretVarDecl(ctx, var_decl),
         .assignment => |assign| try interpretAssign(ctx, assign),
         .branches => |br| return try interpretBranches(ctx, br),
-        .scope => |scope| return try interpretScope(ctx, scope),
+        .scope => |scope| return try interpretScope(ctx, scope, .{ .new_frame = true }),
         .func => unreachable, // this should never happen
         .import => unreachable, // - " -
         .ret => |ret| return try evalReturn(ctx, ret),
@@ -159,7 +154,7 @@ fn interpretAssign(ctx: *Context, assign: ast.Assignment) !void {
 fn interpretBranches(ctx: *Context, branches: ast.Branches) !Returns {
     try gc.pushFrame();
     defer gc.popFrame();
-    // frames are collected in interpretStatmenet
+
     for (branches) |branch| {
         if (branch.condition) |expr| {
             const value = try evalExpression(ctx, expr);
@@ -168,7 +163,7 @@ fn interpretBranches(ctx: *Context, branches: ast.Branches) !Returns {
                     switch (v.as) {
                         .boolean => |b| {
                             if (b) {
-                                return try interpretScope(ctx, branch.scope);
+                                return try interpretScope(ctx, branch.scope, .{ .new_frame = true });
                             }
                         },
                         // needs boolean
@@ -179,20 +174,23 @@ fn interpretBranches(ctx: *Context, branches: ast.Branches) !Returns {
                 .nothing => return errRequiresValue(ctx, ast.tokenFromExpr(expr)),
             }
         } else {
-            return try interpretScope(ctx, branch.scope);
+            return try interpretScope(ctx, branch.scope, .{ .new_frame = true });
         }
     }
     return .did_not_return;
 }
 
-fn interpretScope(ctx: *Context, scope: ast.Scope) !Returns {
-    try gc.pushFrame();
-    defer gc.popFrame();
-    // frames are collected in interpretStatmenet
+fn interpretScope(ctx: *Context, scope: ast.Scope, opt: struct { new_frame: bool }) !Returns {
+    if (opt.new_frame) {
+        try gc.pushFrame();
+    }
+    defer if (opt.new_frame) gc.popFrame();
+
     for (scope) |stmnt| {
         const returns = try interpretStatement(ctx, stmnt);
         switch (returns) {
-            .did_return => {
+            .did_return => |r| {
+                try appendParentRootIfReturnedValue(r);
                 return returns;
             },
             .did_not_return => {},
@@ -206,7 +204,6 @@ fn interpretScope(ctx: *Context, scope: ast.Scope) !Returns {
 fn interpretLoop(ctx: *Context, loop: ast.Loop) !Returns {
     try gc.pushFrame();
     defer gc.popFrame();
-    // frames are collected in interpretStatmenet
 
     if (loop.init_op) |init_op| {
         switch (init_op) {
@@ -235,9 +232,12 @@ fn interpretLoop(ctx: *Context, loop: ast.Loop) !Returns {
             }
         }
 
-        const returned = try interpretScope(ctx, loop.scope);
+        const returned = try interpretScope(ctx, loop.scope, .{ .new_frame = true });
         switch (returned) {
-            .did_return => return returned,
+            .did_return => |r| {
+                try appendParentRootIfReturnedValue(r);
+                return returned;
+            },
             .did_not_return, .did_continue => {},
             .did_break => return .did_not_return,
         }
@@ -260,7 +260,7 @@ fn evalReturn(ctx: *Context, ret: ast.Return) !Returns {
             .nothing => {},
             .value => |value| {
                 // share frame with parent
-                try gc.appendToFrameRoot(ctx.calling_ctx_stack_depth - 1, value);
+                try gc.appendParentRoot(value);
             },
         }
         return .{ .did_return = eval_expr };
@@ -269,7 +269,6 @@ fn evalReturn(ctx: *Context, ret: ast.Return) !Returns {
 }
 
 fn evalCall(ctx: *Context, call: ast.Call) !Result {
-    const prev_calling_ctx_stack_depth = ctx.calling_ctx_stack_depth;
     const name = call.token.value;
 
     if (call.accessor) |accessor| {
@@ -291,16 +290,19 @@ fn evalCall(ctx: *Context, call: ast.Call) !Result {
             };
             return error.FunctionNotFoundWithinModule;
         };
-        ctx.calling_ctx_stack_depth = gc.stackDepth();
-        defer ctx.calling_ctx_stack_depth = prev_calling_ctx_stack_depth;
         return try evalFunctionCall(ctx, func, call);
     }
 
     if (builtins.lookup(name)) |builtin_info| {
-        return try evalBuiltin(ctx, call, builtin_info.func);
+        const result = try evalBuiltin(ctx, call, builtin_info.func);
+        switch (result) {
+            .value => |v| {
+                try gc.appendRoot(v);
+            },
+            .nothing => {},
+        }
+        return result;
     } else if (ctx.root_module.ast.functions.getPtr(name)) |func| {
-        ctx.calling_ctx_stack_depth = gc.stackDepth();
-        defer ctx.calling_ctx_stack_depth = prev_calling_ctx_stack_depth;
         return try evalFunctionCall(ctx, func.*, call);
     } else {
         return try evalProc(ctx, call);
@@ -603,6 +605,13 @@ fn evalRecordLiteral(ctx: *Context, record_literal: ast.RecordLiteral) !*Value {
         .origin_module = ctx.root_module.filename,
     };
     return gc.emptyRecord(opt);
+}
+
+fn appendParentRootIfReturnedValue(result: Result) !void {
+    switch (result) {
+        .value => |v| try gc.appendParentRoot(v),
+        .nothing => {},
+    }
 }
 
 fn errNeverDeclared(ctx: *Context, token: *const tokens.Token) InterpreterError {
