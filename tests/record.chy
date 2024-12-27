@@ -2,9 +2,9 @@ record := [=]
 
 assert (== [=] $record)
 
-say $record
-
 $record'name = bond
+
+say $record
 
 say $record'name
 

@@ -136,9 +136,7 @@ fn sweep() void {
             ptr.unmark();
         } else { // collect
             if (pipeline_state.verboseGc) {
-                const representation = ptr.asStr(persistent_allocator) catch unreachable;
-                defer persistent_allocator.free(representation);
-                std.debug.print("collecting: {*} {any} {s} ({s})\n", .{ ptr, ptr.origin.kind, ptr.origin.value, representation });
+                std.debug.print("collecting: {*} {any} {s}\n", .{ ptr, ptr.origin.kind, ptr.origin.value });
                 pipeline_state.dumpSourceAtToken(ptr.origin, ptr.origin_module);
             }
             ptr.deinit(persistent_allocator);
@@ -171,8 +169,6 @@ fn push(value: values.Value) !*values.Value {
 
     try gc_list.append(ptr);
     ptr.* = value;
-    const representation = ptr.asStr(persistent_allocator) catch unreachable;
-    defer persistent_allocator.free(representation);
     return ptr;
 }
 
