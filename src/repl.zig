@@ -495,7 +495,7 @@ fn tryAutocompletePath2(state: *State) !void {
     const arena = state.completion_arena.allocator();
 
     const original_line = state.line();
-    const line = try strings.contextualizeStrArena(state.pipeline_state, arena, original_line);
+    const line = try strings.processBareword(state.pipeline_state, arena, original_line);
 
     var last_cmd_begin = std.mem.lastIndexOfScalar(u8, line, ' ') orelse 0;
     if (last_cmd_begin < line.len and last_cmd_begin != 0) {

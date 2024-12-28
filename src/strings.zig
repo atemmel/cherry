@@ -14,11 +14,22 @@ const indexOfPos = std.mem.indexOfPos;
 // target-dir - user defined variable
 // *          - file glob
 
+pub const StringOrGlob = union(enum) {
+    string: []const u8,
+    glob: []const []const u8,
+};
+
 // arena owns result
-pub fn contextualizeStrArena(pipeline_state: *pipeline.State, arena: std.mem.Allocator, str: []const u8) ![]u8 {
+pub fn processStrLiteral(pipeline_state: *pipeline.State, arena: std.mem.Allocator, str: []const u8) ![]u8 {
     const escaped = try escape(arena, str, null);
     const interpolated = try interpolate(arena, escaped);
     const dealiased = try dealias(pipeline_state, arena, interpolated);
+    return dealiased;
+}
+
+// arena owns result
+pub fn processBareword(pipeline_state: *pipeline.State, arena: std.mem.Allocator, str: []const u8) ![]u8 {
+    const dealiased = try dealias(pipeline_state, arena, str);
     return dealiased;
 }
 
@@ -62,15 +73,10 @@ pub fn interpolate(arena: std.mem.Allocator, str: []const u8) ![]u8 {
 
 pub fn dealias(pipeline_state: *pipeline.State, arena: std.mem.Allocator, str: []const u8) ![]u8 {
     const home = pipeline_state.readEnv("HOME") orelse "";
-    const home_space = try std.fmt.allocPrint(arena, " {s}", .{home});
 
-    const buf_size = std.mem.replacementSize(u8, str, " ~", home_space);
+    const buf_size = std.mem.replacementSize(u8, str, "~", home);
     const buffer = try arena.alloc(u8, buf_size);
-    _ = std.mem.replace(u8, str, " ~", home_space, buffer);
-
-    if (std.mem.startsWith(u8, str, "~")) {
-        return try std.fmt.allocPrint(arena, "{s}{s}", .{ home, buffer });
-    }
+    _ = std.mem.replace(u8, str, "~", home, buffer);
     return buffer;
 }
 
@@ -108,6 +114,13 @@ pub fn escape(arena: std.mem.Allocator, str: []const u8, enclosing_char: ?u8) ![
     return try result.toOwnedSlice();
 }
 
+pub fn glob(arena: std.mem.Allocator, str: []const u8) !StringOrGlob {
+    _ = arena;
+    return StringOrGlob{
+        .string = str,
+    };
+}
+
 test "escape newline" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
@@ -135,6 +148,17 @@ test "dealias tilde" {
     const dealiased = try dealias(&state, state.scratch_arena.allocator(), "ls ~/config");
 
     try std.testing.expectEqualStrings("ls /home/person/config", dealiased);
+}
+
+test "dealias tilde 2" {
+    var state = pipeline.testState();
+    defer state.deinit();
+    try state.env_map.put("HOME", "/home/person");
+    defer state.env_map.deinit();
+
+    const dealiased = try processBareword(&state, state.scratch_arena.allocator(), "~/config");
+
+    try std.testing.expectEqualStrings("/home/person/config", dealiased);
 }
 
 test "interpolate single value" {

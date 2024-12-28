@@ -519,7 +519,8 @@ fn evalBareword(ctx: *Context, bw: ast.Bareword) !*Value {
         .origin_module = ctx.root_module.filename,
     };
 
-    const value = try gc.string(bw.token.value, opt);
+    const contextualized = try strings.processBareword(ctx.state, ctx.stmnt_scratch, bw.token.value);
+    const value = try gc.string(contextualized, opt);
     try gc.appendRoot(value);
     return value;
 }
@@ -529,7 +530,7 @@ fn evalStringLiteral(ctx: *Context, str: ast.StringLiteral) !*Value {
         .origin = str.token,
         .origin_module = ctx.root_module.filename,
     };
-    const contextualized = try strings.contextualizeStrArena(ctx.state, ctx.stmnt_scratch, str.token.value);
+    const contextualized = try strings.processStrLiteral(ctx.state, ctx.stmnt_scratch, str.token.value);
     const value = try gc.string(contextualized, opt);
     try gc.appendRoot(value);
     return value;
