@@ -7,11 +7,19 @@ function die {
 
 vhs validate ./tests/repl/*.tape \
     || die "Syntax error in tests"
+mkdir -p /tmp/scratch/tests \
+    || echo "Scratch already exists"
+cp ./zig-out/bin/cherry /tmp/scratch/cherry \
+    || die "Could not copy executable :("
+cp tests/repl/* /tmp/scratch/tests/ \
+    || die "Could not copy tests :("
+cd /tmp/scratch \
+    || die "Could not enter scratch directory"
 
 for tape in ./tests/repl/*.tape; do
     expected=${tape%.*}.golden.ascii
     result=$(basename ${tape%.*}.ascii)
-    vhs < $tape
+    vhs -q < $tape
     [ -f "$result" ] \
         || die "Test $tape does not output a file named $result"
     diff $expected $result \
