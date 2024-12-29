@@ -14,11 +14,15 @@ jobs:
     steps:
       - uses: actions/checkout@v3
       - uses: mlugg/setup-zig@v1
+      - uses: charmbracelet/vhs-action@v1
         with:
           version: 0.13.0
       - name: build
         run: zig build
       - name: unit tests
         run: zig build test
-      - name: code tests
+      - name: e2e code tests
         run: ./run-all-tests
+      - name: e2e repl tests
+        run: ./run-all-repl-tests
+      
