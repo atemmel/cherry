@@ -16,9 +16,10 @@ jobs:
       - uses: mlugg/setup-zig@v1
         with:
           version: 0.13.0
-      - uses: charmbracelet/vhs-action@v1
-        with:
-          path: ""
+      - run: |
+          echo 'Type "true"' > _empty_vhs_tape.tape
+      - name: Install VHS
+        uses: charmbracelet/vhs-action@v2
       - name: build
         run: zig build
       - name: unit tests
