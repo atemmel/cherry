@@ -157,7 +157,7 @@ stdout, code := yield curl https://...
 
 say "Curl in progress"
 
-await stdout code
+await $stdout $code
 
 say "Curl said
 ```
