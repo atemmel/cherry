@@ -17,6 +17,8 @@ jobs:
         with:
           version: 0.13.0
       - uses: charmbracelet/vhs-action@v1
+        with:
+          path: ""
       - name: build
         run: zig build
       - name: unit tests
