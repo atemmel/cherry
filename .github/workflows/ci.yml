@@ -16,6 +16,7 @@ jobs:
       - uses: mlugg/setup-zig@v1
         with:
           version: 0.13.0
+      - uses: charmbracelet/vhs-action@v1
       - name: build
         run: zig build
       - name: unit tests
@@ -23,6 +24,5 @@ jobs:
       - name: e2e code tests
         run: ./run-all-tests
       - name: e2e repl tests
-        uses: charmbracelet/vhs-action@v1
         run: ./run-all-repl-tests
       
