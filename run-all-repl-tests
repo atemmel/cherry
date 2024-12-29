@@ -5,12 +5,13 @@ function die {
     echo $@ && exit 1
 }
 
-vhs validate ./tests/repl/*.vhs \
+vhs validate ./tests/repl/*.tape \
     || die "Syntax error in tests"
 
-for tape in ./tests/repl/*.vhs; do
-    result=${x%.*}.golden.ascii
-    vhs < $tape > output.ascii
-    diff output.ascii $result \
+for tape in ./tests/repl/*.tape; do
+    expected=${tape%.*}.golden.ascii
+    result=${tape%.*}.ascii
+    vhs < $tape
+    diff $expected $result \
         || die "Failed test $tape"
 done

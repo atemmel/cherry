@@ -33,4 +33,4 @@ Down 4
 Sleep 500ms
 Ctrl+U
 Ctrl+D
-Output history.golden.ascii
+Output history.ascii
