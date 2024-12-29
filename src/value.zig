@@ -269,54 +269,6 @@ pub const Value = struct {
             else => InterpreterError.MembersNotAllowed,
         };
     }
-
-    pub fn interpolate(self: *const Value, ally: std.mem.Allocator) !*Value {
-        const str: []const u8 = switch (self.as) {
-            .string => |str| str,
-            else => return InterpreterError.TypeMismatch,
-        };
-
-        var result = try std.ArrayList(u8).initCapacity(ally, str.len * 2);
-        defer result.deinit();
-
-        var idx: usize = 0;
-        while (idx < str.len) {
-            const lbrace = indexOfPos(u8, str, idx, "{") orelse {
-                try result.appendSlice(str[idx..]);
-                break;
-            };
-
-            if (lbrace + 1 < str.len and str[lbrace + 1] == '{') {
-                // found escape sequence
-                const escape_begin = lbrace + 2;
-                const escape_end = indexOfPos(u8, str, lbrace + 1, "}}") orelse return InterpreterError.MismatchedBraces;
-                // include the last lbrace
-                try result.appendSlice(str[idx .. lbrace + 1]);
-                // include the first rbrace
-                try result.appendSlice(str[escape_begin .. escape_end + 1]);
-                idx = escape_end + 2;
-                continue;
-            }
-
-            const rbrace = indexOfPos(u8, str, lbrace, "}") orelse return InterpreterError.MismatchedBraces;
-
-            const variable_name = str[lbrace + 1 .. rbrace];
-            const variable_value = gc.getSymbol(variable_name) orelse return InterpreterError.BadVariableLookup;
-
-            //TODO: arena allocator candidate
-            const variable_string = try variable_value.asStr(ally);
-            defer ally.free(variable_string);
-
-            try result.appendSlice(str[idx..lbrace]);
-            try result.appendSlice(variable_string);
-            idx = rbrace + 1;
-        }
-        const opt = gc.ValueOptions{
-            .origin = self.origin,
-            .origin_module = self.origin_module,
-        };
-        return try gc.allocedString(try result.toOwnedSlice(), opt);
-    }
 };
 
 fn typeMismatch(lhs_type: Type, rhs_type: Type) !Value.Order {
