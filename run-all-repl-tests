@@ -1,0 +1,16 @@
+#!/bin/bash
+#TODO: migrate to cherry :^)
+
+function die {
+    echo $@ && exit 1
+}
+
+vhs validate ./tests/repl/*.vhs \
+    || die "Syntax error in tests"
+
+for tape in ./tests/repl/*.vhs; do
+    result=${x%.*}.golden.ascii
+    vhs < $tape > output.ascii
+    diff output.ascii $result \
+        || die "Failed test $tape"
+done
