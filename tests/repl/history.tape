@@ -1,36 +1,139 @@
-Set Shell bash
-Type "./zig-out/bin/cherry"
-Enter
-Sleep 1.5s
-Type "ls"
-Enter
-Sleep 3s
-Type "ls"
 Sleep 500ms
-Type " "
+Type "./zig-out/"
 Sleep 500ms
-Type "-l"
+Type "bin"
+Sleep 500ms
+Type "/cherry"
 Sleep 500ms
 Enter
-Up
 Sleep 500ms
-Up 2
-Down 2
+Type "ls te"
+Tab 2
 Sleep 500ms
-Ctrl+U
-Sleep 1s
-Type "c"
-Sleep 1s
+Type "da"
+Tab 2
+Sleep 500ms
 Backspace
-Type "pwd"
+Sleep 500ms
 Enter
 Sleep 500ms
-Up
+Escape
+Type "[A"
+Escape
+Type "[A"
+Escape
+Type "[A"
+Escape
+Type "[A"
+Escape
+Type "[B"
+Escape
+Type "[B"
+Escape
+Type "[B"
+Escape
+Type "[D"
+Escape
+Type "[D"
+Escape
+Type "[D"
+Escape
+Type "[D"
+Escape
+Type "[D"
+Escape
+Type "[D"
+Escape
+Type "[D"
+Escape
+Type "[D"
+Escape
+Type "[D"
+Escape
+Type "[D"
+Escape
+Type "[D-l "
 Sleep 500ms
-Up 3
+Enter
 Sleep 500ms
-Down 4
+Escape
+Type "[A"
+Escape
+Type "[A"
+Escape
+Type "[A"
+Escape
+Type "[A"
+Escape
+Type "[A"
+Escape
+Type "[B"
+Escape
+Type "[B"
+Escape
+Type "[B"
+Escape
+Type "[B"
+Escape
+Type "[B"
+Sleep 500ms
+Escape
+Type "[A"
+Sleep 500ms
+Enter
+Escape
+Type "[A"
+Escape
+Type "[A"
+Escape
+Type "[A"
+Escape
+Type "[A"
+Escape
+Type "[A"
+Escape
+Type "[A"
+Escape
+Type "[B"
+Escape
+Type "[B"
+Escape
+Type "[B"
+Escape
+Type "[B"
+Escape
+Type "[B"
+Escape
+Type "[A"
+Enter
+Sleep 500ms
+Escape
+Type "[A"
+Escape
+Type "[A"
+Escape
+Type "[A"
+Escape
+Type "[A"
+Escape
+Type "[A"
+Escape
+Type "[A"
+Escape
+Type "[B"
+Escape
+Type "[B"
+Escape
+Type "[B"
+Escape
+Type "[B"
+Escape
+Type "[B"
 Sleep 500ms
 Ctrl+U
 Ctrl+D
-Output history.ascii
+Sleep 500ms
+Ctrl+D
+Sleep 500ms
+Ctrl+D
+

@@ -1,17 +1,7 @@
-[cherry-shell]$ ./zig-out/bin/cherry
-
-     o;%%%.
-     |l'%%%.
-     | \'%%%,
-    _|_ '-.__
-   /#  \ /#  \
-   \___/ \___/
-
-~/doc/cherry-shell |> ls
-bench          fluff     lib        REFERENCE.md   tests
-build.zig      IDEAS.md  README.md  run-all-tests  zig-cache
-build.zig.zon  install   recording  src            zig-out
-~/doc/cherry-shell |> ls -l
-total 64
-drwxr-xr-x 3 temmel users 4096 Dec 27 03:58 bench
-────────────────────────────────────────────────────────────────────────────────
+Sleep 500ms
+Type ./zig-out/
+Sleep 500ms
+Type bin
+Sleep 500ms
+Type /cherry
+recording failed

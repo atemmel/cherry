@@ -1,0 +1,3 @@
+#!/bin/bash
+#TODO: migrate to cherry :^)
+vhs record > latest.tape

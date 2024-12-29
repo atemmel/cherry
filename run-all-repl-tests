@@ -10,7 +10,7 @@ vhs validate ./tests/repl/*.tape \
 
 for tape in ./tests/repl/*.tape; do
     expected=${tape%.*}.golden.ascii
-    result=${tape%.*}.ascii
+    result=$(basename ${tape%.*}.ascii)
     vhs < $tape
     diff $expected $result \
         || die "Failed test $tape"
