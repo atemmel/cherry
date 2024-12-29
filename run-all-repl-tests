@@ -12,6 +12,12 @@ for tape in ./tests/repl/*.tape; do
     expected=${tape%.*}.golden.ascii
     result=$(basename ${tape%.*}.ascii)
     vhs < $tape
+    [ -f "$result" ] \
+        || die "Test $tape does not output a file named $result"
     diff $expected $result \
         || die "Failed test $tape"
 done
+
+echo "All tests passed"
+# Clean up if successful
+rm *.ascii *.gif

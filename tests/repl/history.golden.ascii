@@ -1,7 +1,17 @@
-Sleep 500ms
-Type ./zig-out/
-Sleep 500ms
-Type bin
-Sleep 500ms
-Type /cherry
-recording failed
+> ./zig-out/bin/cherry
+
+     o;%%%.
+     |l'%%%.
+     | \'%%%,
+    _|_ '-.__
+   /#  \ /#  \
+   \___/ \___/
+
+~/doc/cherry-shell |> ls tests/
+tests/cli   tests/data  tests/repl
+~/doc/cherry-shell |> ls tests/data/
+tests/data/file1
+tests/data/folder1
+tests/data/folder2
+~/doc/cherry-shell |> ls tests/data/
+────────────────────────────────────────────────────────────────────────────────

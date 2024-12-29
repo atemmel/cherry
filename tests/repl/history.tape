@@ -136,4 +136,4 @@ Sleep 500ms
 Ctrl+D
 Sleep 500ms
 Ctrl+D
-
+Output "history.ascii"
