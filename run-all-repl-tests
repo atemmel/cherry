@@ -17,7 +17,7 @@ cd /tmp/scratch \
     || die "Could not enter scratch directory"
 
 pwd
-ls -l
+ls -l tests
 
 for tape in ./tests/repl/*.tape; do
     expected=${tape%.*}.golden.ascii
