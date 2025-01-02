@@ -16,6 +16,9 @@ cp tests/repl/* /tmp/scratch/tests/ \
 cd /tmp/scratch \
     || die "Could not enter scratch directory"
 
+pwd
+ls -l
+
 for tape in ./tests/repl/*.tape; do
     expected=${tape%.*}.golden.ascii
     result=$(basename ${tape%.*}.ascii)
