@@ -83,7 +83,7 @@ pub const Call = struct {
 };
 
 pub const VarDecl = struct {
-    token: *const Token, // contains identifier
+    tokens: []*const Token, // contains identifier(s)
     expression: Expression,
 };
 
@@ -338,8 +338,16 @@ fn parseStatement(ctx: *Context) errors!?Statement {
 fn parseVarDeclaration(ctx: *Context, opt: struct { needs_newline: bool = true }) !?VarDecl {
     const checkpoint = ctx.idx;
 
-    // 'var' MUST be followed by a identifer/bareword
-    const id = ctx.getIf(.Bareword) orelse return null;
+    var decls = std.ArrayList(*const Token).init(ctx.ally);
+    defer decls.deinit();
+
+    while (ctx.getIf(.Bareword)) |tok| {
+        try decls.append(tok);
+    }
+
+    if (decls.items.len == 0) {
+        return null;
+    }
 
     // the identifer must be followed by a walrus operator
     if (ctx.getIfBoth(.Colon, .Assign) == null) {
@@ -364,7 +372,7 @@ fn parseVarDeclaration(ctx: *Context, opt: struct { needs_newline: bool = true }
     }
 
     return VarDecl{
-        .token = id,
+        .tokens = try decls.toOwnedSlice(),
         .expression = expr,
     };
 }

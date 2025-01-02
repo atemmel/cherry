@@ -1,0 +1,4 @@
+dir ok := (pwd) # is this better with the comma (dir, ok)?
+
+assert (== $ok 0)
+assert (> (len $dir) 0)

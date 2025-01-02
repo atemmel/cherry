@@ -60,7 +60,11 @@ pub fn dumpStatement(stmnt: ast.Statement) void {
 
 fn dumpVarDecl(var_decl: ast.VarDecl) void {
     defer up();
-    leaf("Variable declaration: '{s}'\n", .{var_decl.token.value});
+    leaf("Variable declaration:", .{});
+    for (var_decl.tokens) |tok| {
+        print(" '{s}' ", .{tok.value});
+    }
+    print("\n", .{});
     dumpExpression(var_decl.expression);
 }
 

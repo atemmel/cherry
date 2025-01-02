@@ -282,13 +282,18 @@ fn typeMismatch(lhs_type: Type, rhs_type: Type) !Value.Order {
 
 pub const Result = union(enum) {
     value: *Value,
-    nothing: void,
+    nothing,
+    values: []*Value,
 };
 
 pub const nothing = Result{ .nothing = {} };
 
 pub fn something(value: *Value) Result {
     return Result{ .value = value };
+}
+
+pub fn multiple(vals: []*Value) Result {
+    return Result{ .values = vals };
 }
 
 const testState = pipeline.testState;

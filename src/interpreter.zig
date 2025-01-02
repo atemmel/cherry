@@ -15,6 +15,7 @@ const Module = pipeline.Module;
 const Value = values.Value;
 const Result = values.Result;
 
+const multiple = values.multiple;
 const something = values.something;
 const nothing = values.nothing;
 const integer = values.integer;
@@ -99,14 +100,23 @@ fn interpretStatement(ctx: *Context, stmnt: ast.Statement) EvalError!Returns {
 }
 
 fn interpretVarDecl(ctx: *Context, var_decl: ast.VarDecl) !void {
-    const value = switch (try evalExpression(ctx, var_decl.expression)) {
-        .value => |value| value,
+    switch (try evalExpression(ctx, var_decl.expression)) {
+        .value => |value| {
+            assert(var_decl.tokens.len == 1);
+            try gc.insertSymbol(var_decl.tokens[0].value, value);
+        },
         .nothing => {
-            const ptr = ptrAdd(var_decl.token, 3);
+            const ptr = ptrAdd(var_decl.tokens[0], 3);
             return errRequiresValue(ctx, ptr);
         },
-    };
-    try gc.insertSymbol(var_decl.token.value, value);
+        .values => |vals| {
+            assert(var_decl.tokens.len == vals.len);
+            for (var_decl.tokens, 0..) |tok, i| {
+                const value = vals[i];
+                try gc.insertSymbol(tok.value, value);
+            }
+        },
+    }
 }
 
 fn interpretAssign(ctx: *Context, assign: ast.Assignment) !void {
@@ -120,6 +130,7 @@ fn interpretAssign(ctx: *Context, assign: ast.Assignment) !void {
             const ptr = ptrAdd(assign.variable.token, 2);
             return errRequiresValue(ctx, ptr);
         },
+        .values => unreachable, //TODO: consider this
     };
 
     const was_owned = switch (assign.expression.as) {
@@ -172,6 +183,7 @@ fn interpretBranches(ctx: *Context, branches: ast.Branches) !Returns {
                 },
                 // needs value
                 .nothing => return errRequiresValue(ctx, ast.tokenFromExpr(expr)),
+                .values => unreachable, //TODO: consider
             }
         } else {
             return try interpretScope(ctx, branch.scope, .{ .new_frame = true });
@@ -229,6 +241,7 @@ fn interpretLoop(ctx: *Context, loop: ast.Loop) !Returns {
                 },
                 // needs value
                 .nothing => return errRequiresValue(ctx, ast.tokenFromExpr(expr)),
+                .values => unreachable, //TODO: consider
             }
         }
 
@@ -262,6 +275,7 @@ fn evalReturn(ctx: *Context, ret: ast.Return) !Returns {
                 // share frame with parent
                 try gc.appendParentRoot(value);
             },
+            .values => unreachable, //TODO: consider
         }
         return .{ .did_return = eval_expr };
     }
@@ -300,6 +314,7 @@ fn evalCall(ctx: *Context, call: ast.Call) !Result {
                 try gc.appendRoot(v);
             },
             .nothing => {},
+            .values => unreachable, //TODO: consider this
         }
         return result;
     } else if (ctx.root_module.ast.functions.getPtr(name)) |func| {
@@ -360,6 +375,7 @@ fn evalFunctionCall(ctx: *Context, func: ast.Func, call: ast.Call) !Result {
                 return switch (what_it_returned) {
                     .nothing => nothing,
                     .value => |val| something(val),
+                    .values => unreachable, //TODO: consider this
                 };
             },
             .did_not_return => {},
@@ -434,9 +450,11 @@ fn evalProc(ctx: *Context, call: ast.Call) !Result {
         capture = try procs.getLast().stdout.?.readToEndAlloc(gc.allocator(), std.math.maxInt(u64));
     }
 
+    var last_code: u8 = 0;
+
     for (procs.items) |*p| {
         //TODO: handle term
-        _ = p.wait() catch |e| {
+        const tm = p.wait() catch |e| {
             switch (e) {
                 error.FileNotFound => {
                     ctx.state.reportError(.{
@@ -450,13 +468,18 @@ fn evalProc(ctx: *Context, call: ast.Call) !Result {
             }
             return e;
         };
+        last_code = tm.Exited;
     }
 
     if (capturing) {
-        return something(try gc.allocedString(capture.?, .{
+        const opt = gc.ValueOptions{
             .origin = call.token,
             .origin_module = ctx.root_module.filename,
-        }));
+        };
+        const vals = try ctx.stmnt_scratch.alloc(*Value, 2);
+        vals[0] = try gc.allocedString(capture.?, opt);
+        vals[1] = try gc.integer(@intCast(last_code), opt);
+        return multiple(vals);
     }
     return nothing;
 }
@@ -470,6 +493,7 @@ fn proc(ctx: *Context, call: *const ast.Call) !std.process.Child {
         switch (try evalExpression(ctx, arg)) {
             .value => |value| try args.append(try value.asStr(ctx.stmnt_scratch)),
             .nothing => unreachable, // this construct expects only values
+            .values => unreachable, //TODO: consider this
         }
     }
 
@@ -482,6 +506,13 @@ fn evalArgs(ctx: *Context, arguments: []const ast.Expression) !std.ArrayList(*Va
         switch (try evalExpression(ctx, arg)) {
             .value => |value| try args.append(value),
             .nothing => unreachable, // this construct expects only values
+            .values => |vals| {
+                //TODO: this is like this to allow for external processes to be
+                // piped, but it perhaps shouldn't be like this for user-defined
+                // functions, at least not if we are allowing people to return
+                // multiple values (which we probably should)
+                try args.append(vals[0]);
+            },
         }
     }
     return args;
@@ -576,6 +607,7 @@ fn evalListLiteral(ctx: *Context, list_literal: ast.ListLiteral) !*Value {
         switch (value) {
             .value => |v| try list.append(v),
             .nothing => unreachable, // Construct needs value
+            .values => unreachable, //TODO: consider
         }
     }
     const value = try gc.list(list, opt);
@@ -595,6 +627,7 @@ fn appendParentRootIfReturnedValue(result: Result) !void {
     switch (result) {
         .value => |v| try gc.appendParentRoot(v),
         .nothing => {},
+        .values => unreachable, //TODO: consider
     }
 }
 
