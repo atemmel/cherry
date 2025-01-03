@@ -62,7 +62,7 @@ const builtins_table = std.StaticStringMap(BuiltinInfo).initComptime(
         .{ "say", say_info },
         .{ "alias", alias_info },
         .{ "cd", cd_info },
-        .{ "export", unchecked(envExport) },
+        .{ "export", export_info },
         // collections
         .{ "append", unchecked(append) },
         .{ "get", unchecked(get) },
@@ -724,6 +724,26 @@ fn getInt(state: *State, args: []const *Value, idx: usize) !i64 {
         .string => typeMismatchError(state, "int", "string", idx),
     };
 }
+
+const export_info: BuiltinInfo = .{
+    .func = envExport,
+    .signature = .{
+        .parameters = &.{ // takes two strings
+            .{
+                .name = "name",
+                .param_type = .{
+                    .type_info = .string,
+                },
+            },
+            .{
+                .name = "value",
+                .param_type = .{
+                    .type_info = .string,
+                },
+            },
+        },
+    },
+};
 
 fn envExport(state: *State, args: []const *Value, _: ast.Call) !Result {
     try validateArgsCount(state, &.{2}, args.len);

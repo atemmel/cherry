@@ -110,7 +110,7 @@ pub const Type = struct {
 };
 
 pub const Signature = struct {
-    generics: []const []const u8 = &.{},
+    generics: []*const Token = &.{},
     parameters: []const Parameter,
     last_parameter_is_variadic: bool = false,
     produces: semantics.TypeInfo = .nothing,
@@ -514,6 +514,11 @@ fn parseFunc(ctx: *Context) !?Func {
         });
     };
 
+    var generics: []*const Token = &.{};
+    if (ctx.state.useSemanticAnalysis) {
+        generics = try parseGenerics(ctx);
+    }
+
     var produces: semantics.TypeInfo = .nothing;
     var parameters = std.ArrayList(Parameter).init(ctx.ally);
     defer parameters.deinit();
@@ -537,7 +542,7 @@ fn parseFunc(ctx: *Context) !?Func {
         .token = token,
         .scope = scope,
         .signature = .{
-            .generics = &.{},
+            .generics = generics,
             .produces = produces,
             .parameters = try parameters.toOwnedSlice(),
             .last_parameter_is_variadic = false,
@@ -586,6 +591,29 @@ fn parseParamWithoutType(ctx: *Context) !?Parameter {
             .type_info = .something,
         },
     };
+}
+
+fn parseGenerics(ctx: *Context) ![]*const Token {
+    _ = ctx.getIf(.LBracket) orelse return &.{};
+    var generics = std.ArrayList(*const Token).init(ctx.ally);
+    defer generics.deinit();
+
+    while (ctx.getIf(.Bareword)) |bw| {
+        try generics.append(bw);
+    }
+
+    _ = ctx.getIf(.RBracket) orelse {
+        return ctx.err(.{
+            .msg = "expected closing bracket (']')",
+        });
+    };
+
+    if (generics.items.len == 0) {
+        ctx.idx -= 1;
+        return ctx.err(.{ .msg = "Unecessary empty declaration of generics, remove it" });
+    }
+
+    return try generics.toOwnedSlice();
 }
 
 //TODO: expand on this to handle, lists, records, etc

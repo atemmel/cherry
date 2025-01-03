@@ -21,7 +21,7 @@ pub const TypeInfo = union(enum) {
     record,
     user_defined,
     nothing,
-    generic: []const u8,
+    generic: []const *Token,
     either: []const TypeInfo,
 };
 
@@ -35,10 +35,10 @@ const Context = struct {
     pub const Scope = std.StringHashMap(TypeInfo);
 
     arena: std.mem.Allocator,
-    root: *const ast.Root,
     errors: std.ArrayList(ErrorReport),
     scopes: std.ArrayList(Scope),
-    current_module: *const ast.Module,
+    state: *PipelineState,
+    current_module: *pipeline.Module,
 
     pub fn errFmt(
         ctx: *Context,
@@ -86,12 +86,13 @@ const Context = struct {
 };
 
 pub fn analyze(state: *PipelineState) SemanticsError!void {
+    const arena = state.scratch_arena.allocator();
     var ctx: Context = .{
-        .arena = state.arena,
-        .root = &state.root,
-        .errors = std.ArrayList(ErrorReport).init(state.arena),
-        .scopes = std.ArrayList(Context.Scope).init(state.arena),
-        .current_module = state.root.modules.getPtr("main").?, // must 'main' always exist?
+        .arena = arena,
+        .errors = std.ArrayList(ErrorReport).init(arena),
+        .scopes = std.ArrayList(Context.Scope).init(arena),
+        .state = state,
+        .current_module = state.modules.getPtr(state.current_module_in_process) orelse unreachable,
     };
     try analyzeRoot(&ctx);
     state.analysis = .{
@@ -104,9 +105,9 @@ pub fn analyze(state: *PipelineState) SemanticsError!void {
 }
 
 fn analyzeRoot(ctx: *Context) !void {
-    var it = ctx.root.modules.valueIterator();
+    var it = ctx.state.modules.valueIterator();
     while (it.next()) |module| {
-        try analyzeModule(ctx, module.*);
+        try analyzeModule(ctx, module.ast);
     }
 }
 
@@ -125,7 +126,7 @@ fn analyzeStatement(ctx: *Context, stmnt: ast.Statement) !void {
         .assignment => |assign| try analyzeAssignment(ctx, assign),
         .branches => |br| try analyzeBranches(ctx, br),
         .scope => |scope| try analyzeScope(ctx, scope),
-        .func => unreachable, // this should never happen
+        .func, .import => unreachable, // this should never happen
         .ret => |ret| try analyzeReturn(ctx, ret),
         .loop => |loop| try analyzeLoop(ctx, loop),
         .brk => unreachable,
@@ -138,7 +139,7 @@ fn analyzeCall(ctx: *Context, call: ast.Call) !TypeInfo {
     const builtin_info = builtins.lookup(name);
     if (builtin_info) |bi| {
         return analyzeBuiltinCall(ctx, call, bi);
-    } else if (ctx.current_module.functions.getPtr(name)) |func| {
+    } else if (ctx.current_module.ast.functions.getPtr(name)) |func| {
         return func.signature.produces;
     }
 
@@ -279,11 +280,11 @@ fn analyzeSingleParam(ctx: *Context, param: TypeInfo, arg: TypeInfo, arg_token: 
 }
 
 fn analyzeVarDecl(ctx: *Context, decl: ast.VarDecl) !void {
-    if (ctx.lookupVariable(decl.token.value)) |_| {
+    if (ctx.lookupVariable(decl.tokens[0].value)) |_| {
         //TODO: report error
     } else {
         const type_info = try analyzeExpression(ctx, decl.expression);
-        try ctx.insertVariable(decl.token.value, type_info);
+        try ctx.insertVariable(decl.tokens[0].value, type_info);
     }
 }
 fn analyzeAssignment(ctx: *Context, call: ast.Assignment) !void {

@@ -317,8 +317,7 @@ pub fn run(state: *State, opt: RunOptions) PipelineError!void {
     try loadImports(state, root_module);
     state.current_module_in_process = opt.root_module_name;
 
-    //TODO: all of this
-    if (false and state.useSemanticAnalysis) {
+    if (state.useSemanticAnalysis) {
         const analyze_start_us = microTimestamp();
         try semantics.analyze(state);
 
