@@ -21,7 +21,6 @@ const Mode = enum {
 
 const State = struct {
     pipeline_state: *pipeline.State,
-    //ally: std.mem.Allocator,
     out_writer: std.io.BufferedWriter(4096, std.fs.File.Writer),
     history: History,
     cwd_buffer: [std.fs.max_path_bytes]u8 = undefined,
@@ -81,18 +80,20 @@ const State = struct {
     }
 
     pub fn removeKeyAtCursor(self: *State) void {
-        if (self.cursor > 0) {
-            std.mem.rotate(u8, self.buffer[self.cursor - 1 .. self.length], self.length - self.cursor);
-            self.cursor -= 1;
-            self.length -= 1;
-        }
+        if (self.cursor <= 0) return;
+
+        const cursor_and_behind = self.buffer[self.cursor - 1 .. self.length];
+        std.mem.rotate(u8, cursor_and_behind, 1);
+        self.cursor -= 1;
+        self.length -= 1;
     }
 
     pub fn removeKeyBehindCursor(self: *State) void {
-        if (self.cursor < self.length) {
-            std.mem.rotate(u8, self.buffer[self.cursor..self.length], self.length - self.cursor);
-            self.length -= 1;
-        }
+        if (self.cursor >= self.length) return;
+
+        const behind_cursor = self.buffer[self.cursor..self.length];
+        std.mem.rotate(u8, behind_cursor, 1);
+        self.length -= 1;
     }
 
     pub fn writePrefix(self: *State) !void {
