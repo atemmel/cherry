@@ -110,7 +110,7 @@ pub const Type = struct {
 };
 
 pub const Signature = struct {
-    generics: []*const Token = &.{},
+    generics: []const []const u8 = &.{},
     parameters: []const Parameter,
     last_parameter_is_variadic: bool = false,
     produces: semantics.TypeInfo = .nothing,
@@ -514,7 +514,7 @@ fn parseFunc(ctx: *Context) !?Func {
         });
     };
 
-    var generics: []*const Token = &.{};
+    var generics: [][]const u8 = &.{};
     if (ctx.state.useSemanticAnalysis) {
         generics = try parseGenerics(ctx);
     }
@@ -593,13 +593,13 @@ fn parseParamWithoutType(ctx: *Context) !?Parameter {
     };
 }
 
-fn parseGenerics(ctx: *Context) ![]*const Token {
+fn parseGenerics(ctx: *Context) ![][]const u8 {
     _ = ctx.getIf(.LBracket) orelse return &.{};
-    var generics = std.ArrayList(*const Token).init(ctx.ally);
+    var generics = std.ArrayList([]const u8).init(ctx.ally);
     defer generics.deinit();
 
     while (ctx.getIf(.Bareword)) |bw| {
-        try generics.append(bw);
+        try generics.append(bw.value);
     }
 
     _ = ctx.getIf(.RBracket) orelse {

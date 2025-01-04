@@ -21,7 +21,7 @@ pub const TypeInfo = union(enum) {
     record,
     user_defined,
     nothing,
-    generic: []const *Token,
+    generic: []const u8,
     either: []const TypeInfo,
 };
 
@@ -253,7 +253,23 @@ fn analyzeSingleParam(ctx: *Context, param: TypeInfo, arg: TypeInfo, arg_token: 
                 .either => unreachable,
             }
         },
-        .list => unreachable,
+        .list => {
+            switch (arg) {
+                .boolean => try ctx.typeMismatch("list", "boolean", arg_token),
+                .float => try ctx.typeMismatch("list", "float", arg_token),
+                .integer => try ctx.typeMismatch("list", "integer", arg_token),
+                .list => {}, //TODO: for now, a list is a list
+                .nothing => try ctx.typeMismatch("list", "nothing", arg_token),
+                .record => try ctx.typeMismatch("list", "record", arg_token),
+                .string => try ctx.typeMismatch("list", "string", arg_token),
+                .user_defined => unreachable, //TODO: this
+                //TODO: An expression should never be 'something', it should always be specified
+                //      ok for now as most builtins are unchecked
+                .something => {},
+                .generic => unreachable,
+                .either => unreachable,
+            }
+        },
         .user_defined => unreachable,
         .boolean => {
             switch (arg) {

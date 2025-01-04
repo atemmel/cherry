@@ -552,10 +552,24 @@ const append_info: BuiltinInfo = .{
     .signature = .{
         // takes one list of generic content, plus zero or more arguments of generic type
         .generics = &.{"T"},
+        .last_parameter_is_variadic = true,
         .parameters = &.{
             .{
-                .list = .{
-                    .of = &append_info_list_of,
+                .name = "list",
+                .param_type = .{
+                    .type_info = .{
+                        .list = .{
+                            .of = &append_info_list_of,
+                        },
+                    },
+                },
+            },
+            .{
+                .name = "value",
+                .param_type = .{
+                    .type_info = .{
+                        .generic = "T",
+                    },
                 },
             },
         },
