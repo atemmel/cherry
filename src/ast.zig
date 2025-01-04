@@ -118,6 +118,7 @@ pub const Signature = struct {
 
 pub const Func = struct {
     token: *const Token, // contains identifier
+    public: bool,
     signature: Signature,
     scope: Scope,
 };
@@ -504,7 +505,11 @@ fn parseScope(ctx: *Context, needsNewline: bool) !?Scope {
 }
 
 fn parseFunc(ctx: *Context) !?Func {
+    const checkpoint = ctx.idx;
+    const is_public = ctx.getIf(.Pub) == null;
+
     if (ctx.getIf(.Fn) == null) {
+        ctx.idx = checkpoint;
         return null;
     }
 
@@ -541,6 +546,7 @@ fn parseFunc(ctx: *Context) !?Func {
     return Func{
         .token = token,
         .scope = scope,
+        .public = is_public,
         .signature = .{
             .generics = generics,
             .produces = produces,

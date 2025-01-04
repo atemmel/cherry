@@ -1,8 +1,6 @@
 package str
 
-#TODO: pub does not work
-#pub fn index-of haystack needle {
-fn index-of haystack needle {
+pub fn index-of haystack needle {
     needle-len := (len $needle)
     haystack-len := (len $haystack)
     for i := 0; (< $i $haystack-len); $i = (+ $i 1) {
