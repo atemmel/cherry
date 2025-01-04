@@ -1017,6 +1017,14 @@ fn parseListLiteral(ctx: *Context) !?ListLiteral {
 }
 
 fn parseRecordLiteral(ctx: *Context) !?RecordLiteral {
+    if (parseEmptyRecordLiteral(ctx)) |lit| return lit;
+    //const checkpoint = ctx.idx;
+    //const token = ctx.getIf(.LBracket) orelse return null;
+    //_ = ctx.getIf(.Newline);
+    return null;
+}
+
+fn parseEmptyRecordLiteral(ctx: *Context) ?RecordLiteral {
     const token = ctx.getIf(.EmptyRecord) orelse return null;
     return RecordLiteral{
         .token = token,
