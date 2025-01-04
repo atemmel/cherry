@@ -799,7 +799,7 @@ fn int(state: *State, args: []const *Value, call: ast.Call) !Result {
             error.Overflow => unreachable,
             error.InvalidCharacter => unreachable,
             error.InvalidIntConversion => switch (arg.as) {
-                .string, .float, .integer, .boolean => unreachable,
+                .string, .float, .integer, .boolean => unreachable, // ok, this can never happen
                 .record => return typeMismatchError(state, ok_string, "record", 0),
                 .list => return typeMismatchError(state, ok_string, "list", 0),
             },
