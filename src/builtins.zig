@@ -37,6 +37,8 @@ pub const BuiltinInfo = struct {
     signature: Signature,
 };
 
+pub const BuiltinsTable = std.StaticStringMap(BuiltinInfo);
+
 fn unchecked(func: *const BuiltinFn) BuiltinInfo {
     return .{
         .func = func,
@@ -55,7 +57,7 @@ fn unchecked(func: *const BuiltinFn) BuiltinInfo {
     };
 }
 
-const builtins_table = std.StaticStringMap(BuiltinInfo).initComptime(
+const builtins_table = BuiltinsTable.initComptime(
     &.{
         // general
         .{ "assert", assert_info },

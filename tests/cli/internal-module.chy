@@ -1,0 +1,5 @@
+import fs
+
+has-ls := (fs'has-program ls)
+
+assert (== true $has-ls)
