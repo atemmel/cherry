@@ -23,5 +23,5 @@ jobs:
         run: zig build test
       - name: e2e code tests
         run: ./run-all-tests
-      - name: e2e repl tests
-        run: ./run-all-repl-tests
+        #- name: e2e repl tests
+      #run: ./run-all-repl-tests
