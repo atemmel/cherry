@@ -15,15 +15,18 @@ const nothing = values.nothing;
 
 pub const InternalModule = struct {
     builtins_table: builtins.BuiltinsTable,
+    was_imported: bool = false,
 };
 
-const internal_module_table = std.StaticStringMap(InternalModule).initComptime(&.{.{}});
+const internal_module_table = std.StaticStringMap(*InternalModule).initComptime(&.{
+    .{ "fs", &fs_module },
+});
 
-pub fn lookup(module_name: []const u8) ?InternalModule {
+pub fn lookup(module_name: []const u8) ?*InternalModule {
     return internal_module_table.get(module_name);
 }
 
-const fs_module = InternalModule{
+var fs_module = InternalModule{
     .builtins_table = builtins.BuiltinsTable.initComptime(.{
         .{ "has-program", fs_has_program_info },
     }),
@@ -33,9 +36,11 @@ const fs_has_program_info = builtins.BuiltinInfo{
     .func = fsHasProgram,
     .signature = .{
         .parameters = &.{
-            .name = "program-name",
-            .param_type = .{
-                .type_info = .string,
+            .{
+                .name = "program-name",
+                .param_type = .{
+                    .type_info = .string,
+                },
             },
         },
         .produces = .boolean,
@@ -51,7 +56,7 @@ fn fsHasProgram(state: *State, args: []const *Value, call: ast.Call) !Result {
     const arena = state.scratch_arena.allocator();
 
     const paths = state.env_map.get("PATH") orelse {
-        return something(gc.boolean(false, opt));
+        return something(try gc.boolean(false, opt));
     };
 
     const program = args[0];
@@ -67,8 +72,20 @@ fn fsHasProgram(state: *State, args: []const *Value, call: ast.Call) !Result {
         const ok_mode = stat_info.mode & 0o111 != 0;
 
         if (ok_kind and ok_mode) {
-            return something(gc.boolean(true, opt));
+            return something(try gc.boolean(true, opt));
         }
     }
-    return something(gc.boolean(false, opt));
+    return something(try gc.boolean(false, opt));
+}
+
+fn fsExists(state: *State, args: []const *Value, call: ast.Call) !Result {
+    _ = args; // autofix
+
+    const opt = gc.ValueOptions{
+        .origin = call.token,
+        .origin_module = state.current_module_in_process,
+    };
+    _ = opt; // autofix
+
+    //std.fs.cwd().
 }

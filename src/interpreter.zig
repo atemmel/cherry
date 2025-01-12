@@ -7,6 +7,7 @@ const builtins = @import("builtins.zig");
 const values = @import("value.zig");
 const tokens = @import("tokens.zig");
 const strings = @import("strings.zig");
+const modules = @import("modules.zig");
 
 const assert = std.debug.assert;
 
@@ -24,17 +25,16 @@ pub const InterpreterError = error{
     ArgsCountMismatch,
     BadVariableLookup,
     CommandNotFound,
+    FunctionNotFoundWithinModule,
     MembersNotAllowed,
     MismatchedBraces,
+    ModuleNotFound,
     TypeMismatch,
     ValueRequired,
     VariableAlreadyDeclared,
 };
 
-pub const EvalError = builtins.BuiltinError || std.process.Child.RunError || error{
-    ModuleNotFound,
-    FunctionNotFoundWithinModule,
-};
+pub const EvalError = builtins.BuiltinError || std.process.Child.RunError;
 
 const Context = struct {
     state: *PipelineState,
@@ -287,22 +287,15 @@ fn evalCall(ctx: *Context, call: ast.Call) !Result {
 
     if (call.accessor) |accessor| {
         const owning_module_name = call.token.value;
+        if (modules.lookup(owning_module_name)) |internal_module| {
+            return evalInternalModuleCall(ctx, call, internal_module);
+        }
         const module = ctx.state.modules.get(owning_module_name) orelse {
-            ctx.state.error_report = .{
-                .trailing = false,
-                .offending_token = call.token,
-                .msg = try std.fmt.allocPrint(ctx.ally, "Module '{s}' was never imported.", .{owning_module_name}),
-            };
-            return error.ModuleNotFound;
+            return errNeverImported(ctx, call.token, owning_module_name);
         };
         const func_name = accessor.member.token.value;
         const func = module.ast.functions.get(func_name) orelse {
-            ctx.state.error_report = .{
-                .trailing = false,
-                .offending_token = call.token,
-                .msg = try std.fmt.allocPrint(ctx.ally, "Module '{s}' does not export a function named '{s}'.", .{ owning_module_name, func_name }),
-            };
-            return error.FunctionNotFoundWithinModule;
+            return errNeverExported(ctx, call.token, owning_module_name, func_name);
         };
         return try evalFunctionCall(ctx, func, call);
     }
@@ -322,6 +315,21 @@ fn evalCall(ctx: *Context, call: ast.Call) !Result {
     } else {
         return try evalProc(ctx, call);
     }
+}
+
+fn evalInternalModuleCall(ctx: *Context, call: ast.Call, module: *const modules.InternalModule) !Result {
+    const module_name = call.token.value;
+    const fn_name = call.accessor.?.member.token.value;
+
+    if (!module.was_imported) {
+        return errNeverImported(ctx, call.token, module_name);
+    }
+
+    const builtin = module.builtins_table.get(fn_name) orelse {
+        return errNeverExported(ctx, call.token, module_name, fn_name);
+    };
+
+    return evalBuiltin(ctx, call, builtin.func);
 }
 
 //TODO: this
@@ -647,6 +655,24 @@ fn errRequiresValue(ctx: *Context, token: *const tokens.Token) InterpreterError 
         .offending_token = token,
     };
     return InterpreterError.ValueRequired;
+}
+
+fn errNeverImported(ctx: *Context, token: *const tokens.Token, owning_module_name: []const u8) (EvalError || std.mem.Allocator.Error) {
+    ctx.state.error_report = .{
+        .trailing = false,
+        .offending_token = token,
+        .msg = try std.fmt.allocPrint(ctx.ally, "Module '{s}' was never imported.", .{owning_module_name}),
+    };
+    return EvalError.ModuleNotFound;
+}
+
+fn errNeverExported(ctx: *Context, token: *const tokens.Token, owning_module_name: []const u8, func_name: []const u8) (EvalError || std.mem.Allocator.Error) {
+    ctx.state.error_report = .{
+        .trailing = false,
+        .offending_token = token,
+        .msg = try std.fmt.allocPrint(ctx.ally, "Module '{s}' does not export a function named '{s}'.", .{ owning_module_name, func_name }),
+    };
+    return EvalError.FunctionNotFoundWithinModule;
 }
 
 fn ptrAdd(token: *const tokens.Token, steps: usize) *const tokens.Token {

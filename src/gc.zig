@@ -378,11 +378,8 @@ fn markFrame(frame: *Frame) void {
 pub fn insertSymbol(key: []const u8, value: *Value) !void {
     const frame = topFrame();
     if (frame.symtable.get(key) != null) {
-        std.debug.print("How did we get here?\n", .{});
-        varDump(false);
         pipeline_state.dumpSourceAtToken(value.origin, value.origin_module);
-        //return InterpreterError.VariableAlreadyDeclared;
-        unreachable;
+        return InterpreterError.VariableAlreadyDeclared;
     }
     return try frame.symtable.put(try persistent_allocator.dupe(u8, key), value);
 }

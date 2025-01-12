@@ -4,6 +4,7 @@ const tokens = @import("tokens.zig");
 const ast = @import("ast.zig");
 const interpreter = @import("interpreter.zig");
 const semantics = @import("semantics.zig");
+const modules = @import("modules.zig");
 
 const Token = tokens.Token;
 
@@ -387,6 +388,10 @@ fn loadImports(state: *State, module: Module) !void {
     const std_import_dir = "./lib/";
     var it = module.ast.imports.valueIterator();
     while (it.next()) |to_import| {
+        if (modules.lookup(to_import.name)) |*resolved_module| {
+            resolved_module.*.was_imported = true;
+            continue;
+        }
         // for now, all imports are assumed to be std imports
         const path = try std.fmt.allocPrint(scratch, "{s}{s}.chy", .{ std_import_dir, to_import.name });
         //TODO: this should *absolutely* not be scratch allocated lololol
