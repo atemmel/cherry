@@ -28,6 +28,7 @@ pub fn lookup(module_name: []const u8) ?*InternalModule {
 
 var fs_module = InternalModule{
     .builtins_table = builtins.BuiltinsTable.initComptime(.{
+        .{ "exists", fs_exists },
         .{ "has-program", fs_has_program_info },
     }),
 };
@@ -48,6 +49,7 @@ const fs_has_program_info = builtins.BuiltinInfo{
 };
 
 fn fsHasProgram(state: *State, args: []const *Value, call: ast.Call) !Result {
+    try builtins.validateArgsCount(state, &.{1}, args.len);
     const opt = gc.ValueOptions{
         .origin = call.token,
         .origin_module = state.current_module_in_process,
@@ -59,7 +61,14 @@ fn fsHasProgram(state: *State, args: []const *Value, call: ast.Call) !Result {
         return something(try gc.boolean(false, opt));
     };
 
-    const program = args[0];
+    const program = switch (args[0].as) {
+        .boolean => return builtins.typeMismatchError(state, "string", "boolean", 0),
+        .float => return builtins.typeMismatchError(state, "string", "float", 0),
+        .integer => return builtins.typeMismatchError(state, "string", "integer", 0),
+        .list => return builtins.typeMismatchError(state, "string", "list", 0),
+        .record => return builtins.typeMismatchError(state, "string", "record", 0),
+        .string => |s| s,
+    };
 
     var it = std.mem.tokenizeScalar(u8, paths, ':');
     while (it.next()) |path| {
@@ -78,14 +87,39 @@ fn fsHasProgram(state: *State, args: []const *Value, call: ast.Call) !Result {
     return something(try gc.boolean(false, opt));
 }
 
-fn fsExists(state: *State, args: []const *Value, call: ast.Call) !Result {
-    _ = args; // autofix
+const fs_exists = builtins.BuiltinInfo{
+    .func = fsExists,
+    .signature = .{
+        .parameters = &.{
+            .{
+                .name = "path",
+                .param_type = .{
+                    .type_info = .string,
+                },
+            },
+        },
+        .produces = .boolean,
+    },
+};
 
+fn fsExists(state: *State, args: []const *Value, call: ast.Call) !Result {
+    try builtins.validateArgsCount(state, &.{1}, args.len);
     const opt = gc.ValueOptions{
         .origin = call.token,
         .origin_module = state.current_module_in_process,
     };
-    _ = opt; // autofix
 
-    //std.fs.cwd().
+    const path: []const u8 = switch (args[0].as) {
+        .boolean => return builtins.typeMismatchError(state, "string", "boolean", 0),
+        .float => return builtins.typeMismatchError(state, "string", "float", 0),
+        .integer => return builtins.typeMismatchError(state, "string", "integer", 0),
+        .list => return builtins.typeMismatchError(state, "string", "list", 0),
+        .record => return builtins.typeMismatchError(state, "string", "record", 0),
+        .string => |s| s,
+    };
+
+    std.fs.cwd().access(path, .{}) catch {
+        return something(try gc.boolean(false, opt));
+    };
+    return something(try gc.boolean(true, opt));
 }

@@ -835,7 +835,7 @@ fn gcdump(_: *State, _: []const *Value, _: ast.Call) !Result {
     return nothing;
 }
 
-fn validateArgsCount(
+pub fn validateArgsCount(
     state: *State,
     accepted_counts: []const usize,
     actual_count: usize,
@@ -855,7 +855,7 @@ fn validateArgsCount(
 
 const TypeMismatchError = InterpreterError || std.mem.Allocator.Error;
 
-fn typeMismatchError(state: *State, wants: []const u8, got: []const u8, offending_value_idx: usize) TypeMismatchError {
+pub fn typeMismatchError(state: *State, wants: []const u8, got: []const u8, offending_value_idx: usize) TypeMismatchError {
     state.error_report = try semantics.typeMismatchReportIdx(state.scratch_arena.allocator(), wants, got, offending_value_idx);
     return error.TypeMismatch;
 }

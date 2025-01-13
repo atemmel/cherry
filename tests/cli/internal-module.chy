@@ -2,4 +2,11 @@ import fs
 
 has-ls := (fs'has-program ls)
 
-assert (== true $has-ls)
+assert $has-ls
+
+ls-exists := (fs'exists /bin/ls)
+
+ls-not-exists := (fs'exists /ls/bin)
+
+assert $ls-exists
+assert (== false $ls-not-exists)
