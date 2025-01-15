@@ -60,6 +60,11 @@ pub const Variable = struct {
     token: *const Token,
 };
 
+pub const UnaryOperator = struct {
+    expression: *const Expression,
+    token: *const Token,
+};
+
 pub const Expression = struct {
     as: union(enum) {
         bareword: Bareword,
@@ -70,6 +75,7 @@ pub const Expression = struct {
         capturing_call: Call,
         list_literal: ListLiteral,
         record_literal: RecordLiteral,
+        unary_operator: UnaryOperator,
     },
     accessor: ?Accessor,
 };
@@ -888,6 +894,29 @@ fn parseCapturingCall(ctx: *Context) errors!?Call {
     });
 }
 
+fn parseUnaryPrefixOperator(ctx: *Context) ?UnaryOperator {
+    const token = ctx.peek();
+    switch (token.kind) {
+        .Bang => {},
+        else => return null,
+    }
+    ctx.next();
+
+    const expr = try parseExpression(ctx) orelse {
+        return ctx.err(.{
+            .msg = "expected expression",
+        });
+    };
+
+    const expr_ptr = ctx.ally.create(Expression);
+    expr_ptr.* = expr;
+
+    return UnaryOperator{
+        .expression = expr_ptr,
+        .token = token,
+    };
+}
+
 fn parseExpression(ctx: *Context) errors!?Expression {
     if (try parseCapturingCall(ctx)) |capturing_inv| {
         return Expression{
@@ -942,6 +971,13 @@ fn parseExpression(ctx: *Context) errors!?Expression {
         return Expression{
             .as = .{
                 .record_literal = record,
+            },
+            .accessor = null,
+        };
+    } else if (try parseUnaryPrefixOperator(ctx)) |op| {
+        return Expression{
+            .as = .{
+                .unary_operator = op,
             },
             .accessor = null,
         };
