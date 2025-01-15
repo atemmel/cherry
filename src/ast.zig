@@ -894,7 +894,7 @@ fn parseCapturingCall(ctx: *Context) errors!?Call {
     });
 }
 
-fn parseUnaryPrefixOperator(ctx: *Context) ?UnaryOperator {
+fn parseUnaryPrefixOperator(ctx: *Context) !?UnaryOperator {
     const token = ctx.peek();
     switch (token.kind) {
         .Bang => {},
@@ -908,7 +908,7 @@ fn parseUnaryPrefixOperator(ctx: *Context) ?UnaryOperator {
         });
     };
 
-    const expr_ptr = ctx.ally.create(Expression);
+    const expr_ptr = try ctx.ally.create(Expression);
     expr_ptr.* = expr;
 
     return UnaryOperator{
@@ -1116,6 +1116,7 @@ pub fn tokenFromExpr(expr: Expression) *const Token {
         .list_literal => |li| li.token,
         .record_literal => |rl| rl.token,
         .string_literal => |sl| sl.token,
+        .unary_operator => |u| u.token,
         .variable => |v| v.token,
     };
 }

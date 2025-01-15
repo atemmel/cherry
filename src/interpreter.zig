@@ -142,6 +142,7 @@ fn interpretAssign(ctx: *Context, assign: ast.Assignment) !void {
         .integer_literal,
         .string_literal,
         .capturing_call,
+        .unary_operator,
         => false,
     };
 
@@ -526,6 +527,69 @@ fn evalArgs(ctx: *Context, arguments: []const ast.Expression) !std.ArrayList(*Va
     return args;
 }
 
+fn evalUnaryOperator(ctx: *Context, op: ast.UnaryOperator) EvalError!*Value {
+    return switch (op.token.kind) {
+        .Bang => try evalNot(ctx, op),
+        // none of these should be set, if so, developer error
+        .Bareword,
+        .StringLiteral,
+        .IntegerLiteral,
+        .Variable,
+        .EmptyRecord,
+        .Newline,
+        .Colon,
+        .Semicolon,
+        .Assign,
+        .Pipe,
+        .LParens,
+        .RParens,
+        .LBrace,
+        .RBrace,
+        .LBracket,
+        .RBracket,
+        .RedirectOut,
+        .RedirectIn,
+        .SingleQuote,
+        .If,
+        .Else,
+        .For,
+        .Fn,
+        .Return,
+        .Break,
+        .Continue,
+        .True,
+        .False,
+        .Import,
+        .Pub,
+        => unreachable,
+    };
+}
+
+fn evalNot(ctx: *Context, op: ast.UnaryOperator) EvalError!*Value {
+    const expr_result = try evalExpression(ctx, op.expression.*);
+    const val = switch (expr_result) {
+        .value => |val| val,
+        .nothing => {
+            return errRequiresValue(ctx, ast.tokenFromExpr(op.expression.*));
+        },
+        .values => {
+            return errRequiresSingleValue(ctx, ast.tokenFromExpr(op.expression.*));
+        },
+    };
+
+    const boolean = switch (val.as) {
+        .string, .integer, .float, .list, .record => unreachable, //TODO: handle error
+        .boolean => |b| b,
+    };
+
+    const opt: gc.ValueOptions = .{
+        .origin = op.token,
+        .origin_module = ctx.state.current_module_in_process,
+    };
+
+    return try gc.boolean(!boolean, opt);
+}
+
 fn evalExpression(ctx: *Context, expr: ast.Expression) EvalError!Result {
     const base_expr = switch (expr.as) {
         .bareword => |bw| something(try evalBareword(ctx, bw)),
@@ -536,6 +600,7 @@ fn evalExpression(ctx: *Context, expr: ast.Expression) EvalError!Result {
         .capturing_call => |cap_inv| try evalCall(ctx, cap_inv),
         .list_literal => |list| something(try evalListLiteral(ctx, list)),
         .record_literal => |record| something(try evalRecordLiteral(ctx, record)),
+        .unary_operator => |op| something(try evalUnaryOperator(ctx, op)),
     };
     if (expr.accessor) |*accessor| {
         var current = accessor;
@@ -655,6 +720,15 @@ fn errRequiresValue(ctx: *Context, token: *const tokens.Token) InterpreterError 
         .offending_token = token,
     };
     return InterpreterError.ValueRequired;
+}
+
+fn errRequiresSingleValue(ctx: *Context, token: *const tokens.Token) InterpreterError {
+    ctx.state.error_report = .{
+        .msg = "Context requires value, but the expression produces multiple",
+        .trailing = false,
+        .offending_token = token,
+    };
+    return InterpreterError.ValueRequired; //TODO: should this be a unique error? hmmm...
 }
 
 fn errNeverImported(ctx: *Context, token: *const tokens.Token, owning_module_name: []const u8) (EvalError || std.mem.Allocator.Error) {

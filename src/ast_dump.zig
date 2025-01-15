@@ -193,6 +193,12 @@ fn dumpCall(inv: ast.Call) void {
     }
 }
 
+fn dumpUnaryOp(op: ast.UnaryOperator) void {
+    defer up();
+    leaf("UnaryOperator: {} ({s})\n", .{ op.token.kind, op.token.value });
+    dumpExpression(op.expression.*);
+}
+
 fn dumpExpression(expr: ast.Expression) void {
     defer up();
     leaf("Expression:\n", .{});
@@ -205,6 +211,7 @@ fn dumpExpression(expr: ast.Expression) void {
         .capturing_call => |inv| dumpCall(inv),
         .list_literal => |list| dumpListLiteral(list),
         .record_literal => |record| dumpRecordLiteral(record),
+        .unary_operator => |op| dumpUnaryOp(op),
     }
     if (expr.accessor) |accessor| {
         dumpAccessor(accessor);

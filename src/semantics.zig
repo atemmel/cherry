@@ -355,6 +355,42 @@ fn analyzeExpression(ctx: *Context, expr: ast.Expression) SemanticsError!TypeInf
             //TODO: report variable which does not exist
             break :blk .{ .nothing = {} };
         },
+        .unary_operator => |op| switch (op.token.kind) {
+            //TODO: look inside expression
+            .Bang => .{ .boolean = {} },
+            // none of these should be set, if so, developer error
+            .Bareword,
+            .StringLiteral,
+            .IntegerLiteral,
+            .Variable,
+            .EmptyRecord,
+            .Newline,
+            .Colon,
+            .Semicolon,
+            .Assign,
+            .Pipe,
+            .LParens,
+            .RParens,
+            .LBrace,
+            .RBrace,
+            .LBracket,
+            .RBracket,
+            .RedirectOut,
+            .RedirectIn,
+            .SingleQuote,
+            .If,
+            .Else,
+            .For,
+            .Fn,
+            .Return,
+            .Break,
+            .Continue,
+            .True,
+            .False,
+            .Import,
+            .Pub,
+            => unreachable,
+        },
     };
 }
 
