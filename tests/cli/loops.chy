@@ -4,4 +4,4 @@ for (< $i 5) {
     $i = (+ $i 1)
 }
 
-assert (== 5 $i)
+assert 5 == $i

@@ -734,7 +734,22 @@ fn evalRecordLiteral(ctx: *Context, record_literal: ast.RecordLiteral) !*Value {
         .origin = record_literal.token,
         .origin_module = ctx.root_module.filename,
     };
-    return gc.emptyRecord(opt);
+    if (record_literal.items.len == 0) {
+        return gc.emptyRecord(opt);
+    }
+
+    var record = values.Record.init(gc.allocator());
+    for (record_literal.items) |item| {
+        const value = switch (try evalExpression(ctx, item.value)) {
+            .value => |v| v,
+            .nothing => unreachable,
+            .values => unreachable,
+        };
+        try record.put(item.key.value, value);
+    }
+    const value = try gc.record(record, opt);
+    try gc.appendRoot(value);
+    return value;
 }
 
 fn appendParentRootIfReturnedValue(result: Result) !void {

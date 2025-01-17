@@ -5,11 +5,11 @@ pub fn index-of haystack needle {
     haystack-len := (len $haystack)
     for i := 0; (< $i $haystack-len); $i = (+ $i 1) {
         for j := 0; (< $j $needle-len); $j = (+ $j 1) {
-            if (!= (get $haystack (+ $i $j)) (get $needle $j)) {
+            if (get $haystack (+ $i $j)) != (get $needle $j) {
                 break
             }
 
-            if (== (+ $j 1) $needle-len) {
+            if (+ $j 1) == $needle-len {
                 return $i
             }
         }

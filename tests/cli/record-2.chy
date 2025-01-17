@@ -1,6 +1,6 @@
 person := [
-    name = james
+    name    = james
     surname = bond
 ]
 
-assert (== james $person'name)
+assert james == $person'name

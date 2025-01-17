@@ -269,13 +269,11 @@ fn dumpRecordLiteral(record: ast.RecordLiteral) void {
     leaf("RecordLiteral: [=]\n", .{});
     defer up();
     for (record.items) |pair| {
-        leaf("Key: ", .{});
-        defer up();
-        switch (pair.key) {
-            .string => |str| dumpStringLiteral(str),
-            .bareword => |bw| dumpBareword(bw),
-        }
+        leaf("Key: {s}\n", .{pair.key.value});
+        up();
+        leaf("Value:\n", .{});
         dumpExpression(pair.value);
+        up();
     }
 }
 

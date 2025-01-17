@@ -2,4 +2,4 @@ x := "hello"
 
 say $x
 
-assert (== "hello" $x)
+assert "hello" == $x

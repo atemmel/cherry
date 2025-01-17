@@ -3,4 +3,4 @@ fn calc lhs rhs {
     return (+ $lhs $rhs)
 }
 
-assert (== 5 (calc 2 3))
+assert 5 == (calc 2 3)

@@ -18,4 +18,4 @@ fn good-func {
 
 good-func
 
-assert (== true $x)
+assert $x

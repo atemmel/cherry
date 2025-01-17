@@ -3,9 +3,9 @@ l := [1 2 3]
 say x $l
 
 # index into list
-assert (== 1 (get $l 0))
-assert (== 2 (get $l 1))
-assert (== 3 (get $l 2))
+assert 1 == (get $l 0)
+assert 2 == (get $l 1)
+assert 3 == (get $l 2)
 
 # reassign list
 $l = [4 5 6]
@@ -13,14 +13,14 @@ $l = [4 5 6]
 say list of $l
 
 # list equality
-assert (== [4 5 6] $l)
+assert [4 5 6] == $l
 
 # change individual element
 put $l 1 2
 
 say list is now $l
 
-assert (== [4 2 6] $l)
+assert [4 2 6] == $l
 
 # lists are references
 s := $l
@@ -29,5 +29,5 @@ s := $l
 
 put $s 1 5
 
-assert (== [4 5 6] $l)
-assert (== [4 5 6] $s)
+assert [4 5 6] == $l
+assert [4 5 6] == $s

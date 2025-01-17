@@ -2,12 +2,12 @@ outer := 2
 
 {
 	inner := 1
-	assert (== 3 (+ $outer $inner))
+	assert 3 == (+ $outer $inner)
 }
 
 # new scope with same identifier
 
 {
 	inner := 2
-	assert (== 4 (+ $outer $inner))
+	assert 4 == (+ $outer $inner)
 }

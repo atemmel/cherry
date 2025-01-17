@@ -3,11 +3,11 @@ fn index-of haystack needle {
     haystack-len := (len $haystack)
     for i := 0; (< $i $haystack-len); $i = (+ $i 1) {
         for j := 0; (< $j $needle-len); $j = (+ $j 1) {
-            if (!= (get $haystack (+ $i $j)) (get $needle $j)) {
+            if (get $haystack (+ $i $j)) != (get $needle $j) {
                 break
             }
 
-            if (== (+ $j 1) $needle-len) {
+            if (+ $j 1) == $needle-len {
                 return $i
             }
         }
@@ -15,14 +15,14 @@ fn index-of haystack needle {
     return -1
 }
 
-assert (== (index-of "hello" "z") -1)
-assert (== (index-of "hello" "h") 0)
-assert (== (index-of "hello" "e") 1)
-assert (== (index-of "hello" "l") 2)
-assert (== (index-of "hello" "hell") 0)
-assert (== (index-of "hello" "ell") 1)
-assert (== (index-of "hello" "ll") 2)
-assert (== (index-of "hello" "o") 4)
+assert (index-of "hello" "z") == -1
+assert (index-of "hello" "h") == 0
+assert (index-of "hello" "e") == 1
+assert (index-of "hello" "l") == 2
+assert (index-of "hello" "hell") == 0
+assert (index-of "hello" "ell") == 1
+assert (index-of "hello" "ll") == 2
+assert (index-of "hello" "o") == 4
 
 # TODO: '-1' becomes a string
-assert (== (index-of "hello" "ll0") -1)
+assert (index-of "hello" "ll0") == -1

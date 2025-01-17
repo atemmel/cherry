@@ -39,10 +39,7 @@ pub const ListLiteral = struct {
 
 pub const RecordLiteral = struct {
     pub const Pair = struct {
-        key: union(enum) {
-            bareword: Bareword,
-            string: StringLiteral,
-        },
+        key: *const Token,
         value: Expression,
     };
     token: *const Token,
@@ -1019,17 +1016,17 @@ fn parseLeafExpression(ctx: *Context) errors!?Expression {
             },
             .accessor = null,
         };
-    } else if (try parseListLiteral(ctx)) |list| {
-        return Expression{
-            .as = .{
-                .list_literal = list,
-            },
-            .accessor = null,
-        };
     } else if (try parseRecordLiteral(ctx)) |record| {
         return Expression{
             .as = .{
                 .record_literal = record,
+            },
+            .accessor = null,
+        };
+    } else if (try parseListLiteral(ctx)) |list| {
+        return Expression{
+            .as = .{
+                .list_literal = list,
             },
             .accessor = null,
         };
@@ -1100,7 +1097,7 @@ fn parseListLiteral(ctx: *Context) !?ListLiteral {
     // must find closing bracket
     _ = ctx.getIf(.RBracket) orelse {
         return ctx.err(.{
-            .msg = "expected one or more expresions, followed by a closing ']'",
+            .msg = "expected one or more expressions, followed by a closing ']'",
             .trailing = true,
         });
     };
@@ -1113,10 +1110,71 @@ fn parseListLiteral(ctx: *Context) !?ListLiteral {
 
 fn parseRecordLiteral(ctx: *Context) !?RecordLiteral {
     if (parseEmptyRecordLiteral(ctx)) |lit| return lit;
-    //const checkpoint = ctx.idx;
-    //const token = ctx.getIf(.LBracket) orelse return null;
-    //_ = ctx.getIf(.Newline);
-    return null;
+    const checkpoint = ctx.idx;
+    const lb_newline = ctx.getIfBoth(.LBracket, .Newline) orelse {
+        return null;
+    };
+    const bw_assign = ctx.getIfBoth(.Bareword, .Assign) orelse {
+        ctx.idx = checkpoint;
+        return null;
+    };
+    const expr = try parseExpression(ctx, std.math.minInt(i64)) orelse {
+        return ctx.err(.{
+            .msg = "expected expression",
+            .trailing = true,
+        });
+    };
+    _ = ctx.getIf(.Newline) orelse {
+        return ctx.err(.{
+            .msg = "expected newline",
+        });
+    };
+
+    var pairs = std.ArrayList(RecordLiteral.Pair).init(ctx.ally);
+    defer pairs.deinit();
+
+    try pairs.append(.{
+        .key = bw_assign.first,
+        .value = expr,
+    });
+
+    while (true) {
+        const key = ctx.getIf(.Bareword) orelse {
+            break;
+        };
+        _ = ctx.getIf(.Assign) orelse {
+            return ctx.err(.{
+                .msg = "expected '='",
+            });
+        };
+        const value = try parseExpression(ctx, std.math.minInt(i64)) orelse {
+            return ctx.err(.{
+                .msg = "expected expression",
+            });
+        };
+
+        _ = ctx.getIf(.Newline) orelse {
+            return ctx.err(.{
+                .msg = "expected newline",
+            });
+        };
+
+        try pairs.append(.{
+            .key = key,
+            .value = value,
+        });
+    }
+
+    _ = ctx.getIf(.RBracket) orelse {
+        return ctx.err(.{
+            .msg = "expected closing ']'",
+        });
+    };
+
+    return RecordLiteral{
+        .token = lb_newline.first,
+        .items = try pairs.toOwnedSlice(),
+    };
 }
 
 fn parseEmptyRecordLiteral(ctx: *Context) ?RecordLiteral {

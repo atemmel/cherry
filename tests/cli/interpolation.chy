@@ -4,16 +4,16 @@ name := "James"
 
 say "Hello {name}"
 
-assert (== "Hello {name}" "Hello James")
+assert "Hello {name}" == "Hello James"
 
 age := 24
 
 say "You are {age}"
 
-assert (== "You are {age}" "You are 24")
+assert "You are {age}" == "You are 24"
 
 # Escape interpolations with double braces
 
 say "{{age}}"
 
-assert (== 5 (len "{{age}}"))
+assert 5 == (len "{{age}}")

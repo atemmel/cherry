@@ -8,4 +8,4 @@ i := 0
 for ; (< $i (len $strings)); $i = (+ $i 1) {
 }
 
-assert (== 3 $i)
+assert 3 == $i

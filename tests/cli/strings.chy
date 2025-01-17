@@ -2,8 +2,8 @@
 
 greeting := (+ hello guys)
 
-assert (== "helloguys" $greeting)
+assert "helloguys" == $greeting
 
-assert (== 9 (len $greeting))
+assert 9 == (len $greeting)
 
-assert (== h (get $greeting 0))
+assert h == (get $greeting 0)

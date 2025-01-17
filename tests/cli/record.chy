@@ -1,6 +1,6 @@
 record := [=]
 
-assert (== [=] $record)
+assert [=] == $record
 
 $record'name = bond
 
@@ -8,7 +8,7 @@ say $record
 
 say $record'name
 
-assert (== bond $record'name)
+assert bond == $record'name
 
 # Not sure if I like these two:
 #$record[foo] = baz
