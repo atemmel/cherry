@@ -389,8 +389,11 @@ fn analyzeExpression(ctx: *Context, expr: ast.Expression) SemanticsError!TypeInf
             .False,
             .Import,
             .Pub,
+            .Equals,
+            .NotEquals,
             => unreachable,
         },
+        .binary_operator => .{ .boolean = {} }, //TODO
     };
 }
 

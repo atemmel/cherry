@@ -20,7 +20,7 @@ pub const Token = struct {
         Bang,
         Colon,
         Semicolon,
-        Assign,
+        Assign, // =
         Pipe,
         LParens,
         RParens,
@@ -31,6 +31,8 @@ pub const Token = struct {
         RedirectOut, // |>
         RedirectIn, // <|
         SingleQuote, // '
+        Equals, // ==
+        NotEquals, // !=
         // Keywords
         If,
         Else,
@@ -44,6 +46,20 @@ pub const Token = struct {
         Import,
         Pub,
     };
+
+    pub fn isBinaryOperator(token: *const Token) bool {
+        return switch (token.kind) {
+            .Equals, .NotEquals => true,
+            else => false,
+        };
+    }
+
+    pub fn precedence(token: *const Token) i64 {
+        return switch (token.kind) {
+            .Equals, .NotEquals => 10,
+            else => unreachable, // this should never happen
+        };
+    }
 
     kind: Kind,
     value: []const u8,
@@ -145,24 +161,8 @@ fn lexSymbol(state: *LexState) ?Token {
 
     const token_begin = state.idx;
     const kind: Token.Kind = switch (state.get()) {
-        '=' => blk: {
-            state.next();
-            if (state.eof()) {
-                state.idx -= 1;
-                break :blk .Assign;
-            }
-            break :blk switch (state.get()) {
-                '=' => {
-                    state.idx -= 1;
-                    return null;
-                },
-                else => {
-                    state.idx -= 1;
-                    break :blk .Assign;
-                },
-            };
-        },
-        '!' => .Bang,
+        '=' => peekAssign(state, .Assign, .Equals),
+        '!' => peekAssign(state, .Bang, .NotEquals),
         ':' => .Colon,
         ';' => .Semicolon,
         '|' => .Pipe,
@@ -193,6 +193,21 @@ fn lexSymbol(state: *LexState) ?Token {
     return .{
         .kind = kind,
         .value = state.slice(token_begin, state.idx),
+    };
+}
+
+fn peekAssign(state: *LexState, regular: Token.Kind, with_assign: Token.Kind) Token.Kind {
+    state.next();
+    if (state.eof()) {
+        state.idx -= 1;
+        return regular;
+    }
+    return switch (state.get()) {
+        '=' => with_assign,
+        else => blk: {
+            state.idx -= 1;
+            break :blk regular;
+        },
     };
 }
 

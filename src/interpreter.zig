@@ -143,6 +143,7 @@ fn interpretAssign(ctx: *Context, assign: ast.Assignment) !void {
         .string_literal,
         .capturing_call,
         .unary_operator,
+        .binary_operator,
         => false,
     };
 
@@ -561,6 +562,8 @@ fn evalUnaryOperator(ctx: *Context, op: ast.UnaryOperator) EvalError!*Value {
         .False,
         .Import,
         .Pub,
+        .Equals,
+        .NotEquals,
         => unreachable,
     };
 }
@@ -590,6 +593,43 @@ fn evalNot(ctx: *Context, op: ast.UnaryOperator) EvalError!*Value {
     return try gc.boolean(!boolean, opt);
 }
 
+fn evalBinaryOperator(ctx: *Context, op: ast.BinaryOperator) EvalError!*Value {
+    return switch (op.token.kind) {
+        .Equals => try evalEq(ctx, op),
+        .NotEquals => try evalNE(ctx, op),
+        else => unreachable, // programmer error
+    };
+}
+
+fn evalEq(ctx: *Context, op: ast.BinaryOperator) EvalError!*Value {
+    const opt = gc.ValueOptions{
+        .origin = op.token,
+        .origin_module = ctx.state.current_module_in_process,
+    };
+    return try gc.boolean(try evalEqImpl(ctx, op), opt);
+}
+
+fn evalNE(ctx: *Context, op: ast.BinaryOperator) EvalError!*Value {
+    const opt = gc.ValueOptions{
+        .origin = op.token,
+        .origin_module = ctx.state.current_module_in_process,
+    };
+    return try gc.boolean(!try evalEqImpl(ctx, op), opt);
+}
+
+fn evalEqImpl(ctx: *Context, op: ast.BinaryOperator) EvalError!bool {
+    const lhs = try evalExpression(ctx, op.lhs.*);
+    const rhs = try evalExpression(ctx, op.rhs.*);
+
+    //TODO: handle type error
+    const order = lhs.value.compare(rhs.value) catch unreachable;
+    return switch (order) {
+        .equal => true,
+        .failure => |fail| return builtins.typeMismatchError(ctx.state, fail.wants, fail.got, 1),
+        else => false,
+    };
+}
+
 fn evalExpression(ctx: *Context, expr: ast.Expression) EvalError!Result {
     const base_expr = switch (expr.as) {
         .bareword => |bw| something(try evalBareword(ctx, bw)),
@@ -601,6 +641,7 @@ fn evalExpression(ctx: *Context, expr: ast.Expression) EvalError!Result {
         .list_literal => |list| something(try evalListLiteral(ctx, list)),
         .record_literal => |record| something(try evalRecordLiteral(ctx, record)),
         .unary_operator => |op| something(try evalUnaryOperator(ctx, op)),
+        .binary_operator => |op| something(try evalBinaryOperator(ctx, op)),
     };
     if (expr.accessor) |*accessor| {
         var current = accessor;

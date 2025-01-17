@@ -199,6 +199,19 @@ fn dumpUnaryOp(op: ast.UnaryOperator) void {
     dumpExpression(op.expression.*);
 }
 
+fn dumpBinaryOp(op: ast.BinaryOperator) void {
+    defer up();
+    leaf("BinaryOperator: {} ({s})\n", .{ op.token.kind, op.token.value });
+
+    leaf("lhs:\n", .{});
+    dumpExpression(op.lhs.*);
+    up();
+
+    leaf("rhs:\n", .{});
+    dumpExpression(op.rhs.*);
+    up();
+}
+
 fn dumpExpression(expr: ast.Expression) void {
     defer up();
     leaf("Expression:\n", .{});
@@ -212,6 +225,7 @@ fn dumpExpression(expr: ast.Expression) void {
         .list_literal => |list| dumpListLiteral(list),
         .record_literal => |record| dumpRecordLiteral(record),
         .unary_operator => |op| dumpUnaryOp(op),
+        .binary_operator => |op| dumpBinaryOp(op),
     }
     if (expr.accessor) |accessor| {
         dumpAccessor(accessor);

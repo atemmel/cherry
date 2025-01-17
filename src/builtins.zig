@@ -88,10 +88,8 @@ const builtins_table = BuiltinsTable.initComptime(
         .{ "-", unchecked(sub) },
         .{ "*", unchecked(mul) },
         .{ "/", unchecked(div) },
-        .{ "==", unchecked(equals) },
         .{ "<", unchecked(less) },
         .{ ">", unchecked(greater) },
-        .{ "!=", unchecked(notEqual) },
         // types
         .{ "int", unchecked(int) },
         // dev
@@ -160,25 +158,27 @@ const assert_info: BuiltinInfo = .{
     },
 };
 
-fn assert(_: *State, args: []const *Value, _: ast.Call) !Result {
+fn assert(state: *State, args: []const *Value, _: ast.Call) !Result {
     const stderr = std.io.getStdErr().writer();
-    var all_passed = true;
     for (args, 0..) |arg, idx| {
         switch (arg.as) {
             .boolean => |b| {
                 if (!b) {
                     try stderr.print("Assertion failed for value {}\n", .{idx});
-                    all_passed = false;
+
+                    state.error_report = .{
+                        .msg = try std.fmt.allocPrint(state.scratch_arena.allocator(), "Assertion failed", .{}),
+                        .offending_token = arg.origin, // Ok, caller will set the value
+                        .trailing = false,
+                    };
+                    return BuiltinError.AssertionFailed;
                 }
             },
             else => unreachable,
         }
     }
 
-    return switch (all_passed) {
-        true => nothing,
-        false => BuiltinError.AssertionFailed,
-    };
+    return nothing;
 }
 
 const alias_info: BuiltinInfo = .{

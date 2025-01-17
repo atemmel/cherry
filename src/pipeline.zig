@@ -201,6 +201,7 @@ pub fn writeError(state: *State, err: PipelineError) !void {
         error.VariableAlreadyDeclared,
         error.ModuleNotFound,
         error.FunctionNotFoundWithinModule,
+        error.AssertionFailed,
         => {
             try writeRuntimeError(state, writer);
         },
@@ -235,7 +236,6 @@ pub fn writeError(state: *State, err: PipelineError) !void {
         error.InvalidArgument,
         error.NotOpenForWriting,
         error.LockViolation,
-        error.AssertionFailed,
         error.CurrentWorkingDirectoryUnlinked,
         error.InvalidBatchScriptArg,
         error.InvalidExe,

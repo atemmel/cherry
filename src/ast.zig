@@ -65,6 +65,12 @@ pub const UnaryOperator = struct {
     token: *const Token,
 };
 
+pub const BinaryOperator = struct {
+    lhs: *const Expression,
+    rhs: *const Expression,
+    token: *const Token,
+};
+
 pub const Expression = struct {
     as: union(enum) {
         bareword: Bareword,
@@ -76,6 +82,7 @@ pub const Expression = struct {
         list_literal: ListLiteral,
         record_literal: RecordLiteral,
         unary_operator: UnaryOperator,
+        binary_operator: BinaryOperator,
     },
     accessor: ?Accessor,
 };
@@ -363,7 +370,7 @@ fn parseVarDeclaration(ctx: *Context, opt: struct { needs_newline: bool = true }
     }
 
     // the assignment operation must be followed by an expression
-    const expr = try parseExpression(ctx) orelse {
+    const expr = try parseExpression(ctx, std.math.minInt(i64)) orelse {
         return ctx.err(.{
             .msg = "expected expression",
         });
@@ -395,7 +402,7 @@ fn parseAssignment(ctx: *Context, opt: struct { needs_newline: bool = true }) !?
     };
 
     // Needs expression
-    const expr = try parseExpression(ctx) orelse {
+    const expr = try parseExpression(ctx, std.math.minInt(i64)) orelse {
         return ctx.err(.{
             .msg = "expected expression",
         });
@@ -425,7 +432,7 @@ fn parseBranches(ctx: *Context) !?Branches {
     var branches = std.ArrayList(Branch).init(ctx.ally);
     defer branches.deinit();
 
-    const first_expr = try parseExpression(ctx) orelse {
+    const first_expr = try parseExpression(ctx, std.math.minInt(i64)) orelse {
         return ctx.err(.{
             .msg = "expected expression",
         });
@@ -448,7 +455,7 @@ fn parseBranches(ctx: *Context) !?Branches {
     }
 
     while (ctx.getIf(.Else) != null and ctx.getIf(.If) != null) {
-        const expr = try parseExpression(ctx) orelse {
+        const expr = try parseExpression(ctx, std.math.minInt(i64)) orelse {
             return ctx.err(.{
                 .msg = "expected expression",
             });
@@ -761,7 +768,7 @@ fn parseLoop(ctx: *Context) !?Loop {
         });
     }
 
-    const expr = try parseExpression(ctx);
+    const expr = try parseExpression(ctx, std.math.minInt(i64));
     var post_op: ?PostOp = null;
 
     if (left_semicolon != null) {
@@ -808,7 +815,7 @@ fn parseReturn(ctx: *Context) !?Return {
         return null;
     }
 
-    const maybe_expr = try parseExpression(ctx);
+    const maybe_expr = try parseExpression(ctx, std.math.minInt(i64));
 
     if (ctx.getIf(.Newline) == null) {
         return ctx.err(.{
@@ -863,7 +870,7 @@ fn parseIndividualCall(ctx: *Context, capturing: bool) !?Call {
 
     var args = std.ArrayList(Expression).init(ctx.ally);
     defer args.deinit();
-    while (try parseExpression(ctx)) |expr| {
+    while (try parseExpression(ctx, std.math.minInt(i64))) |expr| {
         try args.append(expr);
     }
 
@@ -902,7 +909,7 @@ fn parseUnaryPrefixOperator(ctx: *Context) !?UnaryOperator {
     }
     ctx.next();
 
-    const expr = try parseExpression(ctx) orelse {
+    const expr = try parseExpression(ctx, std.math.minInt(i64)) orelse {
         return ctx.err(.{
             .msg = "expected expression",
         });
@@ -917,7 +924,59 @@ fn parseUnaryPrefixOperator(ctx: *Context) !?UnaryOperator {
     };
 }
 
-fn parseExpression(ctx: *Context) errors!?Expression {
+fn isBinaryOperator(token: *const Token) bool {
+    return switch (token.kind) {
+        .Equals, .NotEquals => true,
+        else => false,
+    };
+}
+
+fn parseIncreasingPrecedence(ctx: *Context, left: Expression, min_precedence: i64) !Expression {
+    const next = ctx.peek();
+
+    if (!next.isBinaryOperator()) {
+        return left;
+    }
+
+    const next_prec = next.precedence();
+
+    if (next_prec <= min_precedence) {
+        return left;
+    } else {
+        ctx.next();
+        const right = try parseExpression(ctx, next_prec) orelse unreachable;
+        const lhs = try ctx.ally.create(Expression);
+        const rhs = try ctx.ally.create(Expression);
+        lhs.* = left;
+        rhs.* = right;
+        return Expression{
+            .as = .{
+                .binary_operator = BinaryOperator{
+                    .lhs = lhs,
+                    .rhs = rhs,
+                    .token = next,
+                },
+            },
+            .accessor = null,
+        };
+    }
+}
+
+fn parseExpression(ctx: *Context, min_precedence: i64) errors!?Expression {
+    var left = try parseLeafExpression(ctx) orelse {
+        return null;
+    };
+
+    while (true) {
+        const node = try parseIncreasingPrecedence(ctx, left, min_precedence);
+        if (std.meta.eql(node, left)) break;
+        left = node;
+    }
+
+    return left;
+}
+
+fn parseLeafExpression(ctx: *Context) errors!?Expression {
     if (try parseCapturingCall(ctx)) |capturing_inv| {
         return Expression{
             .as = .{
@@ -1034,7 +1093,7 @@ fn parseListLiteral(ctx: *Context) !?ListLiteral {
     defer exprs.deinit();
 
     // must have expressions
-    while (try parseExpression(ctx)) |expr| {
+    while (try parseExpression(ctx, std.math.minInt(i64))) |expr| {
         try exprs.append(expr);
     }
 
@@ -1118,5 +1177,6 @@ pub fn tokenFromExpr(expr: Expression) *const Token {
         .string_literal => |sl| sl.token,
         .unary_operator => |u| u.token,
         .variable => |v| v.token,
+        .binary_operator => |b| b.token,
     };
 }
