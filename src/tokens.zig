@@ -192,7 +192,7 @@ fn lexSymbol(state: *LexState) ?Token {
 
     return .{
         .kind = kind,
-        .value = state.slice(token_begin, state.idx),
+        .value = state.slice(token_begin, state.idx + 1),
     };
 }
 
@@ -485,7 +485,7 @@ test "lex equals" {
     const tokens = try lex(&state, "== 1 2");
 
     try expectEqual(3, tokens.len);
-    try expectEqual(.Bareword, tokens[0].kind);
+    try expectEqual(.Equals, tokens[0].kind);
     try expectEqualStrings("==", tokens[0].value);
     try expectEqual(.IntegerLiteral, tokens[1].kind);
     try expectEqualStrings("1", tokens[1].value);
@@ -514,7 +514,7 @@ test "lex assert equals rpar" {
     try expectEqual(6, tokens.len);
     try expectEqual(.Bareword, tokens[0].kind);
     try expectEqual(.LParens, tokens[1].kind);
-    try expectEqual(.Bareword, tokens[2].kind);
+    try expectEqual(.Equals, tokens[2].kind);
     try expectEqual(.StringLiteral, tokens[3].kind);
     try expectEqual(.Variable, tokens[4].kind);
     try expectEqual(.RParens, tokens[5].kind);
@@ -529,7 +529,7 @@ test "lex assert str str" {
     try expectEqual(6, tokens.len);
     try expectEqual(.Bareword, tokens[0].kind);
     try expectEqual(.LParens, tokens[1].kind);
-    try expectEqual(.Bareword, tokens[2].kind);
+    try expectEqual(.Equals, tokens[2].kind);
     try expectEqual(.StringLiteral, tokens[3].kind);
     try expectEqual(.StringLiteral, tokens[4].kind);
     try expectEqual(.RParens, tokens[5].kind);
