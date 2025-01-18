@@ -548,6 +548,7 @@ fn displayCompletionResults(state: *State, result: CompletionResult) !void {
                 _ = try std.fmt.bufPrint(state.buffer[state.length - offset ..], "{s}", .{str});
             }
         },
+        // currently presents completion results like bash, in a table-like format
         .multiple_match => |all| {
             const delta = all.shared_match.len - last_cmd.len;
             if (delta > 0) {
@@ -557,7 +558,6 @@ fn displayCompletionResults(state: *State, result: CompletionResult) !void {
                 state.cursor += delta;
             }
 
-            const cursor_position = try state.term.getCursor();
             const terminal_size = state.term.size();
             const longest_match = algo.lengthOfLongestSlice(all.potential_matches);
 
@@ -566,6 +566,13 @@ fn displayCompletionResults(state: *State, result: CompletionResult) !void {
             const n_columns = @divTrunc(terminal_size.x, column_width);
             const max_items_per_column = @divTrunc(all.potential_matches.len, @max(3, n_columns) - 2);
 
+            for (0..max_items_per_column + 2) |_| {
+                fmts(out, "\r\n");
+            }
+            terminal.moveUp(out, max_items_per_column + 2);
+            state.flush();
+
+            const cursor_position = try state.term.getCursor();
             const y_begin = cursor_position.y + 1;
 
             var x: usize = 0;
