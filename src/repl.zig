@@ -320,6 +320,10 @@ fn eval(state: *State) !void {
     defer if (builtin.mode != .Debug) {
         _ = state.pipeline_state.scratch_arena.reset(.retain_capacity);
     };
+    appendHistory(state) catch |e| {
+        state.print("Could not write history, {any}\r\n", .{e});
+        state.flush();
+    };
     state.print("\r\n", .{});
     terminal.clearLine(state.writer(), state.prefixLen());
     try state.term.restore();
@@ -359,11 +363,6 @@ fn eval(state: *State) !void {
         }
     };
     state.flush();
-
-    appendHistory(state) catch |e| {
-        state.print("Could not write history, {any}\r\n", .{e});
-        state.flush();
-    };
 }
 
 // returns true if cwd is changed

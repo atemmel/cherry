@@ -899,6 +899,7 @@ fn parseCapturingCall(ctx: *Context) errors!?Call {
 }
 
 fn parseUnaryPrefixOperator(ctx: *Context) !?UnaryOperator {
+    if (ctx.eot()) return null;
     const token = ctx.peek();
     switch (token.kind) {
         .Bang => {},
@@ -929,6 +930,9 @@ fn isBinaryOperator(token: *const Token) bool {
 }
 
 fn parseIncreasingPrecedence(ctx: *Context, left: Expression, min_precedence: i64) !Expression {
+    if (ctx.eot()) {
+        return left;
+    }
     const next = ctx.peek();
 
     if (!next.isBinaryOperator()) {
