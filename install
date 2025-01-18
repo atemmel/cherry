@@ -1,3 +1,10 @@
 #!./zig-out/bin/cherry
-sudo zig build install -Doptimize=Debug --prefix-exe-dir /usr/bin/
-sudo ln -s /usr/bin/cherry /bin/cherry
+import fs
+
+install-dir := /usr/bin
+
+sudo zig build install -Doptimize=Debug --prefix-exe-dir $install-dir
+
+if !(fs'exists /bin/cherry) {
+    sudo ln -s "{install-dir}/cherry" /bin/cherry
+}
