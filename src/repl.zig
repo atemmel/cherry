@@ -487,6 +487,13 @@ fn tryAutocompleteCmd2(state: *State) !void {
         .arena = arena,
     };
     const result = try tryAutocompleteCmdImpl(&cmp_ctx);
+    switch (result) {
+        .none => {
+            try tryAutocompletePath2(state);
+            return;
+        },
+        else => {},
+    }
     try displayCompletionResults(state, result);
 }
 
