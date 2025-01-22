@@ -36,6 +36,15 @@ pub fn readfile(ally: std.mem.Allocator, name: []const u8) ![]const u8 {
     return file.readToEndAlloc(ally, 1_000_000_000);
 }
 
+pub fn readFirstUtf8Len(slice: []const u8) !u64 {
+    var view = try std.unicode.Utf8View.init(slice);
+    var it = view.iterator();
+    const codepoint = it.nextCodepointSlice() orelse {
+        return 0;
+    };
+    return codepoint.len;
+}
+
 const expectEqual = std.testing.expectEqual;
 
 test "index of diff strings" {

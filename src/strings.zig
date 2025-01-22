@@ -2,6 +2,7 @@ const std = @import("std");
 const gc = @import("gc.zig");
 const interpreter = @import("interpreter.zig");
 const pipeline = @import("pipeline.zig");
+const algo = @import("algo.zig");
 
 const InterpreterError = interpreter.InterpreterError;
 const indexOfPos = std.mem.indexOfPos;
@@ -114,9 +115,133 @@ pub fn escape(arena: std.mem.Allocator, str: []const u8, enclosing_char: ?u8) ![
 }
 
 pub fn glob(arena: std.mem.Allocator, str: []const u8) !StringOrGlob {
+    // iterate recursively through directories
+    // stop if a directory is not a partial match using `match`
+    // collect results into list
     _ = arena;
     return StringOrGlob{
         .string = str,
+    };
+}
+
+//TODO: write more tests
+fn match(pattern: []const u8, name: []const u8) bool {
+    var px: usize = 0;
+    var nx: usize = 0;
+    var nextPx: usize = 0;
+    var nextNx: usize = 0;
+    while (px < pattern.len or nx < name.len) {
+        if (px < pattern.len) {
+            const c = pattern[px];
+            switch (c) {
+                else => { // ordinary character
+                    if (nx < name.len and name[nx] == c) {
+                        px += 1;
+                        nx += 1;
+                        continue;
+                    }
+                },
+                '?' => { // single-character wildcard
+                    if (nx < name.len) {
+                        px += 1;
+                        nx += 1;
+                        continue;
+                    }
+                },
+                '*' => { // zero-or-more-character wildcard
+                    // Try to match at nx.
+                    // If that doesn't work out,
+                    // restart at nx+1 next.
+                    nextPx = px;
+                    nextNx = nx + 1;
+                    px += 1;
+                    continue;
+                },
+            }
+        }
+        // Mismatch. Maybe restart.
+        if (0 < nextNx and nextNx <= name.len) {
+            px = nextPx;
+            nx = nextNx;
+            continue;
+        }
+        return false;
+    }
+    // Matched all of pattern to all of name. Success.
+    return true;
+}
+
+const GlobChunk = struct {
+    star: bool,
+    chunk: []const u8,
+    rest: []const u8,
+};
+
+fn scanChunk(pattern: []const u8) GlobChunk {
+    var my_pattern = pattern;
+    var star = false;
+    while (my_pattern.len > 0 and my_pattern[0] == '*') {
+        my_pattern = my_pattern[1..];
+        star = true;
+    }
+    var i: usize = 0;
+    while (i < my_pattern.len) : (i += 1) {
+        switch (my_pattern[i]) {
+            '*' => break,
+            else => {},
+        }
+    }
+    return .{
+        .star = star,
+        .chunk = my_pattern[0..i],
+        .rest = my_pattern[i..],
+    };
+}
+
+const MatchChunkResult = struct {
+    rest: []const u8,
+    ok: bool,
+};
+
+fn matchChunk(chunk: []const u8, s: []const u8) MatchChunkResult {
+    var failed = false;
+    var my_chunk = chunk;
+    var my_s = s;
+    while (my_chunk.len > 0) {
+        if (!failed and my_s.len == 0) {
+            failed = true;
+        }
+        switch (my_chunk[0]) {
+            '?' => {
+                if (!failed) {
+                    if (my_s[0] == '/') {
+                        failed = true;
+                    }
+                    const n = algo.readFirstUtf8Len(my_s);
+                    my_s = my_s[n..];
+                }
+                my_chunk = my_chunk[1..];
+            },
+            else => {
+                if (!failed) {
+                    if (my_chunk[0] != my_s[0]) {
+                        failed = true;
+                    }
+                    my_s = my_s[1..];
+                }
+                my_chunk = my_chunk[1..];
+            },
+        }
+    }
+    if (failed) {
+        return MatchChunkResult{
+            .ok = false,
+            .rest = "",
+        };
+    }
+    return MatchChunkResult{
+        .ok = true,
+        .rest = my_s,
     };
 }
 
