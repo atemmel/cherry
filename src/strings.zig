@@ -114,68 +114,67 @@ pub fn escape(arena: std.mem.Allocator, str: []const u8, enclosing_char: ?u8) ![
     return try result.toOwnedSlice();
 }
 
-pub fn glob(arena: std.mem.Allocator, str: []const u8) !StringOrGlob {
-    // iterate recursively through directories
-    // stop if a directory is not a partial match using `match`
-    // collect results into list
-    _ = arena;
-    return StringOrGlob{
-        .string = str,
-    };
-}
-
-//TODO: write more tests
-fn match(pattern: []const u8, name: []const u8) bool {
-    var px: usize = 0;
-    var nx: usize = 0;
-    var nextPx: usize = 0;
-    var nextNx: usize = 0;
-    while (px < pattern.len or nx < name.len) {
-        if (px < pattern.len) {
-            const c = pattern[px];
-            switch (c) {
-                else => { // ordinary character
-                    if (nx < name.len and name[nx] == c) {
-                        px += 1;
-                        nx += 1;
-                        continue;
-                    }
-                },
-                '?' => { // single-character wildcard
-                    if (nx < name.len) {
-                        px += 1;
-                        nx += 1;
-                        continue;
-                    }
-                },
-                '*' => { // zero-or-more-character wildcard
-                    // Try to match at nx.
-                    // If that doesn't work out,
-                    // restart at nx+1 next.
-                    nextPx = px;
-                    nextNx = nx + 1;
-                    px += 1;
-                    continue;
-                },
-            }
-        }
-        // Mismatch. Maybe restart.
-        if (0 < nextNx and nextNx <= name.len) {
-            px = nextPx;
-            nx = nextNx;
-            continue;
-        }
-        return false;
-    }
-    // Matched all of pattern to all of name. Success.
-    return true;
-}
+//pub fn glob(arena: std.mem.Allocator, str: []const u8) !StringOrGlob {
+// iterate recursively through directories
+// stop if a directory is not a partial match using `match`
+// collect results into list
+//_ = arena;
+//return StringOrGlob{
+//.string = str,
+//};
+//}
 
 const GlobChunk = struct {
     star: bool,
     chunk: []const u8,
     rest: []const u8,
 };
+
+pub fn match(pattern: []const u8, name: []const u8) bool {
+    var my_pattern = pattern;
+    var my_name = name;
+    root: while (my_pattern.len > 0) {
+        const scan = scanChunk(my_pattern);
+        const star = scan.star;
+        const chunk = scan.chunk;
+        my_pattern = scan.rest;
+
+        if (star and chunk.len == 0) {
+            // Trailing * matches rest of string unless it has a /
+            return std.mem.indexOfScalar(u8, my_name, '/') == null;
+        }
+
+        // look for match
+        const my_match = matchChunk(chunk, my_name) catch {
+            return false;
+        };
+
+        if (my_match.ok and (my_match.rest.len == 0 or my_pattern.len > 0)) {
+            my_name = my_match.rest;
+            continue;
+        }
+
+        if (star) {
+            // look for match skipping i + 1 bytes
+            // cannot skip '/'
+            var i: usize = 0;
+            while (i < my_name.len and my_name[i] != '/') : (i += 1) {
+                const inner_match = matchChunk(chunk, my_name[i + 1 ..]) catch {
+                    return false;
+                };
+                if (inner_match.ok) {
+                    if (my_pattern.len == 0 and inner_match.rest.len > 0) {
+                        continue;
+                    }
+                    my_name = inner_match.rest;
+                    continue :root;
+                }
+            }
+        }
+        return false;
+    }
+    return my_name.len == 0;
+}
 
 fn scanChunk(pattern: []const u8) GlobChunk {
     var my_pattern = pattern;
@@ -203,7 +202,7 @@ const MatchChunkResult = struct {
     ok: bool,
 };
 
-fn matchChunk(chunk: []const u8, s: []const u8) MatchChunkResult {
+fn matchChunk(chunk: []const u8, s: []const u8) !MatchChunkResult {
     var failed = false;
     var my_chunk = chunk;
     var my_s = s;
@@ -217,7 +216,7 @@ fn matchChunk(chunk: []const u8, s: []const u8) MatchChunkResult {
                     if (my_s[0] == '/') {
                         failed = true;
                     }
-                    const n = algo.readFirstUtf8Len(my_s);
+                    const n = try algo.readFirstUtf8Len(my_s);
                     my_s = my_s[n..];
                 }
                 my_chunk = my_chunk[1..];
@@ -245,13 +244,39 @@ fn matchChunk(chunk: []const u8, s: []const u8) MatchChunkResult {
     };
 }
 
+pub fn glob(pattern: []const u8) []const []const u8 {
+    return globWithLimit(pattern, 0);
+}
+
+fn globWithLimit(pattern: []const u8, depth: usize) []const []const u8 {
+    const max_path_separators = 10000;
+    if (depth >= max_path_separators) {
+        return &.{};
+    }
+
+    if (!hasMeta(pattern)) {
+        _ = std.fs.cwd().statFile(pattern) catch {
+            return &.{};
+        };
+        return &.{pattern};
+    }
+    return &.{};
+}
+
+fn hasMeta(pattern: []const u8) bool {
+    return std.mem.indexOfAny(u8, pattern, "*?") != null;
+}
+
+const expect = std.testing.expect;
+const expectEqualStrings = std.testing.expectEqualStrings;
+
 test "escape newline" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
 
     const escaped = try escape(arena.allocator(), "hello\\nworld", null);
 
-    try std.testing.expectEqualStrings("hello\nworld", escaped);
+    try expectEqualStrings("hello\nworld", escaped);
 }
 
 test "escape backslash" {
@@ -260,7 +285,7 @@ test "escape backslash" {
 
     const escaped = try escape(arena.allocator(), "hello\\\\world", null);
 
-    try std.testing.expectEqualStrings("hello\\world", escaped);
+    try expectEqualStrings("hello\\world", escaped);
 }
 
 test "dealias tilde" {
@@ -271,7 +296,7 @@ test "dealias tilde" {
 
     const dealiased = try dealias(&state, state.scratch_arena.allocator(), "ls ~/config");
 
-    try std.testing.expectEqualStrings("ls /home/person/config", dealiased);
+    try expectEqualStrings("ls /home/person/config", dealiased);
 }
 
 test "dealias tilde 2" {
@@ -282,7 +307,7 @@ test "dealias tilde 2" {
 
     const dealiased = try processBareword(&state, state.scratch_arena.allocator(), "~/config");
 
-    try std.testing.expectEqualStrings("/home/person/config", dealiased);
+    try expectEqualStrings("/home/person/config", dealiased);
 }
 
 test "interpolate single value" {
@@ -297,7 +322,7 @@ test "interpolate single value" {
     try gc.insertSymbol("y", try gc.string("x", undefined));
 
     const result = try interpolate(state.scratch_arena.allocator(), "x {y}");
-    try std.testing.expectEqualStrings("x x", result);
+    try expectEqualStrings("x x", result);
 }
 
 test "interpolate multiple values" {
@@ -312,7 +337,7 @@ test "interpolate multiple values" {
     try gc.insertSymbol("y", try gc.string("x", undefined));
 
     const result = try interpolate(state.scratch_arena.allocator(), "x {y} {y}");
-    try std.testing.expectEqualStrings("x x x", result);
+    try expectEqualStrings("x x x", result);
 }
 
 test "interpolate no values" {
@@ -324,7 +349,7 @@ test "interpolate no values" {
     defer gc.deinit();
 
     const result = try interpolate(state.scratch_arena.allocator(), "x");
-    try std.testing.expectEqualStrings("x", result);
+    try expectEqualStrings("x", result);
 }
 
 test "escape interpolation" {
@@ -336,5 +361,30 @@ test "escape interpolation" {
     defer gc.deinit();
 
     const result = try interpolate(state.scratch_arena.allocator(), "{{x}}");
-    try std.testing.expectEqualStrings("{x}", result);
+    try expectEqualStrings("{x}", result);
+}
+
+test "match simple scenarios" {
+    try expect(match("", ""));
+    try expect(match("a/b", "a/b"));
+    try expect(!match("a/b", "a/"));
+    try expect(!match("a/b", "a/bb"));
+    try expect(match("a/bb", "a/bb"));
+    try expect(!match("aa/bb", "a/bb"));
+    try expect(match("aa/bb", "aa/bb"));
+}
+
+test "match with '?'" {
+    try expect(match("a/?b", "a/bb"));
+    try expect(!match("a/?", "a/"));
+}
+
+test "match with '*'" {
+    try expect(match("a/*.jpg", "a/b.jpg"));
+    try expect(!match("a/*.jpg", "a/b.png"));
+    try expect(match("*.jpg", "b.jpg"));
+    try expect(match("*", "abc"));
+    try expect(!match("*", "abc/def"));
+    try expect(match("*/*", "abc/def"));
+    try expect(match("*/*.png", "abc/def.png"));
 }
