@@ -244,11 +244,11 @@ fn matchChunk(chunk: []const u8, s: []const u8) !MatchChunkResult {
     };
 }
 
-pub fn glob(pattern: []const u8) []const []const u8 {
-    return globWithLimit(pattern, 0);
+pub fn glob(arena: std.mem.Allocator, pattern: []const u8) ![]const []const u8 {
+    return try globWithLimit(arena, pattern, 0);
 }
 
-fn globWithLimit(pattern: []const u8, depth: usize) []const []const u8 {
+fn globWithLimit(arena: std.mem.Allocator, pattern: []const u8, depth: usize) ![]const []const u8 {
     const max_path_separators = 10000;
     if (depth >= max_path_separators) {
         return &.{};
@@ -260,7 +260,55 @@ fn globWithLimit(pattern: []const u8, depth: usize) []const []const u8 {
         };
         return &.{pattern};
     }
-    return &.{};
+
+    const split = algo.splitPathIntoDirAndFile(pattern);
+    const dir = cleanGlobPath(split.dir);
+
+    var matches = std.ArrayList([]const u8).init(arena);
+
+    if (!hasMeta(dir)) {
+        try globImpl(dir, split.file, &matches);
+        return try matches.toOwnedSlice();
+    }
+
+    if (std.mem.eql(u8, dir, pattern)) {
+        return &.{};
+    }
+
+    const child_matches = try globWithLimit(arena, dir, depth + 1);
+    for (child_matches) |child_match| {
+        globImpl(child_match, pattern, &matches) catch {
+            return try matches.toOwnedSlice();
+        };
+    }
+    return try matches.toOwnedSlice();
+}
+
+fn globImpl(dir: []const u8, pattern: []const u8, matches: *std.ArrayList([]const u8)) !void {
+    const alloc = matches.allocator;
+    var d = std.fs.cwd().openDir(dir, .{ .iterate = true }) catch |e| {
+        std.debug.print("could not open {s} {any} {}\n", .{ dir, try std.fs.cwd().statFile("."), e });
+        return;
+    };
+    defer d.close();
+    var it = d.iterate();
+    while (try it.next()) |ent| {
+        const path = try std.fmt.allocPrint(alloc, "{s}/{s}", .{ dir, ent.name });
+        std.debug.print("path: {s}\n", .{path});
+        if (match(pattern, ent.name)) {
+            try matches.append(path);
+        }
+    }
+}
+
+fn cleanGlobPath(path: []const u8) []const u8 {
+    if (path.len == 0) {
+        return ".";
+    } else if (std.mem.eql(u8, path, "/")) {
+        return path;
+    } else {
+        return path[0 .. path.len - 1];
+    }
 }
 
 fn hasMeta(pattern: []const u8) bool {
@@ -381,6 +429,23 @@ test "match with '?'" {
 
 test "match with '*'" {
     try expect(match("a/*.jpg", "a/b.jpg"));
+    try expect(!match("a/*.jpg", "a/b.png"));
+    try expect(match("*.jpg", "b.jpg"));
+    try expect(match("*", "abc"));
+    try expect(!match("*", "abc/def"));
+    try expect(match("*/*", "abc/def"));
+    try expect(match("*/*.png", "abc/def.png"));
+}
+
+test "globbing" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    {
+        const g = glob(alloc, "../tests/data/images/*.png");
+        std.debug.print("{any}\n", .{g});
+    }
     try expect(!match("a/*.jpg", "a/b.png"));
     try expect(match("*.jpg", "b.jpg"));
     try expect(match("*", "abc"));

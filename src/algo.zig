@@ -45,7 +45,24 @@ pub fn readFirstUtf8Len(slice: []const u8) !u64 {
     return codepoint.len;
 }
 
+pub fn splitPathIntoDirAndFile(path: []const u8) struct {
+    dir: []const u8,
+    file: []const u8,
+} {
+    const idx = std.mem.lastIndexOfScalar(u8, path, '/') orelse {
+        return .{
+            .dir = "",
+            .file = path,
+        };
+    };
+    return .{
+        .dir = path[0 .. idx + 1],
+        .file = path[idx + 1 ..],
+    };
+}
+
 const expectEqual = std.testing.expectEqual;
+const expectEqualStrings = std.testing.expectEqualStrings;
 
 test "index of diff strings" {
     const strings_0 = &.{
@@ -69,4 +86,14 @@ test "index of diff strings" {
     try expectEqual(1, indexOfDiffStrings(strings_0));
     try expectEqual(2, indexOfDiffStrings(strings_1));
     try expectEqual(0, indexOfDiffStrings(strings_2));
+}
+
+test "splitPathIntoDirAndFile" {
+    const a = splitPathIntoDirAndFile("aaa/bbb");
+    try expectEqualStrings("aaa/", a.dir);
+    try expectEqualStrings("bbb", a.file);
+
+    const b = splitPathIntoDirAndFile("bbb");
+    try expectEqualStrings("", b.dir);
+    try expectEqualStrings("bbb", b.file);
 }
