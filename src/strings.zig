@@ -114,16 +114,6 @@ pub fn escape(arena: std.mem.Allocator, str: []const u8, enclosing_char: ?u8) ![
     return try result.toOwnedSlice();
 }
 
-//pub fn glob(arena: std.mem.Allocator, str: []const u8) !StringOrGlob {
-// iterate recursively through directories
-// stop if a directory is not a partial match using `match`
-// collect results into list
-//_ = arena;
-//return StringOrGlob{
-//.string = str,
-//};
-//}
-
 const GlobChunk = struct {
     star: bool,
     chunk: []const u8,
@@ -286,19 +276,21 @@ fn globWithLimit(arena: std.mem.Allocator, pattern: []const u8, depth: usize) ![
 
 fn globImpl(dir: []const u8, pattern: []const u8, matches: *std.ArrayList([]const u8)) !void {
     const alloc = matches.allocator;
-    var d = std.fs.cwd().openDir(dir, .{ .iterate = true }) catch |e| {
-        std.debug.print("could not open {s} {any} {}\n", .{ dir, try std.fs.cwd().statFile("."), e });
-        return;
-    };
+    var d = std.fs.cwd().openDir(dir, .{ .iterate = true }) catch return;
     defer d.close();
     var it = d.iterate();
     while (try it.next()) |ent| {
-        const path = try std.fmt.allocPrint(alloc, "{s}/{s}", .{ dir, ent.name });
-        std.debug.print("path: {s}\n", .{path});
+        const path = try std.fs.path.join(alloc, &.{ dir, ent.name });
         if (match(pattern, ent.name)) {
             try matches.append(path);
         }
     }
+    //TODO: maybe place sort elsewhere, idk
+    std.mem.sort([]const u8, matches.items, {}, cmp);
+}
+
+fn cmp(_: void, lhs: []const u8, rhs: []const u8) bool {
+    return std.mem.order(u8, lhs, rhs).compare(.lt);
 }
 
 fn cleanGlobPath(path: []const u8) []const u8 {
@@ -437,19 +429,72 @@ test "match with '*'" {
     try expect(match("*/*.png", "abc/def.png"));
 }
 
+fn mkfile(dir: std.fs.Dir, path: []const u8) !void {
+    var file = try dir.createFile(path, .{});
+    file.close();
+}
+
 test "globbing" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
+    var tmpDir = std.testing.tmpDir(.{});
+    try tmpDir.dir.setAsCwd();
+    try tmpDir.dir.makePath("data/images");
+    try tmpDir.dir.makePath("data/random");
+    try mkfile(tmpDir.dir, "data/images/cat.png");
+    try mkfile(tmpDir.dir, "data/images/dog.png");
+    try mkfile(tmpDir.dir, "data/images/sprite.bmp");
+    try mkfile(tmpDir.dir, "data/dat.txt");
+    try mkfile(tmpDir.dir, "data/random/lol.bmp");
 
     {
-        const g = glob(alloc, "../tests/data/images/*.png");
-        std.debug.print("{any}\n", .{g});
+        const expected: []const []const u8 = &.{
+            "data/images/cat.png",
+            "data/images/dog.png",
+        };
+        const g = glob(alloc, "data/images/*.png");
+        try std.testing.expectEqualDeep(expected, g);
     }
-    try expect(!match("a/*.jpg", "a/b.png"));
-    try expect(match("*.jpg", "b.jpg"));
-    try expect(match("*", "abc"));
-    try expect(!match("*", "abc/def"));
-    try expect(match("*/*", "abc/def"));
-    try expect(match("*/*.png", "abc/def.png"));
+
+    {
+        const expected: []const []const u8 = &.{
+            "data/dat.txt",
+        };
+        const g = glob(alloc, "data/*.txt");
+        try std.testing.expectEqualDeep(expected, g);
+    }
+
+    {
+        const expected: []const []const u8 = &.{};
+        const g = glob(alloc, "data/*.png");
+        try std.testing.expectEqualDeep(expected, g);
+    }
+
+    {
+        const expected: []const []const u8 = &.{
+            "data/images/cat.png",
+            "data/images/dog.png",
+        };
+        const g = glob(alloc, "data/images/???.png");
+        try std.testing.expectEqualDeep(expected, g);
+    }
+
+    {
+        const expected: []const []const u8 = &.{
+            "data/images/cat.png",
+        };
+        const g = glob(alloc, "data/images/??t.png");
+        try std.testing.expectEqualDeep(expected, g);
+    }
+
+    {
+        const expected: []const []const u8 = &.{
+            "data/dat.txt",
+            "data/images",
+            "data/random",
+        };
+        const g = glob(alloc, "data/*");
+        try std.testing.expectEqualDeep(expected, g);
+    }
 }
