@@ -502,7 +502,14 @@ fn tryAutocompletePath2(state: *State) !void {
     const arena = state.completion_arena.allocator();
 
     const original_line = state.line();
-    const line = try strings.processBareword(state.pipeline_state, arena, original_line);
+    const processed_bareword = try strings.processBareword(state.pipeline_state, arena, original_line);
+
+    const line = switch (processed_bareword) {
+        .string => |s| s,
+        .glob => {
+            return; //TODO: autocompleting this could be cool, maybe
+        },
+    };
 
     var last_cmd_begin = std.mem.lastIndexOfScalar(u8, line, ' ') orelse 0;
     if (last_cmd_begin < line.len and last_cmd_begin != 0) {

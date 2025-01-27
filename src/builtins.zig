@@ -174,7 +174,14 @@ fn assert(state: *State, args: []const *Value, _: ast.Call) !Result {
                     return BuiltinError.AssertionFailed;
                 }
             },
-            else => unreachable,
+            else => {
+                state.error_report = .{
+                    .msg = try std.fmt.allocPrint(state.scratch_arena.allocator(), "Non boolean value given to 'assert': {}", .{arg}),
+                    .offending_token = arg.origin, // Ok, caller will set the value
+                    .trailing = false,
+                };
+                return BuiltinError.AssertionFailed;
+            },
         }
     }
 

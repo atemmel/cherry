@@ -501,7 +501,16 @@ fn proc(ctx: *Context, call: *const ast.Call) !std.process.Child {
     try args.append(name);
     for (call.arguments) |arg| {
         switch (try evalExpression(ctx, arg)) {
-            .value => |value| try args.append(try value.asStr(ctx.stmnt_scratch)),
+            .value => |value| {
+                switch (value.as) {
+                    .list => |l| {
+                        for (l.items) |e| {
+                            try args.append(try e.asStr(ctx.stmnt_scratch));
+                        }
+                    },
+                    else => try args.append(try value.asStr(ctx.stmnt_scratch)),
+                }
+            },
             .nothing => unreachable, // this construct expects only values
             .values => unreachable, //TODO: consider this
         }
@@ -665,7 +674,17 @@ fn evalBareword(ctx: *Context, bw: ast.Bareword) !*Value {
     };
 
     const contextualized = try strings.processBareword(ctx.state, ctx.stmnt_scratch, bw.token.value);
-    const value = try gc.string(contextualized, opt);
+    const value = switch (contextualized) {
+        .string => |str| try gc.string(str, opt),
+        .glob => |globbed| blk: {
+            var list = values.List.init(gc.allocator());
+            errdefer list.deinit();
+            for (globbed) |g| {
+                try list.append(try gc.string(g, opt));
+            }
+            break :blk try gc.list(list, opt);
+        },
+    };
     try gc.appendRoot(value);
     return value;
 }

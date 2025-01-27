@@ -123,3 +123,9 @@ fn fsExists(state: *State, args: []const *Value, call: ast.Call) !Result {
     };
     return something(try gc.boolean(true, opt));
 }
+
+fn fsDirExists(state: *State, args: []const *Value, call: ast.Call) !Result {
+    _ = state; // autofix
+    _ = args; // autofix
+    _ = call; // autofix
+}

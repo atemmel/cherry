@@ -21,7 +21,7 @@ pub const StringOrGlob = union(enum) {
 };
 
 // arena owns result
-pub fn processStrLiteral(pipeline_state: *pipeline.State, arena: std.mem.Allocator, str: []const u8) ![]u8 {
+pub fn processStrLiteral(pipeline_state: *pipeline.State, arena: std.mem.Allocator, str: []const u8) ![]const u8 {
     const escaped = try escape(arena, str, null);
     const interpolated = try interpolate(arena, escaped);
     const dealiased = try dealias(pipeline_state, arena, interpolated);
@@ -29,9 +29,18 @@ pub fn processStrLiteral(pipeline_state: *pipeline.State, arena: std.mem.Allocat
 }
 
 // arena owns result
-pub fn processBareword(pipeline_state: *pipeline.State, arena: std.mem.Allocator, str: []const u8) ![]u8 {
+pub fn processBareword(pipeline_state: *pipeline.State, arena: std.mem.Allocator, str: []const u8) !StringOrGlob {
     const dealiased = try dealias(pipeline_state, arena, str);
-    return dealiased;
+    if (!hasMeta(dealiased)) {
+        return .{ .string = dealiased };
+    }
+    const globbed = try glob(arena, dealiased);
+    if (globbed.len == 0) {
+        return .{ .string = dealiased };
+    } else if (globbed.len == 1) {
+        return .{ .string = globbed[0] };
+    }
+    return .{ .glob = globbed };
 }
 
 pub fn interpolate(arena: std.mem.Allocator, str: []const u8) ![]u8 {

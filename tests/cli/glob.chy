@@ -1,0 +1,8 @@
+images := ./tests/data/images/*.png
+
+assert (len $images) == 2
+
+result ok := (ls $images)
+
+assert $ok == 0
+assert (len $result) != 0
