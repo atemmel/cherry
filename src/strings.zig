@@ -356,7 +356,7 @@ test "dealias tilde 2" {
 
     const dealiased = try processBareword(&state, state.scratch_arena.allocator(), "~/config");
 
-    try expectEqualStrings("/home/person/config", dealiased);
+    try expectEqualStrings("/home/person/config", dealiased.string);
 }
 
 test "interpolate single value" {
