@@ -165,6 +165,15 @@ pub const Continue = struct {
     token: *const Token,
 };
 
+pub const Lambda = struct {
+    token: *const Token,
+    signature: Signature,
+    body: union {
+        scope: Scope,
+        expresion: Expression,
+    },
+};
+
 pub const Import = struct {
     token: *const Token,
     name: []const u8,

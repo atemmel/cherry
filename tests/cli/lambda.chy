@@ -1,0 +1,8 @@
+# declare inline lambda and assign
+#twice := fn x: (* $x 2)
+
+# declare inline lambda with implicit parameter naming
+#thrice := fn: (* $it 2)
+
+#assert 4  == ($twice  2)
+#assert 12 == ($thrice 4)
