@@ -109,8 +109,10 @@ fn sum-distance a b {
 
         $total-distance = (+ $total-distance (abs (- $min-a $min-b)))
 
-        $a = (remove $a $idx-min-a)
-        $b = (remove $b $idx-min-b)
+        #$a = (remove $a $idx-min-a)
+        #$b = (remove $b $idx-min-b)
+        del $a $idx-min-a
+        del $b $idx-min-b
         say "loop 2:" reading (len $a) out of $original-len
     }
 

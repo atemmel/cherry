@@ -70,6 +70,7 @@ const builtins_table = BuiltinsTable.initComptime(
         .{ "get", unchecked(get) },
         .{ "len", unchecked(len) },
         .{ "put", unchecked(put) },
+        .{ "del", unchecked(del) },
         .{ "slice", unchecked(slice) },
         // operations
         .{ "add", unchecked(add) },
@@ -666,6 +667,30 @@ fn put(state: *State, args: []const *Value, _: ast.Call) !Result {
     }
 
     return something(args[0]);
+}
+
+fn del(state: *State, args: []const *Value, call: ast.Call) !Result {
+    _ = call;
+    try validateArgsCount(state, &.{2}, args.len);
+
+    switch (args[0].as) {
+        //TODO: handle negative values properly
+        .list => |*l| delList(l, args[1]),
+        //TODO: This should be possible
+        .string => unreachable,
+        .integer, .boolean, .float, .record => unreachable,
+    }
+    return nothing;
+}
+
+fn delList(list: *std.ArrayList(*Value), idx: *Value) void {
+    const index = switch (idx.as) {
+        .integer => |i| i,
+        .float, .boolean, .list, .string, .record => unreachable,
+    };
+    //TODO: range check
+    //TODO: handle negative values properly
+    _ = list.orderedRemove(@intCast(index));
 }
 
 fn slice(state: *State, args: []const *Value, call: ast.Call) !Result {
