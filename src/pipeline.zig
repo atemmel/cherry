@@ -42,6 +42,7 @@ pub const State = struct {
     error_report: ?ErrorReport = null,
     analysis: semantics.Analysis = .{},
     env_map: std.process.EnvMap,
+    remaining_args: []const []const u8,
 
     pub fn deinit(self: *State) void {
         self.scratch_arena.deinit();
@@ -423,5 +424,6 @@ pub fn testState() State {
         .useSemanticAnalysis = false,
         .env_map = std.process.EnvMap.init(std.testing.allocator),
         .modules = undefined,
+        .remaining_args = &.{},
     };
 }

@@ -1,9 +1,14 @@
 #!./zig-out/bin/cherry
 import fs
 
+optimize := "ReleaseSafe" # default, but can be overridden
+if (len $argv) != 0 {
+    $optimize = (get $argv 0)
+}
+
 install-dir := /usr/bin
 
-sudo zig build install -Doptimize=Debug --prefix-exe-dir $install-dir
+sudo zig build install "-Doptimize={optimize}" --prefix-exe-dir $install-dir
 
 if !(fs'exists /bin/cherry) {
     sudo ln -s "{install-dir}/cherry" /bin/cherry

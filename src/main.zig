@@ -9,6 +9,8 @@ const pipeline = @import("pipeline.zig");
 const repl = @import("repl.zig").repl;
 const tokens = @import("tokens.zig");
 
+const Value = @import("value.zig").Value;
+
 const git_latest_commit_hash = std.mem.trim(u8, @embedFile("git_latest_commit_hash"), " \n\r\t");
 
 const assert = std.debug.assert;
@@ -42,6 +44,7 @@ pub fn main() !u8 {
     var useSemanticAnalysis = false;
 
     var file: ?[]const u8 = null;
+    var remaining_args: []const []const u8 = &.{};
 
     const params = comptime clap.parseParamsComptime(
         \\
@@ -125,6 +128,9 @@ pub fn main() !u8 {
 
     if (res.positionals.len > 0) {
         file = res.positionals[0];
+        if (res.positionals.len > 1) {
+            remaining_args = res.positionals[1..];
+        }
     }
 
     var state = pipeline.State{
@@ -138,6 +144,7 @@ pub fn main() !u8 {
         .useSemanticAnalysis = useSemanticAnalysis,
         .color = std.io.tty.detectConfig(std.io.getStdOut()),
         .env_map = try std.process.getEnvMap(ally),
+        .remaining_args = remaining_args,
     };
     defer state.deinit();
 
