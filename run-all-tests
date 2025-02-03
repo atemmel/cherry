@@ -19,3 +19,5 @@ for filename in ./tests/cli/semantics/failures/*.chy; do
     ./zig-out/bin/cherry --types "$filename" > /dev/null \
         && die "Failed test $filename"
 done
+
+exit 0
