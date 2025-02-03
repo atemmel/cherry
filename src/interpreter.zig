@@ -28,6 +28,7 @@ pub const InterpreterError = error{
     FunctionNotFoundWithinModule,
     MembersNotAllowed,
     MismatchedBraces,
+    NonRecordAccessAttempt,
     ModuleNotFound,
     TypeMismatch,
     ValueRequired,
@@ -657,7 +658,16 @@ fn evalExpression(ctx: *Context, expr: ast.Expression) EvalError!Result {
         var record = base_expr.value;
         while (true) {
             if (current.child == null) {
-                return something(record.as.record.get(current.member.token.value) orelse unreachable);
+                switch (record.as) {
+                    .record => |r| return something(r.get(current.member.token.value) orelse unreachable),
+                    else => {},
+                }
+                //TODO: keep working here
+                ctx.state.error_report = .{
+                    .offending_token = current.member.token,
+                    .msg = try std.fmt.allocPrint(ctx.ally, "'{s}' is not a record, and so has no member named '{s}'.", .{ record.origin.value, current.member.token.value }),
+                };
+                return EvalError.NonRecordAccessAttempt;
             }
             record = record.as.record.get(current.member.token.value) orelse unreachable;
             current = current.child.?;

@@ -17,7 +17,7 @@ pub const PipelineError = tokens.LexerError || ast.errors || semantics.Semantics
 pub const ErrorReport = struct {
     offending_token: *const Token,
     msg: []const u8,
-    trailing: bool,
+    trailing: bool = false,
     offending_expr_idx: ?usize = null,
 };
 
@@ -202,6 +202,7 @@ pub fn writeError(state: *State, err: PipelineError) !void {
         error.ModuleNotFound,
         error.FunctionNotFoundWithinModule,
         error.AssertionFailed,
+        error.NonRecordAccessAttempt,
         => {
             try writeRuntimeError(state, writer);
         },

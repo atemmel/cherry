@@ -66,7 +66,8 @@ const builtins_table = BuiltinsTable.initComptime(
         .{ "cd", cd_info },
         .{ "export", export_info },
         // collections
-        .{ "append", unchecked(append) },
+        .{ "append", append_info },
+        //.{ "append", unchecked(append) },
         .{ "get", unchecked(get) },
         .{ "len", unchecked(len) },
         .{ "put", unchecked(put) },
@@ -577,9 +578,7 @@ const append_info: BuiltinInfo = .{
             .{
                 .name = "value",
                 .param_type = .{
-                    .type_info = .{
-                        .generic = "T",
-                    },
+                    .type_info = append_info_list_of,
                 },
             },
         },

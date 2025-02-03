@@ -1,5 +1,5 @@
 fn my-func {
-    say I'm in the func
+    say I am in the func
 }
 
 my-func
@@ -18,4 +18,4 @@ fn good-func {
 
 good-func
 
-assert (== true $x)
+assert $x

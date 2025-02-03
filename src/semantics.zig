@@ -8,6 +8,12 @@ const Token = @import("tokens.zig").Token;
 const PipelineState = pipeline.State;
 const ErrorReport = pipeline.ErrorReport;
 
+const Table = std.StringHashMap(TypeInfo);
+
+const Collection = struct {
+    of: *const TypeInfo,
+};
+
 // types used during semantic analysis
 pub const TypeInfo = union(enum) {
     something,
@@ -15,14 +21,100 @@ pub const TypeInfo = union(enum) {
     integer,
     float,
     boolean,
-    list: struct {
-        of: *const TypeInfo,
-    },
-    record,
+    list: Collection,
+    record: Collection,
     user_defined,
     nothing,
     generic: []const u8,
     either: []const TypeInfo,
+
+    pub fn str(self: TypeInfo, arena: std.mem.Allocator, table: Table) ![]const u8 {
+        return switch (self) {
+            .something => "something",
+            .string => "string",
+            .integer => "int",
+            .float => "float",
+            .boolean => "bool",
+            .list => |l| try std.fmt.allocPrint(arena, "[]{s}", .{try l.of.str(arena, table)}),
+            .record => |r| try std.fmt.allocPrint(arena, "[=]{s}", .{try r.of.str(arena, table)}),
+            .user_defined => unreachable,
+            .nothing => "nothing",
+            .generic => |gen| try std.fmt.allocPrint(arena, "{s} ({s})", .{ gen, try table.get(gen).?.str(arena, table) }),
+            .either => unreachable,
+        };
+    }
+
+    pub fn eql(lhs: TypeInfo, rhs: TypeInfo, table: Table) bool {
+        return switch (lhs) {
+            .something => switch (rhs) {
+                .boolean, .float, .integer, .list, .record, .string, .user_defined, .either => true,
+                .nothing => false,
+                //TODO: An expression should never be 'something', it should always be specified
+                //      ok for now as most builtins are unchecked
+                .something => true,
+                .generic => true,
+            },
+            // A builtin should never specify 'nothing' as the requested type, instead, the number of parameters should be 0
+            .nothing => unreachable,
+            .string => switch (rhs) {
+                .string => true,
+                .boolean, .float, .integer, .list, .nothing, .record => false,
+                .user_defined => unreachable, //TODO: this
+                //TODO: An expression should never be 'something', it should always be specified
+                //      ok for now as most builtins are unchecked
+                .something => true,
+                .generic => unreachable,
+                .either => unreachable,
+            },
+            .integer => switch (rhs) {
+                .integer => true,
+                .boolean, .float, .list, .nothing, .record, .string => false,
+                .user_defined => unreachable, //TODO: this
+                //TODO: An expression should never be 'something', it should always be specified
+                //      ok for now as most builtins are unchecked
+                .something => true,
+                .generic => unreachable,
+                .either => unreachable,
+            },
+            .list => |l| switch (rhs) {
+                .list => |r| l.of.eql(r.of.*, table),
+                .boolean, .float, .integer, .nothing, .record, .string => false,
+                .user_defined => unreachable, //TODO: this
+                //TODO: An expression should never be 'something', it should always be specified
+                //      ok for now as most builtins are unchecked
+                .something => true,
+                .generic => unreachable,
+                .either => unreachable,
+            },
+            .boolean => switch (rhs) {
+                .boolean => true,
+                .float, .integer, .list, .nothing, .record, .string => false,
+                .user_defined => unreachable, //TODO: this
+                //TODO: An expression should never be 'something', it should always be specified
+                //      ok for now as most builtins are unchecked
+                .something => true,
+                .generic => unreachable,
+                .either => unreachable,
+            },
+            .record => |l| switch (rhs) {
+                .record => |r| l.of.eql(r.of.*, table),
+                .boolean, .float, .integer, .nothing, .list, .string => false,
+                .user_defined => unreachable, //TODO: this
+                //TODO: An expression should never be 'something', it should always be specified
+                //      ok for now as most builtins are unchecked
+                .something => true,
+                .generic => unreachable,
+                .either => unreachable,
+            },
+            .user_defined => unreachable,
+            .float => unreachable,
+            .generic => |gen| blk: {
+                const lookup = table.get(gen).?;
+                break :blk lookup.eql(rhs, table);
+            },
+            .either => unreachable,
+        };
+    }
 };
 
 pub const SemanticsError = error{SemanticError} || std.mem.Allocator.Error;
@@ -39,6 +131,8 @@ const Context = struct {
     scopes: std.ArrayList(Scope),
     state: *PipelineState,
     current_module: *pipeline.Module,
+
+    current_loop_depth: usize = 0,
 
     pub fn errFmt(
         ctx: *Context,
@@ -68,6 +162,18 @@ const Context = struct {
 
     pub fn dropScope(ctx: *Context) void {
         _ = ctx.scopes.pop();
+    }
+
+    pub fn enterLoop(ctx: *Context) void {
+        ctx.current_loop_depth += 1;
+    }
+
+    pub fn exitLoop(ctx: *Context) void {
+        ctx.current_loop_depth -= 1;
+    }
+
+    fn isInsideLoop(ctx: *Context) bool {
+        return ctx.current_loop_depth > 0;
     }
 
     pub fn insertVariable(ctx: *Context, name: []const u8, type_info: TypeInfo) !void {
@@ -129,7 +235,7 @@ fn analyzeStatement(ctx: *Context, stmnt: ast.Statement) !void {
         .func, .import => unreachable, // this should never happen
         .ret => |ret| try analyzeReturn(ctx, ret),
         .loop => |loop| try analyzeLoop(ctx, loop),
-        .brk => unreachable,
+        .brk => |brk| try analyzeBreak(ctx, brk),
         .cont => unreachable,
     }
 }
@@ -148,12 +254,12 @@ fn analyzeCall(ctx: *Context, call: ast.Call) !TypeInfo {
 }
 
 fn analyzeBuiltinCall(ctx: *Context, call: ast.Call, builtin_info: builtins.BuiltinInfo) !TypeInfo {
+    var generic_lookup_table = std.StringHashMap(TypeInfo).init(ctx.arena);
     const name = call.token.value;
-    const args = try analyzeArguments(ctx, call.arguments);
+    //const args = try analyzeArguments(ctx, call.arguments);
     const signature = builtin_info.signature;
-
     const required_len = signature.parameters.len;
-    const provided_len = args.len;
+    const provided_len = call.arguments.len;
 
     if (builtin_info.signature.last_parameter_is_variadic) {
         const n_non_variadic_parameters = required_len - 1;
@@ -164,7 +270,7 @@ fn analyzeBuiltinCall(ctx: *Context, call: ast.Call, builtin_info: builtins.Buil
                 .{ name, required_len, provided_len },
             );
         }
-    } else if (args.len != signature.parameters.len) {
+    } else if (call.arguments.len != signature.parameters.len) {
         try ctx.errFmt(
             .{ .offending_token = call.token },
             "Call to '{s}' requires {} arguments, {} provided.",
@@ -175,9 +281,20 @@ fn analyzeBuiltinCall(ctx: *Context, call: ast.Call, builtin_info: builtins.Buil
     var idx: usize = 0;
     while (idx < required_len and idx < provided_len) : (idx += 1) {
         const param = signature.parameters[idx];
-        const arg = args[idx];
-        const arg_token = ast.tokenFromExpr(call.arguments[idx]);
-        try analyzeSingleParam(ctx, param.param_type.type_info, arg, arg_token);
+        const arg = call.arguments[idx];
+        const arg_token = ast.tokenFromExpr(arg);
+        const encountered_type = try analyzeExpression(ctx, arg);
+        switch (param.param_type.type_info) {
+            .generic => |gen| {
+                try lookupAndInsertGeneric(ctx, &generic_lookup_table, gen, encountered_type, .{ .analyzed_token = arg_token });
+            },
+            .list => |list| {
+                try collectGenericsWithinList(ctx, list, encountered_type, &generic_lookup_table, .{ .analyzed_token = arg_token });
+            },
+            .record => unreachable,
+            else => {},
+        }
+        try analyzeSingleExpression(ctx, param.param_type.type_info, encountered_type, arg_token, generic_lookup_table);
     }
 
     // if not variadic, cool, exit
@@ -189,120 +306,68 @@ fn analyzeBuiltinCall(ctx: *Context, call: ast.Call, builtin_info: builtins.Buil
     const variadic_param = signature.parameters[signature.parameters.len - 1];
 
     while (idx < provided_len) : (idx += 1) {
-        const arg = args[idx];
+        const arg = try analyzeExpression(ctx, call.arguments[idx]);
         const arg_token = ast.tokenFromExpr(call.arguments[idx]);
-        try analyzeSingleParam(ctx, variadic_param.param_type.type_info, arg, arg_token);
+        try analyzeSingleExpression(ctx, variadic_param.param_type.type_info, arg, arg_token, generic_lookup_table);
     }
 
     return signature.produces;
 }
 
-fn analyzeSingleParam(ctx: *Context, param: TypeInfo, arg: TypeInfo, arg_token: *const Token) !void {
-    switch (param) {
-        .something => {
-            switch (arg) {
-                .boolean,
-                .float,
-                .integer,
-                .list,
-                .record,
-                .string,
-                .user_defined,
-                .either,
-                => {},
-                .nothing => try ctx.typeMismatch("something", "nothing", arg_token),
-                //TODO: An expression should never be 'something', it should always be specified
-                //      ok for now as most builtins are unchecked
-                .something => {},
-                .generic => unreachable,
+const ParentTypePair = struct {
+    wants: ?TypeInfo = null,
+    got: ?TypeInfo = null,
+    analyzed_token: *const Token,
+};
+
+fn collectGenericsWithinList(ctx: *Context, list: Collection, got: TypeInfo, table: *Table, parent: ParentTypePair) !void {
+    switch (list.of.*) {
+        .generic => |gen| {
+            switch (got) {
+                .list => |l| {
+                    try lookupAndInsertGeneric(ctx, table, gen, l.of.*, parent);
+                },
+                else => {},
             }
         },
-        // A builtin should never specify 'nothing' as the requested type, instead, the number of parameters should be 0
-        .nothing => unreachable,
-        .string => {
-            switch (arg) {
-                .boolean => try ctx.typeMismatch("string", "boolean", arg_token),
-                .float => try ctx.typeMismatch("string", "float", arg_token),
-                .integer => try ctx.typeMismatch("string", "integer", arg_token),
-                .list => try ctx.typeMismatch("string", "list", arg_token),
-                .nothing => try ctx.typeMismatch("string", "nothing", arg_token),
-                .record => try ctx.typeMismatch("string", "record", arg_token),
-                .string => {},
-                .user_defined => unreachable, //TODO: this
-                //TODO: An expression should never be 'something', it should always be specified
-                //      ok for now as most builtins are unchecked
-                .something => {},
-                .generic => unreachable,
-                .either => unreachable,
-            }
-        },
-        .integer => {
-            switch (arg) {
-                .boolean => try ctx.typeMismatch("integer", "boolean", arg_token),
-                .float => try ctx.typeMismatch("integer", "float", arg_token),
-                .integer => {},
-                .list => try ctx.typeMismatch("integer", "list", arg_token),
-                .nothing => try ctx.typeMismatch("integer", "nothing", arg_token),
-                .record => try ctx.typeMismatch("integer", "record", arg_token),
-                .string => try ctx.typeMismatch("integer", "string", arg_token),
-                .user_defined => unreachable, //TODO: this
-                //TODO: An expression should never be 'something', it should always be specified
-                //      ok for now as most builtins are unchecked
-                .something => {},
-                .generic => unreachable,
-                .either => unreachable,
-            }
-        },
-        .list => {
-            switch (arg) {
-                .boolean => try ctx.typeMismatch("list", "boolean", arg_token),
-                .float => try ctx.typeMismatch("list", "float", arg_token),
-                .integer => try ctx.typeMismatch("list", "integer", arg_token),
-                .list => {}, //TODO: for now, a list is a list
-                .nothing => try ctx.typeMismatch("list", "nothing", arg_token),
-                .record => try ctx.typeMismatch("list", "record", arg_token),
-                .string => try ctx.typeMismatch("list", "string", arg_token),
-                .user_defined => unreachable, //TODO: this
-                //TODO: An expression should never be 'something', it should always be specified
-                //      ok for now as most builtins are unchecked
-                .something => {},
-                .generic => unreachable,
-                .either => unreachable,
-            }
-        },
-        .user_defined => unreachable,
-        .boolean => {
-            switch (arg) {
-                .boolean => {},
-                .float => try ctx.typeMismatch("boolean", "float", arg_token),
-                .integer => try ctx.typeMismatch("boolean", "integer", arg_token),
-                .list => try ctx.typeMismatch("boolean", "list", arg_token),
-                .nothing => try ctx.typeMismatch("boolean", "nothing", arg_token),
-                .record => try ctx.typeMismatch("boolean", "record", arg_token),
-                .string => try ctx.typeMismatch("boolean", "string", arg_token),
-                .user_defined => unreachable, //TODO: this
-                //TODO: An expression should never be 'something', it should always be specified
-                //      ok for now as most builtins are unchecked
-                .something => {},
-                .generic => unreachable,
-                .either => unreachable,
-            }
-        },
-        .record => {}, //TODO: this
-        .float => unreachable,
-        .generic => unreachable,
-        .either => unreachable,
+        .record => unreachable,
+        else => {},
+    }
+}
+
+fn lookupAndInsertGeneric(ctx: *Context, table: *Table, generic_name: []const u8, generic_alias: TypeInfo, parent: ParentTypePair) !void {
+    _ = ctx;
+    _ = parent;
+    _ = table.get(generic_name) orelse {
+        try table.put(generic_name, generic_alias);
+        return;
+    };
+
+    //if (!lookup.eql(generic_alias, table.*)) {
+    //const wants = parent.wants orelse lookup;
+    //const got = parent.got orelse generic_alias;
+    //try ctx.typeMismatch(try wants.str(ctx.arena, table.*), try got.str(ctx.arena, table.*), parent.analyzed_token);
+    //}
+}
+
+fn analyzeSingleExpression(ctx: *Context, wants_type: TypeInfo, got_type: TypeInfo, got_token: *const Token, table: Table) !void {
+    const arena = ctx.arena;
+    if (!wants_type.eql(got_type, table)) {
+        const want = try wants_type.str(arena, table);
+        const got = try got_type.str(arena, table);
+        return ctx.typeMismatch(want, got, got_token);
     }
 }
 
 fn analyzeVarDecl(ctx: *Context, decl: ast.VarDecl) !void {
     if (ctx.lookupVariable(decl.tokens[0].value)) |_| {
-        //TODO: report error
+        //TODO: report error if any declared variable has been encountered previously
     } else {
         const type_info = try analyzeExpression(ctx, decl.expression);
         try ctx.insertVariable(decl.tokens[0].value, type_info);
     }
 }
+
 fn analyzeAssignment(ctx: *Context, call: ast.Assignment) !void {
     _ = ctx;
     _ = call;
@@ -312,21 +377,56 @@ fn analyzeBranches(ctx: *Context, call: ast.Branches) !void {
     _ = ctx;
     _ = call;
 }
-fn analyzeScope(ctx: *Context, call: ast.Scope) !void {
-    _ = ctx;
-    _ = call;
+
+fn analyzeScope(ctx: *Context, scope: ast.Scope) SemanticsError!void {
+    try ctx.addScope();
+    ctx.dropScope();
+
+    for (scope) |stmnt| {
+        try analyzeStatement(ctx, stmnt);
+    }
 }
+
 fn analyzeFunc(ctx: *Context, call: ast.Func) !void {
     _ = ctx;
     _ = call;
 }
+
 fn analyzeReturn(ctx: *Context, call: ast.Return) !void {
     _ = ctx;
     _ = call;
 }
-fn analyzeLoop(ctx: *Context, call: ast.Loop) !void {
-    _ = ctx;
-    _ = call;
+
+fn analyzeLoop(ctx: *Context, loop: ast.Loop) !void {
+    ctx.enterLoop();
+    defer ctx.exitLoop();
+
+    if (loop.init_op) |init_op| {
+        switch (init_op) {
+            .declaration => |decl| try analyzeVarDecl(ctx, decl),
+            .assignment => |assgn| try analyzeAssignment(ctx, assgn),
+        }
+    }
+
+    if (loop.post_op) |post_op| {
+        switch (post_op) {
+            .assignment => |assgn| try analyzeAssignment(ctx, assgn),
+            // probably safe to discard
+            .call => |call| _ = try analyzeCall(ctx, call),
+        }
+    }
+
+    try analyzeScope(ctx, loop.scope);
+}
+
+fn analyzeBreak(ctx: *Context, brk: ast.Break) !void {
+    if (ctx.isInsideLoop()) return;
+    try ctx.errFmt(.{ .offending_token = brk.token }, "break encountered outside of loop", .{});
+}
+
+fn analyzeContinue(ctx: *Context, cnt: ast.Continue) !void {
+    if (ctx.isInsideLoop()) return;
+    try ctx.errFmt(.{ .offending_token = cnt.token }, "continue encountered outside of loop", .{});
 }
 
 fn analyzeArguments(ctx: *Context, exprs: []const ast.Expression) SemanticsError![]const TypeInfo {
@@ -344,7 +444,7 @@ fn analyzeExpression(ctx: *Context, expr: ast.Expression) SemanticsError!TypeInf
         .capturing_call => |call| try analyzeCall(ctx, call),
         .integer_literal => .{ .integer = {} },
         .list_literal => |list| try analyzeList(ctx, list),
-        .record_literal => .{ .record = {} }, //TODO: needs to understand what it is a record of
+        .record_literal => |record| try analyzeRecord(ctx, record),
         .string_literal => .{ .string = {} }, //TODO: needs to semantically analyze substitutions
         .variable => |variable| blk: {
             if (ctx.lookupVariable(variable.token.value)) |type_info| {
@@ -398,9 +498,10 @@ fn analyzeExpression(ctx: *Context, expr: ast.Expression) SemanticsError!TypeInf
 }
 
 fn analyzeList(ctx: *Context, list: ast.ListLiteral) SemanticsError!TypeInfo {
+    const empty_table = Table.init(ctx.arena);
     if (list.items.len == 0) {
         const of = try ctx.arena.create(TypeInfo);
-        of.*.nothing = {};
+        of.* = .nothing;
         return TypeInfo{
             .list = .{
                 .of = of,
@@ -413,7 +514,7 @@ fn analyzeList(ctx: *Context, list: ast.ListLiteral) SemanticsError!TypeInfo {
     for (list.items[1..]) |el| {
         const current_type = try analyzeExpression(ctx, el);
         const token = ast.tokenFromExpr(el);
-        try analyzeSingleParam(ctx, first_type, current_type, token);
+        try analyzeSingleExpression(ctx, first_type, current_type, token, empty_table);
     }
 
     const of = try ctx.arena.create(TypeInfo);
@@ -421,6 +522,17 @@ fn analyzeList(ctx: *Context, list: ast.ListLiteral) SemanticsError!TypeInfo {
 
     return TypeInfo{
         .list = .{
+            .of = of,
+        },
+    };
+}
+
+fn analyzeRecord(ctx: *Context, record: ast.RecordLiteral) SemanticsError!TypeInfo {
+    _ = record;
+    const of = try ctx.arena.create(TypeInfo);
+    of.* = .nothing;
+    return TypeInfo{
+        .record = .{
             .of = of,
         },
     };
