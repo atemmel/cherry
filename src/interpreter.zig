@@ -73,12 +73,15 @@ pub fn interpret(state: *PipelineState, opt: InterpreterOptions) EvalError!void 
     }
     defer if (!opt.root_scope_already_exists) gc.popFrame();
 
-    var list = try std.ArrayList(*Value).initCapacity(gc.allocator(), state.remaining_args.len);
-    for (state.remaining_args) |arg| {
-        list.appendAssumeCapacity(try gc.string(arg, .{ .origin = undefined, .origin_module = opt.root_module_name }));
+    if (!opt.root_scope_already_exists) {
+        // make argv
+        var list = try std.ArrayList(*Value).initCapacity(gc.allocator(), state.remaining_args.len);
+        for (state.remaining_args) |arg| {
+            list.appendAssumeCapacity(try gc.string(arg, .{ .origin = undefined, .origin_module = opt.root_module_name }));
+        }
+        const gc_args = try gc.list(list, .{ .origin = undefined, .origin_module = opt.root_module_name });
+        try gc.insertSymbol("argv", gc_args);
     }
-    const gc_args = try gc.list(list, .{ .origin = undefined, .origin_module = opt.root_module_name });
-    try gc.insertSymbol("argv", gc_args);
 
     try interpretRoot(&ctx);
 }
