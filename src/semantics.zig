@@ -360,17 +360,25 @@ fn analyzeSingleExpression(ctx: *Context, wants_type: TypeInfo, got_type: TypeIn
 }
 
 fn analyzeVarDecl(ctx: *Context, decl: ast.VarDecl) !void {
+    //TODO: apply to multiple declarations
     if (ctx.lookupVariable(decl.tokens[0].value)) |_| {
-        //TODO: report error if any declared variable has been encountered previously
+        try ctx.errFmt(.{ .offending_token = decl.tokens[0] }, "variable '{s}' is already declared within current scope", .{decl.tokens[0].value});
     } else {
         const type_info = try analyzeExpression(ctx, decl.expression);
         try ctx.insertVariable(decl.tokens[0].value, type_info);
     }
 }
 
-fn analyzeAssignment(ctx: *Context, call: ast.Assignment) !void {
-    _ = ctx;
-    _ = call;
+fn analyzeAssignment(ctx: *Context, assign: ast.Assignment) !void {
+    _ = ctx; // autofix
+    _ = assign; // autofix
+    //if (ctx.lookupVariable(assign.variable.token.value)) |variable| {
+    //const type_info = try analyzeExpression(ctx, assign.expression);
+    //_ = type_info; // autofix
+    //variable.eql(type_info, table: Table)
+    //} else {
+    //try ctx.errFmt(.{ .offending_token = assign.variable.token }, "variable '{s}' is already declared within current scope", .{assign.variable.value});
+    //}
 }
 
 fn analyzeBranches(ctx: *Context, call: ast.Branches) !void {
