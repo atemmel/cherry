@@ -67,8 +67,7 @@ const builtins_table = BuiltinsTable.initComptime(
         .{ "export", export_info },
         // collections
         .{ "append", append_info },
-        //.{ "append", unchecked(append) },
-        .{ "get", unchecked(get) },
+        .{ "get", get_info },
         .{ "len", unchecked(len) },
         .{ "put", unchecked(put) },
         .{ "del", unchecked(del) },
@@ -585,16 +584,6 @@ const append_info: BuiltinInfo = .{
     },
 };
 
-const wip_append_info: BuiltinInfo = .{
-    .func = append,
-    .signature = .{
-        .last_parameter_is_variadic = true,
-        .parameters = &.{
-            .{ .something = {} },
-        },
-    },
-};
-
 fn append(_: *State, args: []const *Value, _: ast.Call) !Result {
     if (args.len == 0) {
         unreachable;
@@ -612,8 +601,38 @@ fn append(_: *State, args: []const *Value, _: ast.Call) !Result {
     return something(args[0]);
 }
 
+const get_info_list_of: TypeInfo = .{
+    .generic = "T",
+};
+
+const get_info: BuiltinInfo = .{
+    .func = get,
+    .signature = .{
+        // takes one list of generic content, plus one indexing argument
+        .generics = &.{"T"},
+        .parameters = &.{
+            .{
+                .name = "list",
+                .param_type = .{
+                    .type_info = .{
+                        .list = .{
+                            .of = &get_info_list_of,
+                        },
+                    },
+                },
+            },
+            .{
+                .name = "index",
+                .param_type = .{
+                    .type_info = .integer,
+                },
+            },
+        },
+    },
+};
+
 fn get(state: *State, args: []const *Value, call: ast.Call) !Result {
-    try validateArgsCount(state, &.{ 2, 3 }, args.len);
+    try validateArgsCount(state, &.{2}, args.len);
 
     const index = switch (args[1].as) {
         .integer => |i| i,
