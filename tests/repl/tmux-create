@@ -1,0 +1,11 @@
+# create (0 is id)
+tmux -L 0 new-session -d "bash -c cherry"
+
+# send commands
+tmux -L 0 send-key "ls" Enter
+
+# take snapshot
+tmux -L 0 capture-pane ; tmux -L 0 show-buffer
+
+# cleanup
+tmux -L 0 kill-server
