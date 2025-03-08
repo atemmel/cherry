@@ -1,0 +1,4 @@
+# wishlist
+
+* closures
+* autocompletion
