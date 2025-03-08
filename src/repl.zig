@@ -342,7 +342,7 @@ fn eval(state: *State) !void {
         .root_module_source = source,
         .root_scope_already_exists = true,
     }) catch |e| {
-        const maybe_module = state.pipeline_state.modules.get("repl");
+        const maybe_module = state.pipeline_state.modules.get("interactive");
         const tokens = if (maybe_module != null) maybe_module.?.tokens else &.{};
         if (state.pipeline_state.verboseInterpretation) {
             std.debug.print("Error has occured while evaluating: {any}\nTokens: ", .{e});

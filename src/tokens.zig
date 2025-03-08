@@ -655,3 +655,16 @@ test "lex subtraction" {
     try expectEqualStrings("2", tokens[3].value);
     try expectEqual(.RParens, tokens[4].kind);
 }
+
+test "lex double dot" {
+    var state = testState();
+    defer state.deinit();
+
+    const tokens = try lex(&state,
+        \\..
+    );
+
+    try expectEqual(1, tokens.len);
+    try expectEqual(.Bareword, tokens[0].kind);
+    try expectEqualStrings("..", tokens[0].value);
+}
