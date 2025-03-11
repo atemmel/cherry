@@ -8,12 +8,23 @@ const gc = @import("gc.zig");
 const pipeline = @import("pipeline.zig");
 const repl = @import("repl.zig").repl;
 const tokens = @import("tokens.zig");
+const terminal = @import("term.zig");
 
 const Value = @import("value.zig").Value;
 
 const git_latest_commit_hash = std.mem.trim(u8, @embedFile("git_latest_commit_hash"), " \n\r\t");
 
 const assert = std.debug.assert;
+
+pub var active_term: ?*terminal.Term = null;
+
+pub fn panic(msg: []const u8, trace: ?*std.builtin.StackTrace, addr: ?usize) noreturn {
+    if (active_term) |term| {
+        term.restore() catch {};
+    }
+    std.debug.print("\n\n--- Runtime panic ---\n\n", .{});
+    std.debug.panicImpl(trace, addr, msg);
+}
 
 pub fn main() !u8 {
     var base_allocator = comptime switch (builtin.mode) {

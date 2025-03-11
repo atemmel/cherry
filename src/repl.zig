@@ -5,6 +5,7 @@ const pipeline = @import("pipeline.zig");
 const std = @import("std");
 const strings = @import("strings.zig");
 const terminal = @import("term.zig");
+const main = @import("main.zig");
 
 const Term = terminal.Term;
 const Color = terminal.Color;
@@ -34,7 +35,7 @@ const State = struct {
     search_idx: ?usize = null,
     search_reached_end: bool = false,
     rc_path: []const u8 = "",
-    persistent_arena: std.heap.ArenaAllocator,
+    persistent_arena: *std.heap.ArenaAllocator,
     completion_arena: std.heap.ArenaAllocator,
 
     mode: Mode = .prompt,
@@ -165,10 +166,12 @@ pub fn repl(pipeline_state: *pipeline.State, persistent_allocator: std.mem.Alloc
         .pipeline_state = pipeline_state,
         .term = try Term.init(),
         .history_scroll_idx = 0,
-        .persistent_arena = persistent_arena,
+        .persistent_arena = &persistent_arena,
         .completion_arena = std.heap.ArenaAllocator.init(persistent_allocator),
     };
     defer state.deinit();
+
+    main.active_term = &state.term;
 
     const home = state.homeOrEmpty();
 
