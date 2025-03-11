@@ -16,7 +16,6 @@ jobs:
       - uses: mlugg/setup-zig@v1
         with:
           version: 0.13.0
-      - uses: charmbracelet/vhs-action@v2
       - name: build
         run: zig build
       - name: unit tests
