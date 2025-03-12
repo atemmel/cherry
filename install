@@ -8,7 +8,9 @@ if (len $argv) != 0 {
 
 install-dir := /usr/bin
 
-sudo zig build install "-Doptimize={optimize}" --prefix-exe-dir $install-dir
+zig build install "-Doptimize={optimize}"
+
+sudo cp ./zig-out/bin/cherry $install-dir
 
 if !(fs'exists /bin/cherry) {
     sudo ln -s "{install-dir}/cherry" /bin/cherry
