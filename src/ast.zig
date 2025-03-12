@@ -90,6 +90,11 @@ pub const Call = struct {
     pipe: ?*Call,
     capturing_external_cmd: bool,
     accessor: ?Accessor,
+    redirect_out: ?RedirectOut,
+};
+
+pub const RedirectOut = struct {
+    token: *const Token,
 };
 
 pub const VarDecl = struct {
@@ -835,9 +840,17 @@ fn parseReturn(ctx: *Context) !?Return {
 }
 
 fn parsePipeline(ctx: *Context) !?Call {
-    const call = try parseIndividualPipeline(ctx, false) orelse {
+    var call = try parseIndividualPipeline(ctx, false) orelse {
         return null;
     };
+
+    if (try parseRedirectOut(ctx)) |redirect_out| {
+        var innermost_call = &call;
+        while (innermost_call.pipe) |pipe| {
+            innermost_call = pipe;
+        }
+        innermost_call.redirect_out = redirect_out;
+    }
 
     if (ctx.getIf(.Newline) == null and !ctx.eot()) {
         return ctx.err(.{
@@ -846,6 +859,18 @@ fn parsePipeline(ctx: *Context) !?Call {
     }
 
     return call;
+}
+
+fn parseRedirectOut(ctx: *Context) !?RedirectOut {
+    _ = ctx.getIf(.RedirectOut) orelse return null;
+    const token = ctx.getIf(.Bareword) orelse {
+        return ctx.err(.{
+            .msg = "expected bareword",
+        });
+    };
+    return RedirectOut{
+        .token = token,
+    };
 }
 
 fn parseIndividualPipeline(ctx: *Context, capturing: bool) !?Call {
@@ -886,6 +911,7 @@ fn parseIndividualCall(ctx: *Context, capturing: bool) !?Call {
         .pipe = null,
         .capturing_external_cmd = capturing,
         .accessor = accessor,
+        .redirect_out = null,
     };
 }
 

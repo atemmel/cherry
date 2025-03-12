@@ -1,0 +1,3 @@
+echo hi |> /tmp/hello
+
+# my-cmd <| /tmp/hello
