@@ -165,7 +165,14 @@ fn lexSymbol(state: *LexState) ?Token {
         '!' => peekAssign(state, .Bang, .NotEquals),
         ':' => .Colon,
         ';' => .Semicolon,
-        '|' => .Pipe,
+        '|' => blk: {
+            state.next();
+            if (state.eof() or state.get() != '>') {
+                state.idx -= 1;
+                break :blk .Pipe;
+            }
+            break :blk .RedirectOut;
+        },
         '(' => .LParens,
         ')' => .RParens,
         '{' => .LBrace,
@@ -667,4 +674,29 @@ test "lex double dot" {
     try expectEqual(1, tokens.len);
     try expectEqual(.Bareword, tokens[0].kind);
     try expectEqualStrings("..", tokens[0].value);
+}
+
+test "lex redirect out" {
+    var state = testState();
+    defer state.deinit();
+
+    const tokens = try lex(&state,
+        \\|>
+    );
+
+    try expectEqual(1, tokens.len);
+    try expectEqual(.RedirectOut, tokens[0].kind);
+}
+
+test "lex pipe greater than" {
+    var state = testState();
+    defer state.deinit();
+
+    const tokens = try lex(&state,
+        \\| >
+    );
+
+    try expectEqual(2, tokens.len);
+    try expectEqual(.Pipe, tokens[0].kind);
+    try expectEqual(.Bareword, tokens[1].kind);
 }
