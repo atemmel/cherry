@@ -7,8 +7,15 @@ if (len $argv) != 0 {
 }
 
 install-dir := /usr/bin
+install-path := "{install-dir}/cherry"
 
 zig build install "-Doptimize={optimize}"
+
+# you can't overwrite a running process, but moving it will unlink it
+if (fs'exists $install-path) {
+    # put it somewhere temporary
+    sudo mv $install-path /tmp/oldcherry
+}
 
 sudo cp ./zig-out/bin/cherry $install-dir
 
