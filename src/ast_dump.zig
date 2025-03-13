@@ -191,6 +191,16 @@ fn dumpCall(inv: ast.Call) void {
         defer up();
         dumpCall(pipe.*);
     }
+    if (inv.redirect_out) |redirect_out| {
+        leaf("|>\n", .{});
+        defer up();
+        dumpRedirectOut(redirect_out);
+    }
+}
+
+fn dumpRedirectOut(redir: ast.RedirectOut) void {
+    defer up();
+    leaf("RedirectOut: {s}\n", .{redir.token.value});
 }
 
 fn dumpUnaryOp(op: ast.UnaryOperator) void {

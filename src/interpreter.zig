@@ -25,6 +25,7 @@ pub const InterpreterError = error{
     ArgsCountMismatch,
     BadVariableLookup,
     CommandNotFound,
+    UnableToOpenFileDuringRedirect,
     FunctionNotFoundWithinModule,
     MembersNotAllowed,
     MismatchedBraces,
@@ -409,6 +410,7 @@ fn evalFunctionCall(ctx: *Context, func: ast.Func, call: ast.Call) !Result {
 fn evalProc(ctx: *Context, call: ast.Call) !Result {
     const capturing = call.capturing_external_cmd;
     var procs = try std.ArrayList(std.process.Child).initCapacity(ctx.stmnt_scratch, 4);
+    var redirect_output_to_file: ?*const tokens.Token = null;
 
     var ptr: ?*const ast.Call = &call;
     while (ptr) |call_ptr| {
@@ -416,15 +418,25 @@ fn evalProc(ctx: *Context, call: ast.Call) !Result {
         new_proc.env_map = &ctx.state.env_map;
 
         try procs.append(new_proc);
+
+        if (call_ptr.redirect_out) |out| {
+            redirect_output_to_file = out.token;
+        }
+
         ptr = call_ptr.pipe;
     }
 
+    const redirecting = redirect_output_to_file != null;
+
     for (procs.items, 0..) |*p, idx| {
-        if (capturing or procs.items.len > 1) {
+        if (capturing or redirecting or procs.items.len > 1) {
             if (idx > 0) {
                 p.stdin_behavior = .Pipe;
             }
-            if (capturing or idx + 1 < procs.items.len) {
+
+            const piping = idx + 1 < procs.items.len;
+
+            if (capturing or redirecting or piping) {
                 p.stdout_behavior = .Pipe;
             }
         }
@@ -456,7 +468,7 @@ fn evalProc(ctx: *Context, call: ast.Call) !Result {
             if (idx > 0) {
                 var prev = &procs.items[idx - 1];
                 var this = &procs.items[idx];
-                var fifo = std.fifo.LinearFifo(u8, .{ .Static = 1024 }).init();
+                var fifo = std.fifo.LinearFifo(u8, .{ .Static = 4096 }).init();
                 try fifo.pump(prev.stdout.?.reader(), this.stdin.?.writer());
                 if (this.stdin) |in| {
                     in.close();
@@ -469,6 +481,20 @@ fn evalProc(ctx: *Context, call: ast.Call) !Result {
     if (capturing) {
         assert(procs.getLast().stdout != null);
         capture = try procs.getLast().stdout.?.readToEndAlloc(gc.allocator(), std.math.maxInt(u64));
+    } else if (redirect_output_to_file) |output_file| {
+        var file = std.fs.cwd().createFile(output_file.value, .{}) catch {
+            ctx.state.reportError(.{
+                .trailing = false,
+                .offending_token = output_file,
+                .msg = try std.fmt.allocPrint(ctx.ally, "Could not open file '{s}' for redirection", .{output_file.value}),
+            });
+            return InterpreterError.UnableToOpenFileDuringRedirect;
+        };
+        defer file.close();
+        const reader = procs.getLast().stdout.?.reader();
+        const writer = file.writer();
+        var fifo = std.fifo.LinearFifo(u8, .{ .Static = 4096 }).init();
+        try fifo.pump(reader, writer);
     }
 
     var last_code: u8 = 0;

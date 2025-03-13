@@ -1,3 +1,10 @@
+import fs
+
 echo hi |> /tmp/hello
+
+assert (fs'exists /tmp/hello)
+
+rm /tmp/hello
+
 
 # my-cmd <| /tmp/hello

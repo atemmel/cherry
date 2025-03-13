@@ -204,6 +204,7 @@ pub fn writeError(state: *State, err: PipelineError) !void {
         error.FunctionNotFoundWithinModule,
         error.AssertionFailed,
         error.NonRecordAccessAttempt,
+        error.UnableToOpenFileDuringRedirect,
         => {
             try writeRuntimeError(state, writer);
         },
