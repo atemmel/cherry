@@ -159,26 +159,30 @@ const assert_info: BuiltinInfo = .{
     },
 };
 
-fn assert(state: *State, args: []const *Value, _: ast.Call) !Result {
+fn assert(state: *State, args: []const *Value, call: ast.Call) !Result {
     const stderr = std.io.getStdErr().writer();
     for (args, 0..) |arg, idx| {
         switch (arg.as) {
             .boolean => |b| {
                 if (!b) {
                     try stderr.print("Assertion failed for value {}\n", .{idx});
+                    const expr = call.arguments[idx];
+                    const token = ast.tokenFromExpr(expr);
 
                     state.error_report = .{
                         .msg = try std.fmt.allocPrint(state.scratch_arena.allocator(), "Assertion failed", .{}),
-                        .offending_token = arg.origin, // Ok, caller will set the value
+                        .offending_token = token,
                         .trailing = false,
                     };
                     return BuiltinError.AssertionFailed;
                 }
             },
             else => {
+                const expr = call.arguments[idx];
+                const token = ast.tokenFromExpr(expr);
                 state.error_report = .{
                     .msg = try std.fmt.allocPrint(state.scratch_arena.allocator(), "Non boolean value given to 'assert': {}", .{arg}),
-                    .offending_token = arg.origin, // Ok, caller will set the value
+                    .offending_token = token,
                     .trailing = false,
                 };
                 return BuiltinError.AssertionFailed;

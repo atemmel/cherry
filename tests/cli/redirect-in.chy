@@ -1,4 +1,4 @@
 out ok := (wc -w <| ./tests/data/note.txt)
-assert $ok
-say out is $out
+
+assert $ok == 0
 assert "4\n" == $out
