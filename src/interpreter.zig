@@ -511,6 +511,14 @@ fn evalProc(ctx: *Context, call: ast.Call) !Result {
                     });
                     return error.CommandNotFound;
                 },
+                error.AccessDenied => {
+                    ctx.state.reportError(.{
+                        .trailing = false,
+                        .offending_token = call.token,
+                        .msg = try std.fmt.allocPrint(ctx.ally, "Unable to run '{s}', permission denied", .{p.argv[0]}),
+                    });
+                    return error.CommandNotFound;
+                },
                 else => {},
             }
             return e;

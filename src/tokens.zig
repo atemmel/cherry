@@ -155,7 +155,7 @@ pub fn lex(state: *PipelineState, source: []const u8) LexerError![]Token {
 }
 
 fn lexSymbol(state: *LexState) ?Token {
-    if (!state.isSymbolChar()) {
+    if (!state.isSymbolChar() and state.get() != '<') {
         return null;
     }
 
@@ -172,6 +172,14 @@ fn lexSymbol(state: *LexState) ?Token {
                 break :blk .Pipe;
             }
             break :blk .RedirectOut;
+        },
+        '<' => blk: {
+            state.next();
+            if (state.eof() or state.get() != '|') {
+                state.idx -= 1;
+                return null;
+            }
+            break :blk .RedirectIn;
         },
         '(' => .LParens,
         ')' => .RParens,
@@ -699,4 +707,29 @@ test "lex pipe greater than" {
     try expectEqual(2, tokens.len);
     try expectEqual(.Pipe, tokens[0].kind);
     try expectEqual(.Bareword, tokens[1].kind);
+}
+
+test "lex redirect in" {
+    var state = testState();
+    defer state.deinit();
+
+    const tokens = try lex(&state,
+        \\<|
+    );
+
+    try expectEqual(1, tokens.len);
+    try expectEqual(.RedirectIn, tokens[0].kind);
+}
+
+test "lex less than pipe" {
+    var state = testState();
+    defer state.deinit();
+
+    const tokens = try lex(&state,
+        \\< |
+    );
+
+    try expectEqual(2, tokens.len);
+    try expectEqual(.Bareword, tokens[0].kind);
+    try expectEqual(.Pipe, tokens[1].kind);
 }
