@@ -1,0 +1,20 @@
+#{
+
+./tests/cli/*.chy | each {
+    # this should work
+    ./zig-out/bin/cherry --types $it > /dev/null \
+        || die "Failed test $filename"
+}
+
+#}
+
+#{
+
+for filename in ./tests/cli/*.chy {
+    # this should work
+    if ./zig-out/bin/cherry --types $filename > /dev/null {
+        die "Failed test $filename"
+    }
+}
+
+#}
