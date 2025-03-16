@@ -411,6 +411,7 @@ fn evalProc(ctx: *Context, call: ast.Call) !Result {
     const capturing = call.capturing_external_cmd;
     var procs = try std.ArrayList(std.process.Child).initCapacity(ctx.stmnt_scratch, 4);
     var redirect_output_to_file: ?*const tokens.Token = null;
+    const redirect_stdin_from_file = call.redirect_in;
 
     var ptr: ?*const ast.Call = &call;
     while (ptr) |call_ptr| {
@@ -426,17 +427,18 @@ fn evalProc(ctx: *Context, call: ast.Call) !Result {
         ptr = call_ptr.pipe;
     }
 
-    const redirecting = redirect_output_to_file != null;
+    const redirecting_out = redirect_output_to_file != null;
+    const redirecting_in = redirect_stdin_from_file != null;
 
     for (procs.items, 0..) |*p, idx| {
-        if (capturing or redirecting or procs.items.len > 1) {
-            if (idx > 0) {
+        if (capturing or redirecting_out or procs.items.len > 1) {
+            if (idx > 0 or redirecting_in) {
                 p.stdin_behavior = .Pipe;
             }
 
             const piping = idx + 1 < procs.items.len;
 
-            if (capturing or redirecting or piping) {
+            if (capturing or redirecting_out or piping) {
                 p.stdout_behavior = .Pipe;
             }
         }
@@ -461,6 +463,39 @@ fn evalProc(ctx: *Context, call: ast.Call) !Result {
 
     var capture: ?[]const u8 = null;
     errdefer if (capture) |c| gc.allocator().free(c);
+
+    if (redirect_stdin_from_file) |stdin_file| {
+        const expr = stdin_file.expression.*;
+        const file_name = switch (try evalExpression(ctx, expr)) {
+            .value => |val| try val.asStr(gc.allocator()),
+            .nothing => {
+                return errRequiresValue(ctx, ast.tokenFromExpr(expr));
+            },
+            .values => {
+                return errRequiresSingleValue(ctx, ast.tokenFromExpr(expr));
+            },
+        };
+        defer gc.allocator().free(file_name);
+        //_ = result; // autofix
+        //std.fs.cwd().openFile(in_token.expression.
+        var file = std.fs.cwd().openFile(file_name, .{}) catch {
+            ctx.state.reportError(.{
+                .trailing = false,
+                .offending_token = ast.tokenFromExpr(expr),
+                .msg = try std.fmt.allocPrint(ctx.ally, "Could not open file '{s}' for redirection", .{file_name}),
+            });
+            return InterpreterError.UnableToOpenFileDuringRedirect;
+        };
+        defer file.close();
+
+        const first_proc = &procs.items[0];
+        const reader = file.reader();
+        const writer = first_proc.stdin.?.writer();
+        var fifo = std.fifo.LinearFifo(u8, .{ .Static = 4096 }).init();
+        try fifo.pump(reader, writer);
+        first_proc.stdin.?.close();
+        first_proc.stdin = null;
+    }
 
     if (procs.items.len > 1) {
         var idx: usize = 0;
@@ -508,6 +543,14 @@ fn evalProc(ctx: *Context, call: ast.Call) !Result {
                         .trailing = false,
                         .offending_token = call.token,
                         .msg = try std.fmt.allocPrint(ctx.ally, "Could not find command in system", .{}),
+                    });
+                    return error.CommandNotFound;
+                },
+                error.AccessDenied => {
+                    ctx.state.reportError(.{
+                        .trailing = false,
+                        .offending_token = call.token,
+                        .msg = try std.fmt.allocPrint(ctx.ally, "Unable to run '{s}', permission denied", .{p.argv[0]}),
                     });
                     return error.CommandNotFound;
                 },

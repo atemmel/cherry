@@ -91,10 +91,15 @@ pub const Call = struct {
     capturing_external_cmd: bool,
     accessor: ?Accessor,
     redirect_out: ?RedirectOut,
+    redirect_in: ?RedirectIn,
 };
 
 pub const RedirectOut = struct {
     token: *const Token,
+};
+
+pub const RedirectIn = struct {
+    expression: *const Expression,
 };
 
 pub const VarDecl = struct {
@@ -874,13 +879,16 @@ fn parseRedirectOut(ctx: *Context) !?RedirectOut {
 }
 
 fn parseIndividualPipeline(ctx: *Context, capturing: bool) !?Call {
-    var pipeline_begin = try parseIndividualCall(ctx, capturing) orelse {
+    var pipeline_begin = try parseIndividualCall(ctx, .{
+        .capturing = capturing,
+        .may_have_stdin_from_redirect = true,
+    }) orelse {
         return null;
     };
 
     var prev_node = &pipeline_begin;
     while (ctx.getIf(.Pipe) != null) {
-        const next = try parseIndividualCall(ctx, capturing) orelse {
+        const next = try parseIndividualCall(ctx, .{ .capturing = capturing }) orelse {
             return ctx.err(.{
                 .msg = "expected function call",
             });
@@ -894,7 +902,12 @@ fn parseIndividualPipeline(ctx: *Context, capturing: bool) !?Call {
     return pipeline_begin;
 }
 
-fn parseIndividualCall(ctx: *Context, capturing: bool) !?Call {
+const CallParseOpts = struct {
+    capturing: bool,
+    may_have_stdin_from_redirect: bool = false,
+};
+
+fn parseIndividualCall(ctx: *Context, opt: CallParseOpts) !?Call {
     const token = ctx.getIf(.Bareword) orelse return null;
 
     const accessor = try parseAccessorChain(ctx);
@@ -905,13 +918,34 @@ fn parseIndividualCall(ctx: *Context, capturing: bool) !?Call {
         try args.append(expr);
     }
 
+    var redirect_in: ?RedirectIn = null;
+    if (opt.may_have_stdin_from_redirect) {
+        redirect_in = try parseRedirectIn(ctx);
+    }
+
     return Call{
         .token = token,
         .arguments = try args.toOwnedSlice(),
         .pipe = null,
-        .capturing_external_cmd = capturing,
+        .capturing_external_cmd = opt.capturing,
         .accessor = accessor,
         .redirect_out = null,
+        .redirect_in = redirect_in,
+    };
+}
+
+fn parseRedirectIn(ctx: *Context) !?RedirectIn {
+    _ = ctx.getIf(.RedirectIn) orelse return null;
+    const expr = try parseExpression(ctx, std.math.minInt(i64)) orelse {
+        return ctx.err(.{
+            .msg = "expected expression",
+            .trailing = true,
+        });
+    };
+    const expression = try ctx.ally.create(Expression);
+    expression.* = expr;
+    return RedirectIn{
+        .expression = expression,
     };
 }
 
