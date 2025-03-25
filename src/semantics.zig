@@ -499,6 +499,10 @@ fn analyzeExpression(ctx: *Context, expr: ast.Expression) SemanticsError!TypeInf
             .Pub,
             .Equals,
             .NotEquals,
+            .AddAssign,
+            .SubAssign,
+            .MulAssign,
+            .DivAssign,
             => unreachable,
         },
         .binary_operator => .{ .boolean = {} }, //TODO

@@ -159,6 +159,8 @@ fn interpretAssign(ctx: *Context, assign: ast.Assignment) !void {
         => false,
     };
 
+    //TODO: +=, -=, *=, /=
+
     const value_to_insert = if (was_owned) try gc.cloneOrReference(value) else value;
     if (assign.accessor) |*accessor| {
         var current = accessor;
@@ -653,6 +655,10 @@ fn evalUnaryOperator(ctx: *Context, op: ast.UnaryOperator) EvalError!*Value {
         .Pub,
         .Equals,
         .NotEquals,
+        .AddAssign,
+        .SubAssign,
+        .MulAssign,
+        .DivAssign,
         => unreachable,
     };
 }

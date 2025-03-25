@@ -1,8 +1,34 @@
 # declare inline lambda and assign
 #twice := fn x: (* $x 2)
+# $x * 2
+# *($x 2)
+
+#{
+twice := x -> (* $x 2)
+
+[ 1 2 3 ] | x -> (* $x 2) | say
+
+log := -> {
+    say logging
+}
+
+join := x y z -> {
+    return (+ $x $y $z)
+}
+
+fn twice x {
+    return (* $x 2)
+}
+[ 1 2 3 ] | fn x: (* $x 2) | say
+
+[ 1 2 3 ] | fn x: (* $x 2) | say
+
+# $x * 2
+# *($x 2)
 
 # declare inline lambda with implicit parameter naming
-#thrice := fn: (* $it 2)
+thrice := fn: (* $it 3)
 
-#assert 4  == ($twice  2)
-#assert 12 == ($thrice 4)
+assert 4  == ($twice  2)
+assert 12 == ($thrice 4)
+#}

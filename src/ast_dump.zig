@@ -70,7 +70,7 @@ fn dumpVarDecl(var_decl: ast.VarDecl) void {
 
 fn dumpAssign(assign: ast.Assignment) void {
     defer up();
-    leaf("Assignment to: '{s}'\n", .{assign.variable.token.value});
+    leaf("Assignment to: '{s}' using '{s}'\n", .{ assign.variable.token.value, assign.token.value });
     if (assign.accessor) |acc| {
         dumpAccessor(acc);
     }

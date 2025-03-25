@@ -33,6 +33,10 @@ pub const Token = struct {
         SingleQuote, // '
         Equals, // ==
         NotEquals, // !=
+        AddAssign, // +=
+        SubAssign, // -=
+        MulAssign, // *=
+        DivAssign, // /=
         // Keywords
         If,
         Else,
@@ -155,7 +159,10 @@ pub fn lex(state: *PipelineState, source: []const u8) LexerError![]Token {
 }
 
 fn lexSymbol(state: *LexState) ?Token {
-    if (!state.isSymbolChar() and state.get() != '<') {
+    const any_maybe_part_of_symbol = "+-*/<";
+    const char_maybe_part_of_symbol = std.mem.indexOfScalar(u8, any_maybe_part_of_symbol, state.get()) != null;
+
+    if (!state.isSymbolChar() and !char_maybe_part_of_symbol) {
         return null;
     }
 
@@ -163,6 +170,10 @@ fn lexSymbol(state: *LexState) ?Token {
     const kind: Token.Kind = switch (state.get()) {
         '=' => peekAssign(state, .Assign, .Equals),
         '!' => peekAssign(state, .Bang, .NotEquals),
+        '+' => peekMustAssign(state, .AddAssign) orelse return null,
+        '-' => peekMustAssign(state, .SubAssign) orelse return null,
+        '*' => peekMustAssign(state, .MulAssign) orelse return null,
+        '/' => peekMustAssign(state, .DivAssign) orelse return null,
         ':' => .Colon,
         ';' => .Semicolon,
         '|' => blk: {
@@ -222,6 +233,25 @@ fn peekAssign(state: *LexState, regular: Token.Kind, with_assign: Token.Kind) To
         else => blk: {
             state.idx -= 1;
             break :blk regular;
+        },
+    };
+}
+
+fn peekMustAssign(state: *LexState, with_assign: Token.Kind) ?Token.Kind {
+    return peekMust(state, '=', with_assign);
+}
+
+fn peekMust(state: *LexState, comptime must: u8, with_assign: Token.Kind) ?Token.Kind {
+    state.next();
+    if (state.eof()) {
+        state.idx -= 1;
+        return null;
+    }
+    return switch (state.get()) {
+        must => with_assign,
+        else => {
+            state.idx -= 1;
+            return null;
         },
     };
 }
@@ -732,4 +762,19 @@ test "lex less than pipe" {
     try expectEqual(2, tokens.len);
     try expectEqual(.Bareword, tokens[0].kind);
     try expectEqual(.Pipe, tokens[1].kind);
+}
+
+test "lex equals combinations" {
+    var state = testState();
+    defer state.deinit();
+
+    const tokens = try lex(&state,
+        \\-= += /= *=
+    );
+
+    try expectEqual(4, tokens.len);
+    try expectEqual(.SubAssign, tokens[0].kind);
+    try expectEqual(.AddAssign, tokens[1].kind);
+    try expectEqual(.DivAssign, tokens[2].kind);
+    try expectEqual(.MulAssign, tokens[3].kind);
 }

@@ -110,6 +110,7 @@ pub const VarDecl = struct {
 pub const Assignment = struct {
     variable: Variable,
     accessor: ?Accessor,
+    token: *const Token,
     expression: Expression,
 };
 
@@ -412,10 +413,21 @@ fn parseAssignment(ctx: *Context, opt: struct { needs_newline: bool = true }) !?
 
     const variable = try parseVariable(ctx) orelse return null;
     const accessor = try parseAccessorChain(ctx);
-    _ = ctx.getIf(.Assign) orelse {
-        ctx.idx = checkpoint;
-        return null;
+
+    const token = switch (ctx.peek().kind) {
+        .Assign,
+        .AddAssign,
+        .SubAssign,
+        .MulAssign,
+        .DivAssign,
+        => ctx.peek(),
+        else => {
+            ctx.idx = checkpoint;
+            return null;
+        },
     };
+
+    ctx.next();
 
     // Needs expression
     const expr = try parseExpression(ctx, std.math.minInt(i64)) orelse {
@@ -437,6 +449,7 @@ fn parseAssignment(ctx: *Context, opt: struct { needs_newline: bool = true }) !?
         .variable = variable,
         .accessor = accessor,
         .expression = expr,
+        .token = token,
     };
 }
 
