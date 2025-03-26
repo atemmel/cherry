@@ -222,6 +222,24 @@ fn dumpBinaryOp(op: ast.BinaryOperator) void {
     up();
 }
 
+fn dumpClosure(cl: ast.Closure) void {
+    defer up();
+    leaf("Closure:)\n", .{});
+    defer up();
+    leaf("Args: [ ", .{});
+
+    for (cl.arguments) |args| {
+        print("{s} ", .{args.token.value});
+    }
+
+    print("]\n", .{});
+
+    switch (cl.as) {
+        .body => |b| dumpScope(b),
+        .expression => |e| dumpExpression(e.*),
+    }
+}
+
 fn dumpExpression(expr: ast.Expression) void {
     defer up();
     leaf("Expression:\n", .{});
@@ -236,6 +254,7 @@ fn dumpExpression(expr: ast.Expression) void {
         .record_literal => |record| dumpRecordLiteral(record),
         .unary_operator => |op| dumpUnaryOp(op),
         .binary_operator => |op| dumpBinaryOp(op),
+        .closure => |cl| dumpClosure(cl),
     }
     if (expr.accessor) |accessor| {
         dumpAccessor(accessor);

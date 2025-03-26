@@ -146,7 +146,7 @@ fn interpretAssign(ctx: *Context, assign: ast.Assignment) !void {
     };
 
     const was_owned = switch (assign.expression.as) {
-        .variable => true,
+        .variable, .closure => true,
         .list_literal,
         .record_literal,
         .bareword,
@@ -623,43 +623,7 @@ fn evalUnaryOperator(ctx: *Context, op: ast.UnaryOperator) EvalError!*Value {
     return switch (op.token.kind) {
         .Bang => try evalNot(ctx, op),
         // none of these should be set, if so, developer error
-        .Bareword,
-        .StringLiteral,
-        .IntegerLiteral,
-        .Variable,
-        .EmptyRecord,
-        .Newline,
-        .Colon,
-        .Semicolon,
-        .Assign,
-        .Pipe,
-        .LParens,
-        .RParens,
-        .LBrace,
-        .RBrace,
-        .LBracket,
-        .RBracket,
-        .RedirectOut,
-        .RedirectIn,
-        .SingleQuote,
-        .If,
-        .Else,
-        .For,
-        .Fn,
-        .Return,
-        .Break,
-        .Continue,
-        .True,
-        .False,
-        .Import,
-        .Pub,
-        .Equals,
-        .NotEquals,
-        .AddAssign,
-        .SubAssign,
-        .MulAssign,
-        .DivAssign,
-        => unreachable,
+        else => unreachable,
     };
 }
 
@@ -737,6 +701,7 @@ fn evalExpression(ctx: *Context, expr: ast.Expression) EvalError!Result {
         .record_literal => |record| something(try evalRecordLiteral(ctx, record)),
         .unary_operator => |op| something(try evalUnaryOperator(ctx, op)),
         .binary_operator => |op| something(try evalBinaryOperator(ctx, op)),
+        .closure => unreachable, //TODO
     };
     if (expr.accessor) |*accessor| {
         var current = accessor;

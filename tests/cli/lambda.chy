@@ -1,10 +1,8 @@
-# declare inline lambda and assign
-#twice := fn x: (* $x 2)
-# $x * 2
-# *($x 2)
+twice := x -> (* $x 2)
+
+#assert 4  == ($twice  2)
 
 #{
-twice := x -> (* $x 2)
 
 [ 1 2 3 ] | x -> (* $x 2) | say
 
@@ -29,6 +27,5 @@ fn twice x {
 # declare inline lambda with implicit parameter naming
 thrice := fn: (* $it 3)
 
-assert 4  == ($twice  2)
 assert 12 == ($thrice 4)
 #}

@@ -80,6 +80,7 @@ pub const Expression = struct {
         record_literal: RecordLiteral,
         unary_operator: UnaryOperator,
         binary_operator: BinaryOperator,
+        closure: Closure,
     },
     accessor: ?Accessor,
 };
@@ -92,6 +93,15 @@ pub const Call = struct {
     accessor: ?Accessor,
     redirect_out: ?RedirectOut,
     redirect_in: ?RedirectIn,
+};
+
+pub const Closure = struct {
+    arguments: []Bareword,
+    token: *const Token,
+    as: union(enum) {
+        body: Scope,
+        expression: *const Expression,
+    },
 };
 
 pub const RedirectOut = struct {
@@ -857,6 +867,42 @@ fn parseReturn(ctx: *Context) !?Return {
     };
 }
 
+fn parseClosure(ctx: *Context) !?Closure {
+    const checkpoint = ctx.idx;
+
+    var args = std.ArrayList(Bareword).init(ctx.ally);
+    while (parseBareword(ctx)) |bw| {
+        try args.append(bw);
+    }
+
+    const token = ctx.getIf(.RightArrow) orelse {
+        ctx.idx = checkpoint;
+        return null;
+    };
+
+    if (try parseScope(ctx, false)) |scope| {
+        return Closure{
+            .arguments = try args.toOwnedSlice(),
+            .as = .{
+                .body = scope,
+            },
+            .token = token,
+        };
+    } else if (try parseExpression(ctx, std.math.minInt(i64))) |expr| {
+        const ptr = try ctx.ally.create(Expression);
+        ptr.* = expr;
+        return Closure{
+            .arguments = try args.toOwnedSlice(),
+            .as = .{
+                .expression = ptr,
+            },
+            .token = token,
+        };
+    }
+
+    return ctx.err(.{ .msg = "Expected closure body or expression" });
+}
+
 fn parsePipeline(ctx: *Context) !?Call {
     var call = try parseIndividualPipeline(ctx, false) orelse {
         return null;
@@ -1066,6 +1112,13 @@ fn parseLeafExpression(ctx: *Context) errors!?Expression {
                 .capturing_call = capturing_inv,
             },
             .accessor = try parseAccessorChain(ctx),
+        };
+    } else if (try parseClosure(ctx)) |closure| {
+        return Expression{
+            .as = .{
+                .closure = closure,
+            },
+            .accessor = null, // closures can not have accessors
         };
     } else if (parseBareword(ctx)) |bareword| {
         return Expression{
@@ -1322,5 +1375,6 @@ pub fn tokenFromExpr(expr: Expression) *const Token {
         .unary_operator => |u| u.token,
         .variable => |v| v.token,
         .binary_operator => |b| b.token,
+        .closure => |c| c.token,
     };
 }

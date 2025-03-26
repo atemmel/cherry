@@ -37,6 +37,7 @@ pub const Token = struct {
         SubAssign, // -=
         MulAssign, // *=
         DivAssign, // /=
+        RightArrow, // ->
         // Keywords
         If,
         Else,
@@ -171,7 +172,7 @@ fn lexSymbol(state: *LexState) ?Token {
         '=' => peekAssign(state, .Assign, .Equals),
         '!' => peekAssign(state, .Bang, .NotEquals),
         '+' => peekMustAssign(state, .AddAssign) orelse return null,
-        '-' => peekMustAssign(state, .SubAssign) orelse return null,
+        '-' => peekMustAssign(state, .SubAssign) orelse peekMust(state, '>', .RightArrow) orelse return null,
         '*' => peekMustAssign(state, .MulAssign) orelse return null,
         '/' => peekMustAssign(state, .DivAssign) orelse return null,
         ':' => .Colon,
@@ -777,4 +778,16 @@ test "lex equals combinations" {
     try expectEqual(.AddAssign, tokens[1].kind);
     try expectEqual(.DivAssign, tokens[2].kind);
     try expectEqual(.MulAssign, tokens[3].kind);
+}
+
+test "lex arrow" {
+    var state = testState();
+    defer state.deinit();
+
+    const tokens = try lex(&state,
+        \\->
+    );
+
+    try expectEqual(1, tokens.len);
+    try expectEqual(.RightArrow, tokens[0].kind);
 }
