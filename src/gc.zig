@@ -280,7 +280,7 @@ pub fn cloneOrReference(origin_value: *values.Value) !*values.Value {
         .float => |f| try floating(f, opt),
         .boolean => |b| try boolean(b, opt),
         // reference
-        .list, .record => origin_value,
+        .list, .record, .closure => origin_value,
     });
 }
 

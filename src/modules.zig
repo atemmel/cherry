@@ -62,12 +62,8 @@ fn fsHasProgram(state: *State, args: []const *Value, call: ast.Call) !Result {
     };
 
     const program = switch (args[0].as) {
-        .boolean => return builtins.typeMismatchError(state, "string", "boolean", 0),
-        .float => return builtins.typeMismatchError(state, "string", "float", 0),
-        .integer => return builtins.typeMismatchError(state, "string", "integer", 0),
-        .list => return builtins.typeMismatchError(state, "string", "list", 0),
-        .record => return builtins.typeMismatchError(state, "string", "record", 0),
         .string => |s| s,
+        else => return builtins.typeMismatchError(state, "string", args[0].kindName(), 0),
     };
 
     var it = std.mem.tokenizeScalar(u8, paths, ':');
@@ -110,12 +106,8 @@ fn fsExists(state: *State, args: []const *Value, call: ast.Call) !Result {
     };
 
     const path: []const u8 = switch (args[0].as) {
-        .boolean => return builtins.typeMismatchError(state, "string", "boolean", 0),
-        .float => return builtins.typeMismatchError(state, "string", "float", 0),
-        .integer => return builtins.typeMismatchError(state, "string", "integer", 0),
-        .list => return builtins.typeMismatchError(state, "string", "list", 0),
-        .record => return builtins.typeMismatchError(state, "string", "record", 0),
         .string => |s| s,
+        else => return builtins.typeMismatchError(state, "string", args[0].kindName(), 0),
     };
 
     std.fs.cwd().access(path, .{}) catch {

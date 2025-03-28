@@ -4,6 +4,7 @@ const gc = @import("gc.zig");
 const interpreter = @import("interpreter.zig");
 const tokens = @import("tokens.zig");
 const pipeline = @import("pipeline.zig");
+const ast = @import("ast.zig");
 
 const PipelineState = pipeline.State;
 const InterpreterError = interpreter.InterpreterError;
@@ -12,6 +13,7 @@ const indexOfPos = std.mem.indexOfPos;
 
 pub const List = std.ArrayList(*Value);
 pub const Record = std.StringArrayHashMap(*Value);
+pub const Closure = ast.Closure;
 
 // types used by the interpreter
 pub const Type = enum {
@@ -21,6 +23,7 @@ pub const Type = enum {
     boolean,
     list,
     record,
+    closure,
 };
 
 pub const Value = struct {
@@ -33,6 +36,7 @@ pub const Value = struct {
         boolean: bool,
         list: List,
         record: Record,
+        closure: Closure,
     },
     marked: bool = false,
     //TODO: remove in release builds
@@ -60,6 +64,7 @@ pub const Value = struct {
                     el.value_ptr.*.mark();
                 }
             },
+            .closure => unreachable,
         }
     }
 
@@ -79,6 +84,7 @@ pub const Value = struct {
             .record => |*r| {
                 r.deinit();
             },
+            .closure => unreachable,
         }
     }
 
@@ -116,6 +122,9 @@ pub const Value = struct {
                 }
                 try writer.print("]", .{});
             },
+            .closure => |*c| {
+                try writer.print("closure@{*}", .{c});
+            },
         }
     }
 
@@ -127,6 +136,7 @@ pub const Value = struct {
             .boolean => |b| try ally.dupe(u8, if (b) "true" else "false"),
             .list => |l| try std.fmt.allocPrint(ally, "[{any}]", .{l.items}),
             .record => unreachable,
+            .closure => unreachable,
         };
     }
 
@@ -136,7 +146,7 @@ pub const Value = struct {
             .integer => |i| i,
             .float => |f| @as(i64, @intFromFloat(f)),
             .boolean => |b| if (b) 1 else 0,
-            .list, .record => error.InvalidIntConversion,
+            .list, .record, .closure => error.InvalidIntConversion,
         };
     }
 
@@ -168,11 +178,7 @@ pub const Value = struct {
                         .eq => .equal,
                     };
                 },
-                .integer => return typeMismatch(.string, .integer),
-                .float => return typeMismatch(.string, .float),
-                .boolean => return typeMismatch(.string, .boolean),
-                .list => return typeMismatch(.string, .list),
-                .record => return typeMismatch(.string, .record),
+                else => return typeMismatch(.string, other.kindName()),
             },
             .integer => |lhs| switch (other.as) {
                 .integer => |rhs| {
@@ -183,7 +189,7 @@ pub const Value = struct {
                     }
                     return .equal;
                 },
-                .string, .float, .boolean, .list, .record => return InterpreterError.TypeMismatch,
+                else => return typeMismatch(.string, other.kindName()),
             },
             .float => |lhs| {
                 std.debug.print("this ({*}) was float: {} {any}", .{ self, lhs, other });
@@ -202,7 +208,7 @@ pub const Value = struct {
                         return .equal;
                     }
                 },
-                .string, .float, .integer, .list, .record => return InterpreterError.TypeMismatch,
+                else => return typeMismatch(.string, other.kindName()),
             },
             .list => |lhs| switch (other.as) {
                 .list => |rhs| {
@@ -221,7 +227,7 @@ pub const Value = struct {
                     }
                     return .equal;
                 },
-                .float, .integer, .boolean, .string, .record => return InterpreterError.TypeMismatch,
+                else => return typeMismatch(.string, other.kindName()),
             },
             .record => |lhs| switch (other.as) {
                 .record => |rhs| {
@@ -257,8 +263,9 @@ pub const Value = struct {
 
                     return .equal;
                 },
-                .float, .integer, .boolean, .string, .list => return InterpreterError.TypeMismatch,
+                else => return typeMismatch(.string, other.kindName()),
             },
+            .closure => unreachable,
         }
         unreachable;
     }
@@ -269,13 +276,25 @@ pub const Value = struct {
             else => InterpreterError.MembersNotAllowed,
         };
     }
+
+    pub fn kindName(self: *const Value) []const u8 {
+        return switch (self.as) {
+            .integer => "int",
+            .string => "string",
+            .record => "record",
+            .float => "float",
+            .boolean => "bool",
+            .list => "list",
+            .closure => "closure",
+        };
+    }
 };
 
-fn typeMismatch(lhs_type: Type, rhs_type: Type) !Value.Order {
+fn typeMismatch(lhs_type: Type, rhs_type: []const u8) !Value.Order {
     return Value.Order{
         .failure = .{
             .wants = @tagName(lhs_type),
-            .got = @tagName(rhs_type),
+            .got = rhs_type,
         },
     };
 }
@@ -297,3 +316,13 @@ pub fn multiple(vals: []*Value) Result {
 }
 
 const testState = pipeline.testState;
+
+test "value kindString" {
+    const v = Value{
+        .as = .{ .integer = 0 },
+        .origin = undefined,
+        .origin_module = undefined,
+    };
+
+    try std.testing.expectEqualStrings("int", v.kindName());
+}

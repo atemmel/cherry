@@ -640,7 +640,7 @@ fn evalNot(ctx: *Context, op: ast.UnaryOperator) EvalError!*Value {
     };
 
     const boolean = switch (val.as) {
-        .string, .integer, .float, .list, .record => unreachable, //TODO: handle error
+        .string, .integer, .float, .list, .record, .closure => unreachable, //TODO: handle error
         .boolean => |b| b,
     };
 
@@ -701,8 +701,9 @@ fn evalExpression(ctx: *Context, expr: ast.Expression) EvalError!Result {
         .record_literal => |record| something(try evalRecordLiteral(ctx, record)),
         .unary_operator => |op| something(try evalUnaryOperator(ctx, op)),
         .binary_operator => |op| something(try evalBinaryOperator(ctx, op)),
-        .closure => unreachable, //TODO
+        .closure => |closure| something(try evalClosure(ctx, closure)),
     };
+
     if (expr.accessor) |*accessor| {
         var current = accessor;
         var record = base_expr.value;
@@ -725,6 +726,20 @@ fn evalExpression(ctx: *Context, expr: ast.Expression) EvalError!Result {
     } else {
         return base_expr;
     }
+}
+
+fn evalClosure(ctx: *Context, closure: ast.Closure) !*Value {
+    // hur ska gc funka?
+    // fyfan
+    // uschiamig
+    //
+    // internt hashtable?
+    // root values på det som är med i scope? gissningsvis
+    // titta på hur gc funkar i scopes idag
+    // lär typ vara något snarlikt, bara att scopet bokförs oberoende programmets faktiska nästling
+    _ = ctx; // autofix
+    _ = closure; // autofix
+    unreachable;
 }
 
 fn evalBareword(ctx: *Context, bw: ast.Bareword) !*Value {

@@ -322,22 +322,14 @@ fn concatenateStrings(state: *State, args: []const *Value, call: ast.Call) !*Val
 fn sub(state: *State, args: []const *Value, call: ast.Call) !Result {
     var diff_value: i64 = switch (args[0].as) {
         .integer => |i| i,
-        .string => return typeMismatchError(state, "int", "string", 0),
-        .list => return typeMismatchError(state, "int", "list", 0),
-        .float => return typeMismatchError(state, "int", "float", 0),
-        .boolean => return typeMismatchError(state, "int", "bool", 0),
-        .record => return typeMismatchError(state, "int", "record", 0),
+        else => return typeMismatchError(state, "int", args[0].kindName(), 0),
     };
     for (args[1..]) |arg| {
         switch (arg.as) {
             .integer => |i| {
                 diff_value -= i;
             },
-            .string => return typeMismatchError(state, "int", "string", 1),
-            .list => return typeMismatchError(state, "int", "list", 1),
-            .float => return typeMismatchError(state, "int", "float", 1),
-            .boolean => return typeMismatchError(state, "int", "bool", 1),
-            .record => return typeMismatchError(state, "int", "record", 1),
+            else => return typeMismatchError(state, "int", arg.kindName(), 0),
         }
     }
 
@@ -492,11 +484,7 @@ fn andFn(state: *State, args: []const *Value, call: ast.Call) !Result {
         //TODO: handle type error
         const boolean = switch (arg.as) {
             .boolean => |b| b,
-            .list => return typeMismatchError(state, "bool", "list", idx),
-            .float => return typeMismatchError(state, "bool", "float", idx),
-            .string => return typeMismatchError(state, "bool", "string", idx),
-            .record => return typeMismatchError(state, "bool", "record", idx),
-            .integer => return typeMismatchError(state, "bool", "int", idx),
+            else => return typeMismatchError(state, "bool", arg.kindName(), idx),
         };
         if (!boolean) {
             return something(try gc.boolean(false, opt));
@@ -515,11 +503,7 @@ fn orFn(state: *State, args: []const *Value, call: ast.Call) !Result {
         //TODO: handle type error
         const boolean = switch (arg.as) {
             .boolean => |b| b,
-            .list => return typeMismatchError(state, "bool", "list", idx),
-            .float => return typeMismatchError(state, "bool", "float", idx),
-            .string => return typeMismatchError(state, "bool", "string", idx),
-            .record => return typeMismatchError(state, "bool", "record", idx),
-            .integer => return typeMismatchError(state, "bool", "int", idx),
+            else => return typeMismatchError(state, "bool", arg.kindName(), idx),
         };
         if (boolean) {
             return something(try gc.boolean(true, opt));
@@ -544,7 +528,7 @@ fn len(state: *State, args: []const *Value, call: ast.Call) !Result {
                     };
                 });
             },
-            .integer, .float, .boolean => unreachable, //TODO: this
+            .integer, .float, .boolean, .closure => unreachable, //TODO: this
             .list => |l| length += @intCast(l.items.len),
             .record => |r| length += @intCast(r.count()),
         }
@@ -599,7 +583,7 @@ fn append(_: *State, args: []const *Value, _: ast.Call) !Result {
                 try l.append(arg);
             }
         },
-        .integer, .boolean, .float, .string, .record => unreachable,
+        .integer, .boolean, .float, .string, .record, .closure => unreachable,
     }
 
     return something(args[0]);
@@ -640,7 +624,7 @@ fn get(state: *State, args: []const *Value, call: ast.Call) !Result {
 
     const index = switch (args[1].as) {
         .integer => |i| i,
-        .float, .boolean, .list, .string, .record => unreachable,
+        .float, .boolean, .list, .string, .record, .closure => unreachable,
     };
 
     return switch (args[0].as) {
@@ -663,7 +647,7 @@ fn get(state: *State, args: []const *Value, call: ast.Call) !Result {
             }
             unreachable;
         },
-        .integer, .boolean, .float, .record => unreachable,
+        .integer, .boolean, .float, .record, .closure => unreachable,
     };
 }
 
@@ -672,7 +656,7 @@ fn put(state: *State, args: []const *Value, _: ast.Call) !Result {
 
     const index = switch (args[1].as) {
         .integer => |i| i,
-        .float, .boolean, .list, .string, .record => unreachable,
+        .float, .boolean, .list, .string, .record, .closure => unreachable,
     };
 
     const value = args[2];
@@ -685,7 +669,7 @@ fn put(state: *State, args: []const *Value, _: ast.Call) !Result {
         },
         //TODO: This should be possible
         .string => unreachable,
-        .integer, .boolean, .float, .record => unreachable,
+        .integer, .boolean, .float, .record, .closure => unreachable,
     }
 
     return something(args[0]);
@@ -700,7 +684,7 @@ fn del(state: *State, args: []const *Value, call: ast.Call) !Result {
         .list => |*l| delList(l, args[1]),
         //TODO: This should be possible
         .string => unreachable,
-        .integer, .boolean, .float, .record => unreachable,
+        .integer, .boolean, .float, .record, .closure => unreachable,
     }
     return nothing;
 }
@@ -708,7 +692,7 @@ fn del(state: *State, args: []const *Value, call: ast.Call) !Result {
 fn delList(list: *std.ArrayList(*Value), idx: *Value) void {
     const index = switch (idx.as) {
         .integer => |i| i,
-        .float, .boolean, .list, .string, .record => unreachable,
+        .float, .boolean, .list, .string, .record, .closure => unreachable,
     };
     //TODO: range check
     //TODO: handle negative values properly
@@ -720,10 +704,7 @@ fn slice(state: *State, args: []const *Value, call: ast.Call) !Result {
     return switch (args[0].as) {
         .list => |list| sliceList(state, args, list, call),
         .string => |string| sliceString(state, args, string, call),
-        .boolean => return typeMismatchError(state, "list or string", "bool", 0),
-        .float => return typeMismatchError(state, "list or string", "float", 0),
-        .integer => return typeMismatchError(state, "list or string", "int", 0),
-        .record => return typeMismatchError(state, "list or string", "record", 0),
+        else => return typeMismatchError(state, "list or string", args[0].kindName(), 0),
     };
 }
 
@@ -787,11 +768,7 @@ fn getInt(state: *State, args: []const *Value, idx: usize) !i64 {
     std.debug.assert(idx < args.len);
     return switch (args[idx].as) {
         .integer => |integer| integer,
-        .boolean => typeMismatchError(state, "int", "bool", idx),
-        .float => typeMismatchError(state, "int", "float", idx),
-        .list => typeMismatchError(state, "int", "list", idx),
-        .record => typeMismatchError(state, "int", "record", idx),
-        .string => typeMismatchError(state, "int", "string", idx),
+        else => typeMismatchError(state, "int", args[idx].kindName(), idx),
     };
 }
 
@@ -821,20 +798,14 @@ fn envExport(state: *State, args: []const *Value, _: ast.Call) !Result {
 
     const name = switch (args[0].as) {
         .string => |string| try ally.dupe(u8, string),
-        .record => return typeMismatchError(state, "string", "record", 0),
-        .list => return typeMismatchError(state, "string", "list", 0),
-        .float => return typeMismatchError(state, "string", "float", 0),
-        .boolean => return typeMismatchError(state, "string", "boolean", 0),
-        .integer => return typeMismatchError(state, "string", "integer", 0),
+        else => return typeMismatchError(state, "string", args[0].kindName(), 0),
     };
 
     errdefer ally.free(name);
 
     const value = switch (args[1].as) {
         .string, .boolean, .integer => try args[1].asStr(ally),
-        .record => return typeMismatchError(state, "string, boolean or integer", "record", 0),
-        .list => return typeMismatchError(state, "string, boolean or integer", "list", 0),
-        .float => return typeMismatchError(state, "string, boolean or integer", "float", 0),
+        else => return typeMismatchError(state, "string, boolean or integer", args[1].kindName(), 1),
     };
 
     errdefer ally.free(value);
@@ -854,11 +825,7 @@ fn int(state: *State, args: []const *Value, call: ast.Call) !Result {
         return switch (e) {
             error.Overflow => unreachable,
             error.InvalidCharacter => unreachable,
-            error.InvalidIntConversion => switch (arg.as) {
-                .string, .float, .integer, .boolean => unreachable, // ok, this can never happen
-                .record => return typeMismatchError(state, ok_string, "record", 0),
-                .list => return typeMismatchError(state, ok_string, "list", 0),
-            },
+            error.InvalidIntConversion => typeMismatchError(state, ok_string, arg.kindName(), 0),
         };
     };
 
