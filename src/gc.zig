@@ -6,7 +6,7 @@ const PipelineState = @import("pipeline.zig").State;
 const InterpreterError = @import("interpreter.zig").InterpreterError;
 const Value = @import("value.zig").Value;
 
-const Roots = std.ArrayList(*Value);
+pub const Roots = std.ArrayList(*Value);
 const Symtable = std.StringHashMap(*Value);
 
 const Frame = struct {
