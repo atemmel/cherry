@@ -300,7 +300,7 @@ pub fn pushFrame() !void {
 }
 
 pub fn popFrame() void {
-    var old_frame = program_stack.pop();
+    var old_frame = program_stack.pop().?;
     deinitFrame(&old_frame);
 }
 

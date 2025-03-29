@@ -259,6 +259,10 @@ pub fn writeError(state: *State, err: PipelineError) !void {
         error.Utf8CodepointTooLarge,
         error.Utf8InvalidStartByte,
         error.TruncatedInput,
+        error.ProcessNotFound,
+        error.Canceled,
+        error.ProcessAlreadyExec,
+        error.InvalidProcessGroupId,
         => return err,
     }
 }

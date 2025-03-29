@@ -658,7 +658,7 @@ fn tryAutocompleteCmdImpl(ctx: *CompletionContext) !CompletionResult {
     };
 
     var result_list = std.ArrayList([]const u8).init(ctx.arena);
-    var it = std.mem.tokenize(u8, path, ":");
+    var it = std.mem.tokenizeScalar(u8, path, ':');
 
     while (it.next()) |p| {
         var dir = std.fs.cwd().openDir(p, .{ .iterate = true }) catch {

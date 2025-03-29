@@ -166,14 +166,14 @@ pub const Term = struct {
 
     pub fn size(self: Term) Vec2 {
         const linux = std.os.linux;
-        var l_size = std.mem.zeroes(linux.winsize);
+        var l_size = std.mem.zeroes(std.posix.winsize);
         const err = linux.ioctl(self.tty.handle, linux.T.IOCGWINSZ, @intFromPtr(&l_size));
         if (posix.errno(err) != .SUCCESS) {
             unreachable;
         }
         return .{
-            .x = l_size.ws_col,
-            .y = l_size.ws_row,
+            .x = l_size.row,
+            .y = l_size.col,
         };
     }
 
@@ -272,11 +272,11 @@ const escape_key_codes = blk: {
             //.{ "[23~", .{ .function = 11 } },
             //.{ "[24~", .{ .function = 12 } },
             //.{ "a", .{ .alt = 'a' } },
-            .{ "b", .{ .alt = 'b' } },
+            .{ "b",Term.Event{ .alt = 'b' } },
             //.{ "c", .{ .alt = 'c' } },
             //.{ "d", .{ .alt = 'd' } },
             //.{ "e", .{ .alt = 'e' } },
-            .{ "f", .{ .alt = 'f' } },
+            .{ "f", Term.Event{ .alt = 'f' } },
             //.{ "g", .{ .alt = 'g' } },
             //.{ "h", .{ .alt = 'h' } },
             //.{ "i", .{ .alt = 'i' } },
@@ -300,17 +300,17 @@ const escape_key_codes = blk: {
 
             // Kitty
             .{ "[27u", .escape },
-            .{ "[97;5u", .{ .ctrl = 'a' } },
+            .{ "[97;5u", Term.Event{ .ctrl = 'a' } },
             //.{ "[98;5u", .{ .ctrl = 'b' } },
-            .{ "[99;5u", .{ .ctrl = 'c' } },
+            .{ "[99;5u", Term.Event{ .ctrl = 'c' } },
             //.{ "[100;5u", .{ .ctrl = 'd' } },
-            .{ "[101;5u", .{ .ctrl = 'e' } },
+            .{ "[101;5u", Term.Event{ .ctrl = 'e' } },
             //.{ "[102;5u", .{ .ctrl = 'f' } },
-            .{ "[103;5u", .{ .ctrl = 'g' } },
+            .{ "[103;5u", Term.Event{ .ctrl = 'g' } },
             //.{ "[104;5u", .{ .ctrl = 'h' } },
-            .{ "[105;5u", .{ .ctrl = 'i' } },
+            .{ "[105;5u", Term.Event{ .ctrl = 'i' } },
             //.{ "[106;5u", .{ .ctrl = 'j' } },
-            .{ "[107;5u", .{ .ctrl = 'k' } },
+            .{ "[107;5u", Term.Event{ .ctrl = 'k' } },
             //.{ "[108;5u", .{ .ctrl = 'l' } },
             //.{ "[109;5u", .{ .ctrl = 'm' } },
             //.{ "[110;5u", .{ .ctrl = 'n' } },
@@ -318,20 +318,20 @@ const escape_key_codes = blk: {
             //.{ "[112;5u", .{ .ctrl = 'p' } },
             //.{ "[113;5u", .{ .ctrl = 'q' } },
             //.{ "[114;5u", .{ .ctrl = 'r' } },
-            .{ "[115;5u", .{ .ctrl = 's' } },
+            .{ "[115;5u", Term.Event{ .ctrl = 's' } },
             //.{ "[116;5u", .{ .ctrl = 't' } },
             //.{ "[117;5u", .{ .ctrl = 'u' } },
             //.{ "[118;5u", .{ .ctrl = 'v' } },
-            .{ "[119;5u", .{ .ctrl = 'w' } },
+            .{ "[119;5u", Term.Event{ .ctrl = 'w' } },
             //.{ "[120;5u", .{ .ctrl = 'x' } },
             //.{ "[121;5u", .{ .ctrl = 'y' } },
             //.{ "[122;5u", .{ .ctrl = 'z' } },
             //.{ "[97;3u", .{ .alt = 'a' } },
-            .{ "[98;3u", .{ .alt = 'b' } },
+            .{ "[98;3u", Term.Event{ .alt = 'b' } },
             //.{ "[99;3u", .{ .alt = 'c' } },
             //.{ "[100;3u", .{ .alt = 'd' } },
             //.{ "[101;3u", .{ .alt = 'e' } },
-            .{ "[102;3u", .{ .alt = 'f' } },
+            .{ "[102;3u", Term.Event{ .alt = 'f' } },
             //.{ "[103;3u", .{ .alt = 'g' } },
             //.{ "[104;3u", .{ .alt = 'h' } },
             //.{ "[105;3u", .{ .alt = 'i' } },

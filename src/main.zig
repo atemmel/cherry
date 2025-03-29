@@ -18,12 +18,13 @@ const assert = std.debug.assert;
 
 pub var active_term: ?*terminal.Term = null;
 
-pub fn panic(msg: []const u8, trace: ?*std.builtin.StackTrace, addr: ?usize) noreturn {
+pub fn panic(msg: []const u8, _: ?*std.builtin.StackTrace, addr: ?usize) noreturn {
     if (active_term) |term| {
         term.restore() catch {};
     }
     std.debug.print("\n\n--- Runtime panic ---\n\n", .{});
-    std.debug.panicImpl(trace, addr, msg);
+    //std.debug.defaultPanic(trace, addr, msg);
+    std.debug.defaultPanic(msg, addr);
 }
 
 pub fn main() !u8 {
@@ -80,7 +81,7 @@ pub fn main() !u8 {
     // care about the extra information `Diagnostics` provides.
 
     var cl_diagnostics = clap.Diagnostic{};
-    const diagnostic = comptime switch (builtin.mode) {
+    const diagnostic = switch (builtin.mode) {
         .Debug => &cl_diagnostics,
         else => null,
     };
