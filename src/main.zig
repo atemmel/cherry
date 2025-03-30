@@ -23,7 +23,6 @@ pub fn panic(msg: []const u8, _: ?*std.builtin.StackTrace, addr: ?usize) noretur
         term.restore() catch {};
     }
     std.debug.print("\n\n--- Runtime panic ---\n\n", .{});
-    //std.debug.defaultPanic(trace, addr, msg);
     std.debug.defaultPanic(msg, addr);
 }
 
