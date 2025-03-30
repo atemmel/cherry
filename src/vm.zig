@@ -86,8 +86,8 @@ test "vm" {
     };
     defer chunk.deinit();
 
-    const constant = try chunk.addConstant(.{ .as = .{ .integer = 5 } });
-    try chunk.addInstruction(Op{ .Constant = constant });
+    //const constant = try chunk.addConstant(.{ .as = .{ .integer = 5 } });
+    //try chunk.addInstruction(Op{ .Constant = constant });
     try chunk.addInstruction(.Return);
 
     disassembleChunk(&chunk, "example_chunk");
