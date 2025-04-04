@@ -1,12 +1,12 @@
 const std = @import("std");
 const print = std.debug.print;
 
-pub const Op = union(enum) {
-    Constant: usize,
+pub const Op = enum {
+    Constant,
     Return,
 };
 
-pub const Instructions = std.ArrayList(Op);
+pub const Instructions = std.ArrayList(usize);
 
 pub const Chunk = struct {
     instructions: Instructions,
@@ -18,7 +18,11 @@ pub const Chunk = struct {
     }
 
     pub fn addInstruction(self: *Chunk, op: Op) !void {
-        return try self.instructions.append(op);
+        return try self.instructions.append(@intFromEnum(op));
+    }
+
+    pub fn addAdress(self: *Chunk, addr: usize) !void {
+        return try self.instructions.append(addr);
     }
 
     pub fn addConstant(self: *Chunk, value: Value) !usize {
@@ -28,7 +32,7 @@ pub const Chunk = struct {
 };
 
 pub const Value = struct {
-    as: union {
+    as: union(enum) {
         integer: i64,
     },
 
@@ -49,22 +53,22 @@ pub const Value = struct {
 
 pub const Values = std.ArrayList(Value);
 
-pub fn disassembleChunk(chunk: *Chunk, name: []const u8) void {
+pub fn disassembleChunk(chunk: *Chunk, name: []const u8) !void {
     print("== {s} ==\n", .{name});
     var offset: usize = 0;
     while (offset < chunk.instructions.items.len) {
-        offset = disassembleInstruction(chunk, offset);
+        offset = try disassembleInstruction(chunk, offset);
     }
 }
 
-fn disassembleInstruction(chunk: *Chunk, offset: usize) usize {
-    print("{:0>4} ", .{offset});
+fn disassembleInstruction(chunk: *Chunk, offset: usize) !usize {
+    print("{:0>8} ", .{offset});
 
-    const inst = chunk.instructions.items[offset];
+    const inst = try std.meta.intToEnum(Op, chunk.instructions.items[offset]);
 
     return switch (inst) {
         .Return => simpleInstruction(inst, offset),
-        .Constant => constantInstruction(inst, offset),
+        .Constant => constantInstruction(chunk, inst, offset),
     };
 }
 
@@ -73,10 +77,10 @@ fn simpleInstruction(op: Op, offset: usize) usize {
     return offset + 1;
 }
 
-fn constantInstruction(op: Op, offset: usize) usize {
-    _ = op; // autofix
-    _ = offset; // autofix
-    return 0;
+fn constantInstruction(chunk: *Chunk, op: Op, offset: usize) usize {
+    const constant = chunk.instructions.items[offset + 1];
+    print("{s} {:0>8} {}\n", .{ @tagName(op), constant, chunk.constants.items[constant] });
+    return offset + 2;
 }
 
 test "vm" {
@@ -86,9 +90,10 @@ test "vm" {
     };
     defer chunk.deinit();
 
-    //const constant = try chunk.addConstant(.{ .as = .{ .integer = 5 } });
-    //try chunk.addInstruction(Op{ .Constant = constant });
+    const constant = try chunk.addConstant(.{ .as = .{ .integer = 5 } });
+    try chunk.addInstruction(.Constant);
+    try chunk.addAdress(constant);
     try chunk.addInstruction(.Return);
 
-    disassembleChunk(&chunk, "example_chunk");
+    try disassembleChunk(&chunk, "example_chunk");
 }
