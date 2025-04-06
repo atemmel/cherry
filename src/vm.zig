@@ -105,6 +105,10 @@ pub const Value = union(ValueKind) {
                 if (!other.isString()) {
                     break :blk typeMismatch(.string, other.kind());
                 }
+                // interning check
+                if (addr == other.string) {
+                    return .equal;
+                }
                 const lhs = addr.data.string;
                 const rhs = other.string.data.string;
                 const order = std.mem.order(u8, lhs, rhs);
@@ -139,7 +143,11 @@ pub const HeapNode = struct {
 
     pub fn deinit(self: *HeapNode, ally: std.mem.Allocator) void {
         switch (self.data) {
-            .string => |str| ally.free(str),
+            .string => |str| {
+                //if (str.len > 32) {
+                ally.free(str);
+                //}
+            },
         }
     }
 
@@ -223,6 +231,7 @@ pub const VM = struct {
     stack: Values,
     heap: ?*HeapNode,
     runtime_ally: std.mem.Allocator,
+    interned_strings: std.StringHashMap(*HeapNode),
 
     pub const Errors = error{
         UnexpectedTypeOfValue,
@@ -235,34 +244,58 @@ pub const VM = struct {
             .stack = try Values.initCapacity(arena, 4096),
             .heap = null,
             .runtime_ally = ally,
+            .interned_strings = std.StringHashMap(*HeapNode).init(ally),
         };
     }
 
     pub fn deinit(self: *VM) void {
-        self.stack.deinit();
         while (self.heap) |node| {
             self.heap = node.next;
             node.deinit(self.runtime_ally);
             self.runtime_ally.destroy(node);
         }
+        self.stack.deinit();
+        self.interned_strings.deinit();
     }
 
     pub fn allocateString(self: *VM, str: []const u8) !Value {
+        if (self.interned_strings.get(str)) |node| {
+            return Value{ .string = node };
+        }
         const duped_str = try self.runtime_ally.dupe(u8, str);
+        return self.appendHeapStr(duped_str);
+    }
+
+    pub fn ownString(self: *VM, str: []const u8) !Value {
+        if (self.interned_strings.get(str)) |node| {
+            self.runtime_ally.free(str);
+            return Value{ .string = node };
+        }
+        return self.appendHeapStr(str);
+    }
+
+    fn appendHeapStr(self: *VM, str: []const u8) !Value {
         const node = try self.runtime_ally.create(HeapNode);
         node.* = HeapNode{
             .data = .{
-                .string = duped_str,
+                .string = str,
             },
             .next = null,
         };
+        self.appendHeap(node);
+        if (str.len <= 32) { // intern smaller strings
+            try self.interned_strings.put(str, node);
+        }
+        return Value{
+            .string = node,
+        };
+    }
+
+    fn appendHeap(self: *VM, node: *HeapNode) void {
         if (self.heap) |heap| {
             node.next = heap;
         }
         self.heap = node;
-        return Value{
-            .string = node,
-        };
     }
 
     fn eoi(self: *VM) bool {
@@ -291,19 +324,19 @@ pub const VM = struct {
         return self.stack.pop().?;
     }
 
-    pub fn peek(self: *VM) Value {
-        return self.stack.getLast();
+    pub fn peek(self: *VM, offset: usize) Value {
+        return self.stack.items[self.stack.items.len - offset];
     }
 
     pub fn popField(self: *VM, comptime tag: ValueKind) Errors!std.meta.TagPayload(Value, tag) {
-        if (std.meta.activeTag(self.peek()) != tag) {
+        if (std.meta.activeTag(self.peek(1)) != tag) {
             return Errors.UnexpectedTypeOfValue;
         }
         return @field(self.stack.pop().?, @tagName(tag));
     }
 };
 
-pub fn interpret(vm: *VM, chunk: *Chunk) VM.Errors!void {
+pub fn interpret(vm: *VM, chunk: *Chunk) !void {
     vm.chunk = chunk;
     vm.ip = 0;
 
@@ -312,7 +345,16 @@ pub fn interpret(vm: *VM, chunk: *Chunk) VM.Errors!void {
             .False => vm.push(.{ .boolean = false }),
             .True => vm.push(.{ .boolean = true }),
             .Constant => vm.push(vm.readConstant()),
-            .Add => vm.push(.{ .integer = try vm.popField(.integer) + try vm.popField(.integer) }),
+            .Add => {
+                if (vm.peek(1).isString() and vm.peek(2).isString()) {
+                    const rhs = vm.pop().string.data.string;
+                    const lhs = vm.pop().string.data.string;
+                    const join = try std.mem.concat(vm.runtime_ally, u8, &.{ lhs, rhs });
+                    vm.push(try vm.ownString(join));
+                } else {
+                    vm.push(.{ .integer = try vm.popField(.integer) + try vm.popField(.integer) });
+                }
+            },
             .Mul => vm.push(.{ .integer = try vm.popField(.integer) * try vm.popField(.integer) }),
             .Sub => {
                 const rhs = try vm.popField(.integer);
@@ -410,6 +452,37 @@ test "basic vm instructions using strings" {
     try chunk.addInstruction(.Equals);
     try chunk.addInstruction(.Return);
     try chunk.disassemble("string_eq_chunk");
+
+    _ = try interpret(&vm, &chunk);
+}
+
+test "more basic vm instructions using strings" {
+    var chunk: Chunk = .{
+        .instructions = Instructions.init(std.testing.allocator),
+        .constants = Values.init(std.testing.allocator),
+    };
+    defer chunk.deinit();
+
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    var vm = try VM.init(arena.allocator(), std.testing.allocator);
+    defer vm.deinit();
+
+    {
+        const constant = try chunk.addConstant(try vm.allocateString("hasse"));
+        try chunk.addInstruction(.Constant);
+        try chunk.addAdress(constant);
+    }
+
+    {
+        const constant = try chunk.addConstant(try vm.allocateString("boyyyy"));
+        try chunk.addInstruction(.Constant);
+        try chunk.addAdress(constant);
+    }
+
+    try chunk.addInstruction(.Add);
+    try chunk.addInstruction(.Return);
+    try chunk.disassemble("string_concat_chunk");
 
     _ = try interpret(&vm, &chunk);
 }
