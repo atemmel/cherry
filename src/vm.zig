@@ -27,7 +27,7 @@ pub const ValueKind = enum {
 pub const Value = union(ValueKind) {
     integer: i64,
     boolean: bool,
-    string: []const u8,
+    string: *HeapNode,
 
     pub fn format(
         self: Value,
@@ -41,8 +41,12 @@ pub const Value = union(ValueKind) {
         switch (self) {
             .integer => |i| try writer.print("{}", .{i}),
             .boolean => |b| try writer.print("{s}", .{if (b) "true" else "false"}),
-            .string => |s| try writer.print("{s}", .{s}),
+            .string => |s| try writer.print("{s}", .{s.data.string}),
         }
+    }
+
+    pub fn isString(self: Value) bool {
+        return self.kind() == .string;
     }
 
     pub fn kindName(self: Value) [:0]const u8 {
@@ -97,16 +101,18 @@ pub const Value = union(ValueKind) {
                 },
                 else => typeMismatch(.boolean, other.kind()),
             },
-            .string => |lhs| switch (other) {
-                .string => |rhs| blk: {
-                    const order = std.mem.order(u8, lhs, rhs);
-                    break :blk switch (order) {
-                        .lt => .less,
-                        .gt => .greater,
-                        .eq => .equal,
-                    };
-                },
-                else => typeMismatch(.string, other.kind()),
+            .string => |addr| blk: {
+                if (!other.isString()) {
+                    break :blk typeMismatch(.string, other.kind());
+                }
+                const lhs = addr.data.string;
+                const rhs = other.string.data.string;
+                const order = std.mem.order(u8, lhs, rhs);
+                break :blk switch (order) {
+                    .lt => .less,
+                    .gt => .greater,
+                    .eq => .equal,
+                };
             },
         };
     }
@@ -122,7 +128,11 @@ pub const Value = union(ValueKind) {
 };
 
 pub const HeapNode = struct {
-    data: union(enum) {
+    pub const Kind = enum {
+        string,
+    };
+
+    data: union(Kind) {
         string: []const u8,
     },
     next: ?*HeapNode,
@@ -131,8 +141,10 @@ pub const HeapNode = struct {
         switch (self.data) {
             .string => |str| ally.free(str),
         }
-        if (self.next) |n| n.deinit(ally);
-        ally.destroy(self);
+    }
+
+    pub fn kind(self: HeapNode) Kind {
+        return std.meta.activeTag(self);
     }
 };
 
@@ -228,7 +240,29 @@ pub const VM = struct {
 
     pub fn deinit(self: *VM) void {
         self.stack.deinit();
-        if (self.heap) |heap| heap.deinit(self.runtime_ally);
+        while (self.heap) |node| {
+            self.heap = node.next;
+            node.deinit(self.runtime_ally);
+            self.runtime_ally.destroy(node);
+        }
+    }
+
+    pub fn allocateString(self: *VM, str: []const u8) !Value {
+        const duped_str = try self.runtime_ally.dupe(u8, str);
+        const node = try self.runtime_ally.create(HeapNode);
+        node.* = HeapNode{
+            .data = .{
+                .string = duped_str,
+            },
+            .next = null,
+        };
+        if (self.heap) |heap| {
+            node.next = heap;
+        }
+        self.heap = node;
+        return Value{
+            .string = node,
+        };
     }
 
     fn eoi(self: *VM) bool {
@@ -356,17 +390,26 @@ test "basic vm instructions using strings" {
     };
     defer chunk.deinit();
 
-    const constant = try chunk.addConstant(.{ .string = "hasse" });
-    try chunk.addInstruction(.Constant);
-    try chunk.addAdress(constant);
-    try chunk.addInstruction(.Return);
-
-    try chunk.disassemble("string_chunk");
-
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     var vm = try VM.init(arena.allocator(), std.testing.allocator);
     defer vm.deinit();
+
+    {
+        const constant = try chunk.addConstant(try vm.allocateString("hasse"));
+        try chunk.addInstruction(.Constant);
+        try chunk.addAdress(constant);
+    }
+
+    {
+        const constant = try chunk.addConstant(try vm.allocateString("hasse"));
+        try chunk.addInstruction(.Constant);
+        try chunk.addAdress(constant);
+    }
+
+    try chunk.addInstruction(.Equals);
+    try chunk.addInstruction(.Return);
+    try chunk.disassemble("string_eq_chunk");
 
     _ = try interpret(&vm, &chunk);
 }
