@@ -1,7 +1,5 @@
 # wishlist
 
-* redirections
-
 * closures
 * autocompletion
 
