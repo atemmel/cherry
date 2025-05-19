@@ -18,13 +18,13 @@ pub const Op = enum(usize) {
     Return,
 };
 
-pub const ValueKind = enum {
-    integer,
-    boolean,
-    string,
-};
+pub const Value = union(Kind) {
+    pub const Kind = enum {
+        integer,
+        boolean,
+        string,
+    };
 
-pub const Value = union(ValueKind) {
     integer: i64,
     boolean: bool,
     string: *HeapNode,
@@ -61,7 +61,7 @@ pub const Value = union(ValueKind) {
         };
     }
 
-    pub fn kind(self: Value) ValueKind {
+    pub fn kind(self: Value) Value.Kind {
         return std.meta.activeTag(self);
     }
 
@@ -70,8 +70,8 @@ pub const Value = union(ValueKind) {
         greater,
         equal,
         failure: struct {
-            wants: ValueKind,
-            got: ValueKind,
+            wants: Value.Kind,
+            got: Value.Kind,
         },
     };
 
@@ -121,7 +121,7 @@ pub const Value = union(ValueKind) {
         };
     }
 
-    fn typeMismatch(lhs_type: ValueKind, rhs_type: ValueKind) Value.Order {
+    fn typeMismatch(lhs_type: Value.Kind, rhs_type: Value.Kind) Value.Order {
         return Value.Order{
             .failure = .{
                 .wants = lhs_type,
@@ -328,7 +328,7 @@ pub const VM = struct {
         return self.stack.items[self.stack.items.len - offset];
     }
 
-    pub fn popField(self: *VM, comptime tag: ValueKind) Errors!std.meta.TagPayload(Value, tag) {
+    pub fn popField(self: *VM, comptime tag: Value.Kind) Errors!std.meta.TagPayload(Value, tag) {
         if (std.meta.activeTag(self.peek(1)) != tag) {
             return Errors.UnexpectedTypeOfValue;
         }
