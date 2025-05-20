@@ -16,6 +16,9 @@ pub const Op = enum(usize) {
     NotEquals,
     Not,
     Return,
+    define_global,
+    set_global,
+    get_global,
 };
 
 pub const Value = union(Kind) {
@@ -209,7 +212,11 @@ pub const Chunk = struct {
             .NotEquals,
             .Not,
             => simpleInstruction(inst, offset),
-            .Constant => constantInstruction(chunk, inst, offset),
+            .Constant,
+            .define_global,
+            .set_global,
+            .get_global,
+            => constantInstruction(chunk, inst, offset),
         };
     }
 
@@ -232,6 +239,7 @@ pub const VM = struct {
     heap: ?*HeapNode,
     runtime_ally: std.mem.Allocator,
     interned_strings: std.StringHashMap(*HeapNode),
+    globals: std.StringHashMap(Value),
 
     pub const Errors = error{
         UnexpectedTypeOfValue,
@@ -245,6 +253,7 @@ pub const VM = struct {
             .heap = null,
             .runtime_ally = ally,
             .interned_strings = std.StringHashMap(*HeapNode).init(ally),
+            .globals = std.StringHashMap(Value).init(ally),
         };
     }
 
@@ -256,6 +265,7 @@ pub const VM = struct {
         }
         self.stack.deinit();
         self.interned_strings.deinit();
+        self.globals.deinit();
     }
 
     pub fn allocateString(self: *VM, str: []const u8) !Value {
@@ -397,6 +407,23 @@ pub fn interpret(vm: *VM, chunk: *Chunk) !void {
             .Return => {
                 std.debug.print("VM produced: {}\n", .{vm.pop()});
                 return;
+            },
+            .define_global => {
+                const name = try vm.popField(.string);
+                try vm.globals.put(name, vm.peek(0));
+                _ = vm.pop();
+            },
+            .get_global => {
+                const name = try vm.popField(.string);
+                const global = vm.globals.get(name) orelse {
+                    @panic("did not find global");
+                };
+                vm.push(global);
+            },
+            .set_global => {
+                const name = try vm.popField(.string);
+                const fetch = try vm.globals.fetchPut(name, vm.peek(0));
+                std.debug.assert(fetch != null);
             },
         }
     }
