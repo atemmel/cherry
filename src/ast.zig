@@ -967,7 +967,7 @@ const CallParseOpts = struct {
 };
 
 fn parseIndividualCall(ctx: *Context, opt: CallParseOpts) !?Call {
-    const token = ctx.getIf(.Bareword) orelse return null;
+    const token = ctx.getIf(.Bareword) orelse ctx.getIf(.Variable) orelse return null;
 
     const accessor = try parseAccessorChain(ctx);
 

@@ -737,6 +737,12 @@ fn evalClosure(ctx: *Context, closure: ast.Closure) !*Value {
     // root values på det som är med i scope? gissningsvis
     // titta på hur gc funkar i scopes idag
     // lär typ vara något snarlikt, bara att scopet bokförs oberoende programmets faktiska nästling
+    // x := 0
+    //
+    // y := fn a { # $a is collected when the closure stack frame goes out of scope
+    //   say $x # $x is collected when $y is collected
+    // r  eturn $a + 2 # return value is collected when the closure stack frame goes out of scope
+    // }
     _ = ctx; // autofix
     _ = closure; // autofix
     unreachable;

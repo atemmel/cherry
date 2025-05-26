@@ -13,6 +13,10 @@ const indexOfPos = std.mem.indexOfPos;
 
 pub const List = std.ArrayList(*Value);
 pub const Record = std.StringArrayHashMap(*Value);
+pub const Closure = struct {
+    ast: ast.Closure,
+    upvalues: gc.Roots,
+};
 
 // types used by the interpreter
 pub const Type = enum {
@@ -35,10 +39,7 @@ pub const Value = struct {
         boolean: bool,
         list: List,
         record: Record,
-        closure: struct {
-            ast: ast.Closure,
-            upvalues: gc.Roots,
-        },
+        closure: Closure,
     },
     marked: bool = false,
     //TODO: remove in release builds

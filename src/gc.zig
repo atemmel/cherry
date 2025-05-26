@@ -261,6 +261,10 @@ pub fn record(r: values.Record, opt: ValueOptions) !*values.Value {
     });
 }
 
+pub fn closure(c: values.Closure) !*values.Value {
+    return push(.{});
+}
+
 pub fn emptyRecord(opt: ValueOptions) !*values.Value {
     return record(values.Record.init(persistent_allocator), opt);
 }
