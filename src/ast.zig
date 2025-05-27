@@ -333,13 +333,13 @@ fn parseStatement(ctx: *Context) errors!?Statement {
         return Statement{
             .var_decl = var_decl,
         };
-    } else if (try parsePipeline(ctx)) |inv| {
-        return Statement{
-            .call = inv,
-        };
     } else if (try parseAssignment(ctx, .{})) |assign| {
         return Statement{
             .assignment = assign,
+        };
+    } else if (try parsePipeline(ctx)) |inv| {
+        return Statement{
+            .call = inv,
         };
     } else if (try parseBranches(ctx)) |branches| {
         return Statement{

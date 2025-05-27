@@ -1,0 +1,12 @@
+n := 0
+
+log := -> {
+    $n = (+ $n 1)
+    say logging $n times
+}
+
+$log
+$log
+$log
+
+assert $n == 3

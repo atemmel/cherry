@@ -328,6 +328,13 @@ fn evalCall(ctx: *Context, call: ast.Call) !Result {
         return result;
     } else if (ctx.root_module.ast.functions.getPtr(name)) |func| {
         return try evalFunctionCall(ctx, func.*, call);
+    } else if (gc.getEntry(name)) |entry| {
+        switch (entry.value_ptr.*.as) {
+            .closure => |c| {
+                return try evalClosureCall(ctx, c, call);
+            },
+            else => unreachable,
+        }
     } else {
         return try evalProc(ctx, call);
     }
@@ -406,6 +413,44 @@ fn evalFunctionCall(ctx: *Context, func: ast.Func, call: ast.Call) !Result {
             .did_break, .did_continue => unreachable, //TODO: handle this
         }
     }
+    return nothing;
+}
+
+fn evalClosureCall(ctx: *Context, closure: values.Closure, call: ast.Call) !Result {
+    try gc.pushFrame();
+    defer gc.popFrame();
+
+    var args = try evalArgs(ctx, call.arguments);
+    defer args.deinit();
+
+    assert(closure.ast.arguments.len == args.items.len);
+
+    for (closure.ast.arguments, args.items) |par, arg| {
+        try gc.insertSymbol(par.token.value, arg);
+    }
+
+    switch (closure.ast.as) {
+        .expression => |expr| {
+            return try evalExpression(ctx, expr.*);
+        },
+        .body => |body| {
+            for (body) |stmnt| {
+                const returned = try interpretStatement(ctx, stmnt);
+                switch (returned) {
+                    .did_return => |what_it_returned| {
+                        return switch (what_it_returned) {
+                            .nothing => nothing,
+                            .value => |val| something(val),
+                            .values => unreachable, //TODO: consider this
+                        };
+                    },
+                    .did_not_return => {},
+                    .did_break, .did_continue => unreachable, //TODO: handle this
+                }
+            }
+        },
+    }
+
     return nothing;
 }
 
@@ -728,7 +773,7 @@ fn evalExpression(ctx: *Context, expr: ast.Expression) EvalError!Result {
     }
 }
 
-fn evalClosure(ctx: *Context, closure: ast.Closure) !*Value {
+fn evalClosure(ctx: *Context, closure_ast: ast.Closure) !*Value {
     // hur ska gc funka?
     // fyfan
     // uschiamig
@@ -743,9 +788,13 @@ fn evalClosure(ctx: *Context, closure: ast.Closure) !*Value {
     //   say $x # $x is collected when $y is collected
     // r  eturn $a + 2 # return value is collected when the closure stack frame goes out of scope
     // }
-    _ = ctx; // autofix
-    _ = closure; // autofix
-    unreachable;
+    const opt = gc.ValueOptions{
+        .origin = closure_ast.token,
+        .origin_module = ctx.root_module.filename,
+    };
+
+    const closure = values.closure(closure_ast);
+    return try gc.appendRootV(try gc.closure(closure, opt));
 }
 
 fn evalBareword(ctx: *Context, bw: ast.Bareword) !*Value {

@@ -16,6 +16,10 @@ pub const Record = std.StringArrayHashMap(*Value);
 pub const Closure = struct {
     ast: ast.Closure,
     upvalues: gc.Roots,
+
+    pub fn deinit(c: *Closure) void {
+        c.upvalues.deinit();
+    }
 };
 
 // types used by the interpreter
@@ -67,7 +71,7 @@ pub const Value = struct {
                     el.value_ptr.*.mark();
                 }
             },
-            .closure => unreachable,
+            .closure => |*c| c.deinit(),
         }
     }
 
@@ -87,7 +91,7 @@ pub const Value = struct {
             .record => |*r| {
                 r.deinit();
             },
-            .closure => unreachable,
+            .closure => |*c| c.deinit(),
         }
     }
 
@@ -291,6 +295,9 @@ pub const Value = struct {
             .closure => "closure",
         };
     }
+    pub fn kind(self: Value) Type {
+        return std.meta.activeTag(self);
+    }
 };
 
 fn typeMismatch(lhs_type: Type, rhs_type: []const u8) !Value.Order {
@@ -316,6 +323,12 @@ pub fn something(value: *Value) Result {
 
 pub fn multiple(vals: []*Value) Result {
     return Result{ .values = vals };
+}
+pub fn closure(c: ast.Closure) Closure {
+    return Closure{
+        .upvalues = gc.Roots.init(gc.allocator()),
+        .ast = c,
+    };
 }
 
 const testState = pipeline.testState;

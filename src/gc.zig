@@ -261,8 +261,14 @@ pub fn record(r: values.Record, opt: ValueOptions) !*values.Value {
     });
 }
 
-pub fn closure(c: values.Closure) !*values.Value {
-    return push(.{});
+pub fn closure(c: values.Closure, opt: ValueOptions) !*values.Value {
+    return push(.{
+        .as = .{
+            .closure = c,
+        },
+        .origin = opt.origin,
+        .origin_module = opt.origin_module,
+    });
 }
 
 pub fn emptyRecord(opt: ValueOptions) !*values.Value {
