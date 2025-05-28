@@ -18,7 +18,7 @@ const Environment = union(enum) {
 const Frame = struct {
     root_values: Roots,
     //envronment: Environment, TODO: rework this
-    Symtable: Symtable,
+    symtable: Symtable,
 
     pub fn dumpSymtable(self: Frame) void {
         var it = self.symtable.iterator();
