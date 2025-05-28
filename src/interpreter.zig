@@ -788,13 +788,12 @@ fn evalClosure(ctx: *Context, closure_ast: ast.Closure) !*Value {
     //   say $x # $x is collected when $y is collected
     // r  eturn $a + 2 # return value is collected when the closure stack frame goes out of scope
     // }
+
     const opt = gc.ValueOptions{
         .origin = closure_ast.token,
         .origin_module = ctx.root_module.filename,
     };
-
-    const closure = values.closure(closure_ast);
-    return try gc.appendRootV(try gc.closure(closure, opt));
+    return try gc.appendRootV(try gc.closure(closure_ast, opt));
 }
 
 fn evalBareword(ctx: *Context, bw: ast.Bareword) !*Value {

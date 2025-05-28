@@ -94,8 +94,9 @@ const builtins_table = BuiltinsTable.initComptime(
         // types
         .{ "int", unchecked(int) },
         // dev
-        .{ "vardump", unchecked(vardump) },
-        .{ "gcdump", unchecked(gcdump) },
+        .{ "var-dump", unchecked(vardump) },
+        .{ "gc-dump", unchecked(gcdump) },
+        .{ "gc-always-collect", unchecked(gcAlwaysCollect) },
     },
 );
 
@@ -853,6 +854,11 @@ fn vardump(_: *State, args: []const *Value, _: ast.Call) !Result {
 
 fn gcdump(_: *State, _: []const *Value, _: ast.Call) !Result {
     gc.dump();
+    return nothing;
+}
+
+fn gcAlwaysCollect(_: *State, _: []const *Value, _: ast.Call) !Result {
+    gc.always_collect = true;
     return nothing;
 }
 

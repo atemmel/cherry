@@ -14,8 +14,10 @@ const indexOfPos = std.mem.indexOfPos;
 pub const List = std.ArrayList(*Value);
 pub const Record = std.StringArrayHashMap(*Value);
 pub const Closure = struct {
+    pub const Upvalues = std.StringHashMap(*Value);
+
     ast: ast.Closure,
-    upvalues: gc.Roots,
+    upvalues: Upvalues,
 
     pub fn deinit(c: *Closure) void {
         c.upvalues.deinit();
@@ -323,12 +325,6 @@ pub fn something(value: *Value) Result {
 
 pub fn multiple(vals: []*Value) Result {
     return Result{ .values = vals };
-}
-pub fn closure(c: ast.Closure) Closure {
-    return Closure{
-        .upvalues = gc.Roots.init(gc.allocator()),
-        .ast = c,
-    };
 }
 
 const testState = pipeline.testState;

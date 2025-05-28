@@ -1,0 +1,15 @@
+gc-always-collect
+
+create-closure := -> {
+    $x = 0
+    return -> {
+        say mutating x
+        $x = (+ $x 1)
+        say end mutating x
+        return $x
+    }
+}
+
+closure := ($create-closure)
+
+assert ($closure) == 1

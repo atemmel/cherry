@@ -1,5 +1,6 @@
 const std = @import("std");
 const builtin = @import("builtin");
+const ast = @import("ast.zig");
 const values = @import("value.zig");
 const tokens = @import("tokens.zig");
 const PipelineState = @import("pipeline.zig").State;
@@ -9,9 +10,15 @@ const Value = @import("value.zig").Value;
 pub const Roots = std.ArrayList(*Value);
 const Symtable = std.StringHashMap(*Value);
 
+const Environment = union(enum) {
+    symtable: Symtable,
+    closure: *values.Closure,
+};
+
 const Frame = struct {
     root_values: Roots,
-    symtable: Symtable,
+    //envronment: Environment, TODO: rework this
+    Symtable: Symtable,
 
     pub fn dumpSymtable(self: Frame) void {
         var it = self.symtable.iterator();
@@ -21,7 +28,7 @@ const Frame = struct {
     }
 };
 
-// bookkeepring code for user-defined aliases lives here so as to be reachable by the interpreter
+// bookkeeping code for user-defined aliases lives here so as to be reachable by the interpreter
 // in reality, this would perhaps be more appropriate to be 'owned' by the repl
 pub const Alias = struct {
     from: []const u8,
@@ -39,7 +46,7 @@ var pipeline_state: *PipelineState = undefined;
 var n_allocs: usize = 0;
 var allocs_until_collect: usize = 800;
 var total_collections: usize = 0;
-var always_collect = false; // used to stress the gc, if enabled will perform a collection for every requested allocation
+pub var always_collect = false; // used to stress the gc, if enabled will perform a collection for every requested allocation
 
 // by allocating two booleans on startup, the gc can skip allocating future booleans by
 // always refering to either of them whenever necessary
@@ -261,14 +268,20 @@ pub fn record(r: values.Record, opt: ValueOptions) !*values.Value {
     });
 }
 
-pub fn closure(c: values.Closure, opt: ValueOptions) !*values.Value {
-    return push(.{
+pub fn closure(c: ast.Closure, opt: ValueOptions) !*values.Value {
+    var cl: values.Closure = .{
+        .ast = c,
+        .upvalues = values.Closure.Upvalues.init(allocator()),
+    };
+    const value: Value = .{
         .as = .{
-            .closure = c,
+            .closure = cl,
         },
         .origin = opt.origin,
         .origin_module = opt.origin_module,
-    });
+    };
+    try collectClosureParentUsages(&cl);
+    return push(value);
 }
 
 pub fn emptyRecord(opt: ValueOptions) !*values.Value {
@@ -318,6 +331,23 @@ pub fn getSymbol(key: []const u8) ?*Value {
     for (program_stack.items) |frame| {
         if (frame.symtable.get(key)) |symbol| {
             return symbol;
+        }
+    }
+    return null;
+}
+
+pub const SymbolAndDepth = struct {
+    value: *Value,
+    depth: usize,
+};
+
+pub fn getSymbolAndStackDepth(key: []const u8) ?SymbolAndDepth {
+    for (0.., program_stack.items) |i, frame| {
+        if (frame.symtable.get(key)) |symbol| {
+            return SymbolAndDepth{
+                .value = symbol,
+                .depth = i,
+            };
         }
     }
     return null;
@@ -392,4 +422,48 @@ pub fn insertSymbol(key: []const u8, value: *Value) !void {
         return InterpreterError.VariableAlreadyDeclared;
     }
     return try frame.symtable.put(try persistent_allocator.dupe(u8, key), value);
+}
+
+fn collectClosureParentUsages(cl: *values.Closure) !void {
+    switch (cl.ast.as) {
+        .body => |b| {
+            _ = b;
+        },
+        .expression => |e| try collectClosureExpressionUsage(cl, e),
+    }
+}
+
+fn collectClosureScopeUsage(cl: *values.Closure, scope: ast.Scope) !void {
+    for (scope) |stmnt| {
+        switch (stmnt) {
+            .assignment => |a| {
+                collectClosureExpressionUsage(cl, &a.expression);
+            },
+        }
+    }
+}
+
+fn collectClosureExpressionUsage(cl: *values.Closure, expr: *const ast.Expression) !void {
+    switch (expr.as) {
+        .variable => |v| {
+            const lookup = getSymbolAndStackDepth(v.token.value) orelse unreachable; //TODO
+            std.debug.print("Variable {s} has depth {}, current depth {}\n", .{ v.token.value, lookup.depth, stackDepth() });
+        },
+        .binary_operator => |b| {
+            try collectClosureExpressionUsage(cl, b.lhs);
+            try collectClosureExpressionUsage(cl, b.rhs);
+        },
+        .closure => {
+            //TODO: man
+        },
+        .bareword,
+        .integer_literal,
+        .string_literal,
+        .record_literal,
+        .bool_literal,
+        .list_literal,
+        .capturing_call,
+        .unary_operator,
+        => {},
+    }
 }
