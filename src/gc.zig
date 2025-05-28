@@ -8,7 +8,7 @@ const InterpreterError = @import("interpreter.zig").InterpreterError;
 const Value = @import("value.zig").Value;
 
 pub const Roots = std.ArrayList(*Value);
-const Symtable = std.StringHashMap(*Value);
+pub const Symtable = std.StringHashMap(*Value);
 
 const Environment = union(enum) {
     symtable: Symtable,

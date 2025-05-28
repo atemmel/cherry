@@ -13,13 +13,20 @@ const State = pipeline.State;
 const something = values.something;
 const nothing = values.nothing;
 
+const StaticSymbols = std.StaticStringMap(*Value);
+
+const no_builtins = builtins.BuiltinsTable.initComptime(.{});
+const no_symbols = StaticSymbols.init(.{});
+
 pub const InternalModule = struct {
     builtins_table: builtins.BuiltinsTable,
+    symtable: std.StringHashMap(*Value),
     was_imported: bool = false,
 };
 
 const internal_module_table = std.StaticStringMap(*InternalModule).initComptime(&.{
     .{ "fs", &fs_module },
+    .{ "completion", &completion_module },
 });
 
 pub fn lookup(module_name: []const u8) ?*InternalModule {
@@ -30,6 +37,14 @@ var fs_module = InternalModule{
     .builtins_table = builtins.BuiltinsTable.initComptime(.{
         .{ "exists", fs_exists },
         .{ "has-program", fs_has_program_info },
+    }),
+    .symtable = no_symbols,
+};
+
+var completion_module = InternalModule{
+    .builtins_table = no_builtins,
+    .symtable = StaticSymbols.init(.{
+        .{ "map", undefined },
     }),
 };
 
@@ -116,8 +131,7 @@ fn fsExists(state: *State, args: []const *Value, call: ast.Call) !Result {
     return something(try gc.boolean(true, opt));
 }
 
-fn fsDirExists(state: *State, args: []const *Value, call: ast.Call) !Result {
-    _ = state; // autofix
-    _ = args; // autofix
-    _ = call; // autofix
+pub fn initInternalModules() !void {
+    const map = completion_module.symtable.getPtr("map") orelse unreachable;
+    map.* = gc.emptyRecord(.{});
 }
