@@ -1,0 +1,4 @@
+import completions
+
+say completions'map
+#say completions'map'git

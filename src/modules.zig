@@ -16,17 +16,17 @@ const nothing = values.nothing;
 const StaticSymbols = std.StaticStringMap(*Value);
 
 const no_builtins = builtins.BuiltinsTable.initComptime(.{});
-const no_symbols = StaticSymbols.init(.{});
+const no_symbols = StaticSymbols.initComptime(.{});
 
 pub const InternalModule = struct {
     builtins_table: builtins.BuiltinsTable,
-    symtable: std.StringHashMap(*Value),
+    symtable: StaticSymbols,
     was_imported: bool = false,
 };
 
 const internal_module_table = std.StaticStringMap(*InternalModule).initComptime(&.{
     .{ "fs", &fs_module },
-    .{ "completion", &completion_module },
+    .{ "completions", &completions_module },
 });
 
 pub fn lookup(module_name: []const u8) ?*InternalModule {
@@ -41,9 +41,9 @@ var fs_module = InternalModule{
     .symtable = no_symbols,
 };
 
-var completion_module = InternalModule{
+var completions_module = InternalModule{
     .builtins_table = no_builtins,
-    .symtable = StaticSymbols.init(.{
+    .symtable = StaticSymbols.initComptime(.{
         .{ "map", undefined },
     }),
 };
@@ -132,6 +132,6 @@ fn fsExists(state: *State, args: []const *Value, call: ast.Call) !Result {
 }
 
 pub fn initInternalModules() !void {
-    const map = completion_module.symtable.getPtr("map") orelse unreachable;
+    const map = completions_module.symtable.getPtr("map") orelse unreachable;
     map.* = gc.emptyRecord(.{});
 }

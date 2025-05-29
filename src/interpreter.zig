@@ -736,7 +736,7 @@ fn evalEqImpl(ctx: *Context, op: ast.BinaryOperator) EvalError!bool {
 
 fn evalExpression(ctx: *Context, expr: ast.Expression) EvalError!Result {
     const base_expr = switch (expr.as) {
-        .bareword => |bw| something(try evalBareword(ctx, bw)),
+        .bareword => |bw| something(try evalBareword(ctx, bw, expr)),
         .string_literal => |str| something(try evalStringLiteral(ctx, str)),
         .integer_literal => |int| something(try evalIntegerLiteral(ctx, int)),
         .bool_literal => |bl| something(try evalBoolLiteral(ctx, bl)),
@@ -756,6 +756,18 @@ fn evalExpression(ctx: *Context, expr: ast.Expression) EvalError!Result {
             if (current.child == null) {
                 switch (record.as) {
                     .record => |r| return something(r.get(current.member.token.value) orelse unreachable),
+                    //                    .string => |s| {
+                    //                       const var_name = b.token.value;
+                    //                      if (modules.lookup(record)) |module| {
+                    //                         if (!module.was_imported) {
+                    //                            return errNeverImported(ctx, b.token, var_name);
+                    //                       }
+
+                    //                      return module.symtable.get(var_name) orelse {
+                    //                         return errNeverExported(ctx, b.token, record, var_name);
+                    //                            };
+                    //                       }
+                    //                  },
                     else => {},
                 }
                 //TODO: keep working here
@@ -796,11 +808,13 @@ fn evalClosure(ctx: *Context, closure_ast: ast.Closure) !*Value {
     return try gc.appendRootV(try gc.closure(closure_ast, opt));
 }
 
-fn evalBareword(ctx: *Context, bw: ast.Bareword) !*Value {
+fn evalBareword(ctx: *Context, bw: ast.Bareword, expr: ast.Expression) !*Value {
     const opt = gc.ValueOptions{
         .origin = bw.token,
         .origin_module = ctx.root_module.filename,
     };
+
+    if (expr.accessor) |*accessor| {}
 
     const contextualized = try strings.processBareword(ctx.state, ctx.stmnt_scratch, bw.token.value);
     const value = switch (contextualized) {
@@ -948,7 +962,7 @@ fn errNeverExported(ctx: *Context, token: *const tokens.Token, owning_module_nam
     ctx.state.error_report = .{
         .trailing = false,
         .offending_token = token,
-        .msg = try std.fmt.allocPrint(ctx.ally, "Module '{s}' does not export a function named '{s}'.", .{ owning_module_name, func_name }),
+        .msg = try std.fmt.allocPrint(ctx.ally, "Module '{s}' does not export a function or variable named '{s}'.", .{ owning_module_name, func_name }),
     };
     return EvalError.FunctionNotFoundWithinModule;
 }
