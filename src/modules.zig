@@ -17,10 +17,11 @@ const StaticSymbols = std.StaticStringMap(*Value);
 
 const no_builtins = builtins.BuiltinsTable.initComptime(.{});
 const no_symbols = StaticSymbols.initComptime(.{});
+const no_tracing = gc.ValueOptions{ .origin_module = undefined, .origin = undefined };
 
 pub const InternalModule = struct {
     builtins_table: builtins.BuiltinsTable,
-    symtable: StaticSymbols,
+    record: *values.Value,
     was_imported: bool = false,
 };
 
@@ -38,14 +39,12 @@ var fs_module = InternalModule{
         .{ "exists", fs_exists },
         .{ "has-program", fs_has_program_info },
     }),
-    .symtable = no_symbols,
+    .record = undefined,
 };
 
 var completions_module = InternalModule{
     .builtins_table = no_builtins,
-    .symtable = StaticSymbols.initComptime(.{
-        .{ "map", undefined },
-    }),
+    .record = undefined,
 };
 
 const fs_has_program_info = builtins.BuiltinInfo{
@@ -131,7 +130,10 @@ fn fsExists(state: *State, args: []const *Value, call: ast.Call) !Result {
     return something(try gc.boolean(true, opt));
 }
 
-pub fn initInternalModules() !void {
-    const map = completions_module.symtable.getPtr("map") orelse unreachable;
-    map.* = gc.emptyRecord(.{});
+pub fn init() !void {
+    for (internal_module_table.values()) |*mod| {
+        mod.*.record = try gc.emptyRecord(no_tracing);
+    }
+    const completions = internal_module_table.get("completions") orelse unreachable;
+    try completions.record.as.record.putNoClobber("map", try gc.emptyRecord(no_tracing));
 }

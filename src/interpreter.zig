@@ -736,7 +736,7 @@ fn evalEqImpl(ctx: *Context, op: ast.BinaryOperator) EvalError!bool {
 
 fn evalExpression(ctx: *Context, expr: ast.Expression) EvalError!Result {
     const base_expr = switch (expr.as) {
-        .bareword => |bw| something(try evalBareword(ctx, bw, expr)),
+        .bareword => |bw| something(try evalBareword(ctx, bw)),
         .string_literal => |str| something(try evalStringLiteral(ctx, str)),
         .integer_literal => |int| something(try evalIntegerLiteral(ctx, int)),
         .bool_literal => |bl| something(try evalBoolLiteral(ctx, bl)),
@@ -808,13 +808,11 @@ fn evalClosure(ctx: *Context, closure_ast: ast.Closure) !*Value {
     return try gc.appendRootV(try gc.closure(closure_ast, opt));
 }
 
-fn evalBareword(ctx: *Context, bw: ast.Bareword, expr: ast.Expression) !*Value {
+fn evalBareword(ctx: *Context, bw: ast.Bareword) !*Value {
     const opt = gc.ValueOptions{
         .origin = bw.token,
         .origin_module = ctx.root_module.filename,
     };
-
-    if (expr.accessor) |*accessor| {}
 
     const contextualized = try strings.processBareword(ctx.state, ctx.stmnt_scratch, bw.token.value);
     const value = switch (contextualized) {
@@ -866,6 +864,11 @@ fn evalBoolLiteral(ctx: *Context, bl: ast.BoolLiteral) !*Value {
 }
 
 fn evalVariable(ctx: *Context, variable: ast.Variable) !*Value {
+    if (modules.lookup(variable.token.value)) |module| {
+        if (module.was_imported) {
+            return module.record;
+        }
+    }
     return gc.getSymbol(variable.token.value) orelse {
         return errNeverDeclared(ctx, variable.token);
     };

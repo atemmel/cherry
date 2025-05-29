@@ -9,6 +9,7 @@ const pipeline = @import("pipeline.zig");
 const repl = @import("repl.zig").repl;
 const tokens = @import("tokens.zig");
 const terminal = @import("term.zig");
+const modules = @import("modules.zig");
 
 const Value = @import("value.zig").Value;
 
@@ -161,6 +162,9 @@ pub fn main() !u8 {
 
     try gc.init(ally, &state);
     defer gc.deinit();
+
+    try modules.init();
+    // no cleanup, this is garbage collected
 
     defer state.env_map.deinit();
 
