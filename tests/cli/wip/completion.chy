@@ -1,4 +1,8 @@
 import completions
 
-say $completions'map
-#say completions'map'git
+assert [=] == $completions'map
+
+$completions'map'git = arg -> {
+
+
+}

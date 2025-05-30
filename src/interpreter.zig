@@ -25,13 +25,14 @@ pub const InterpreterError = error{
     ArgsCountMismatch,
     BadVariableLookup,
     CommandNotFound,
-    UnableToOpenFileDuringRedirect,
+    EntryNotFoundWithinRecord,
     FunctionNotFoundWithinModule,
     MembersNotAllowed,
     MismatchedBraces,
-    NonRecordAccessAttempt,
     ModuleNotFound,
+    NonRecordAccessAttempt,
     TypeMismatch,
+    UnableToOpenFileDuringRedirect,
     ValueRequired,
     VariableAlreadyDeclared,
 };
@@ -132,10 +133,40 @@ fn interpretVarDecl(ctx: *Context, var_decl: ast.VarDecl) !void {
 }
 
 fn interpretAssign(ctx: *Context, assign: ast.Assignment) !void {
+    if (try interpretAssignToModuleSucceded(ctx, assign)) return;
     const entry = gc.getEntry(assign.variable.token.value) orelse {
         return errNeverDeclared(ctx, assign.variable.token);
     };
 
+    const value_to_insert = interpretExpressionToAssign(ctx, assign);
+    if (assign.accessor) |*accessor| {
+        var current = accessor;
+        var record = entry.value_ptr.*;
+        while (true) {
+            if (current.child == null) {
+                try record.as.record.put(current.member.token.value, value_to_insert);
+                break;
+            }
+            record = record.as.record.get(current.member.token.value) orelse unreachable;
+            current = current.child.?;
+        }
+    } else {
+        entry.value_ptr.* = value_to_insert;
+    }
+}
+
+fn interpretAssignToModuleSucceded(ctx: *Context, assign: ast.Assignment) !bool {
+    _ = ctx;
+    var module = modules.lookup(assign.variable.token.value) orelse {
+        return false;
+    };
+    if (!module.was_imported) {
+        return false;
+    }
+    const record = module.record.as.record.get(assign.variable.token.value);
+}
+
+fn interpretExpressionToAssign(ctx: *Context, assign: ast.Assignment) !*Value {
     const value = switch (try evalExpression(ctx, assign.expression)) {
         .value => |v| v,
         .nothing => {
@@ -159,23 +190,7 @@ fn interpretAssign(ctx: *Context, assign: ast.Assignment) !void {
         => false,
     };
 
-    //TODO: +=, -=, *=, /=
-
-    const value_to_insert = if (was_owned) try gc.cloneOrReference(value) else value;
-    if (assign.accessor) |*accessor| {
-        var current = accessor;
-        var record = entry.value_ptr.*;
-        while (true) {
-            if (current.child == null) {
-                try record.as.record.put(current.member.token.value, value_to_insert);
-                break;
-            }
-            record = record.as.record.get(current.member.token.value) orelse unreachable;
-            current = current.child.?;
-        }
-    } else {
-        entry.value_ptr.* = value_to_insert;
-    }
+    return if (was_owned) try gc.cloneOrReference(value) else value;
 }
 
 fn interpretBranches(ctx: *Context, branches: ast.Branches) !Returns {
@@ -756,18 +771,6 @@ fn evalExpression(ctx: *Context, expr: ast.Expression) EvalError!Result {
             if (current.child == null) {
                 switch (record.as) {
                     .record => |r| return something(r.get(current.member.token.value) orelse unreachable),
-                    //                    .string => |s| {
-                    //                       const var_name = b.token.value;
-                    //                      if (modules.lookup(record)) |module| {
-                    //                         if (!module.was_imported) {
-                    //                            return errNeverImported(ctx, b.token, var_name);
-                    //                       }
-
-                    //                      return module.symtable.get(var_name) orelse {
-                    //                         return errNeverExported(ctx, b.token, record, var_name);
-                    //                            };
-                    //                       }
-                    //                  },
                     else => {},
                 }
                 //TODO: keep working here
@@ -775,9 +778,15 @@ fn evalExpression(ctx: *Context, expr: ast.Expression) EvalError!Result {
                     .offending_token = current.member.token,
                     .msg = try std.fmt.allocPrint(ctx.ally, "'{s}' is not a record, and so has no member named '{s}'.", .{ record.origin.value, current.member.token.value }),
                 };
-                return EvalError.NonRecordAccessAttempt;
+                return InterpreterError.NonRecordAccessAttempt;
             }
-            record = record.as.record.get(current.member.token.value) orelse unreachable;
+            record = record.as.record.get(current.member.token.value) orelse {
+                ctx.state.error_report = .{
+                    .offending_token = current.member.token,
+                    .msg = try std.fmt.allocPrint(ctx.ally, "record has no member '{s}'.", .{current.member.token.value}),
+                };
+                return InterpreterError.EntryNotFoundWithinRecord;
+            };
             current = current.child.?;
         }
     } else {
@@ -786,21 +795,6 @@ fn evalExpression(ctx: *Context, expr: ast.Expression) EvalError!Result {
 }
 
 fn evalClosure(ctx: *Context, closure_ast: ast.Closure) !*Value {
-    // hur ska gc funka?
-    // fyfan
-    // uschiamig
-    //
-    // internt hashtable?
-    // root values på det som är med i scope? gissningsvis
-    // titta på hur gc funkar i scopes idag
-    // lär typ vara något snarlikt, bara att scopet bokförs oberoende programmets faktiska nästling
-    // x := 0
-    //
-    // y := fn a { # $a is collected when the closure stack frame goes out of scope
-    //   say $x # $x is collected when $y is collected
-    // r  eturn $a + 2 # return value is collected when the closure stack frame goes out of scope
-    // }
-
     const opt = gc.ValueOptions{
         .origin = closure_ast.token,
         .origin_module = ctx.root_module.filename,

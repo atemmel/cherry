@@ -15,9 +15,14 @@ const nothing = values.nothing;
 
 const StaticSymbols = std.StaticStringMap(*Value);
 
+const internal_token = tokens.Token{
+    .kind = .Bareword,
+    .value = "???",
+};
+
 const no_builtins = builtins.BuiltinsTable.initComptime(.{});
 const no_symbols = StaticSymbols.initComptime(.{});
-const no_tracing = gc.ValueOptions{ .origin_module = undefined, .origin = undefined };
+const no_tracing = gc.ValueOptions{ .origin_module = "internal", .origin = &internal_token };
 
 pub const InternalModule = struct {
     builtins_table: builtins.BuiltinsTable,
@@ -39,11 +44,6 @@ var fs_module = InternalModule{
         .{ "exists", fs_exists },
         .{ "has-program", fs_has_program_info },
     }),
-    .record = undefined,
-};
-
-var completions_module = InternalModule{
-    .builtins_table = no_builtins,
     .record = undefined,
 };
 
@@ -129,6 +129,11 @@ fn fsExists(state: *State, args: []const *Value, call: ast.Call) !Result {
     };
     return something(try gc.boolean(true, opt));
 }
+
+var completions_module = InternalModule{
+    .builtins_table = no_builtins,
+    .record = undefined,
+};
 
 pub fn init() !void {
     for (internal_module_table.values()) |*mod| {

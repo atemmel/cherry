@@ -50,7 +50,7 @@ pub const Member = Bareword;
 
 pub const Accessor = struct {
     member: Member,
-    child: ?*const Accessor,
+    child: ?*const Accessor = null,
 };
 
 pub const Variable = struct {
@@ -425,12 +425,7 @@ fn parseAssignment(ctx: *Context, opt: struct { needs_newline: bool = true }) !?
     const accessor = try parseAccessorChain(ctx);
 
     const token = switch (ctx.peek().kind) {
-        .Assign,
-        .AddAssign,
-        .SubAssign,
-        .MulAssign,
-        .DivAssign,
-        => ctx.peek(),
+        .Assign, .AddAssign, .SubAssign, .MulAssign, .DivAssign => ctx.peek(),
         else => {
             ctx.idx = checkpoint;
             return null;
@@ -1344,7 +1339,7 @@ fn parseAccessorChain(ctx: *Context) !?Accessor {
 
     while (try parseMember(ctx)) |member| {
         const child = try ctx.ally.create(Accessor);
-        child.member = member;
+        child.* = .{ .member = member, .child = null };
 
         ptr.child = child;
         ptr = child;

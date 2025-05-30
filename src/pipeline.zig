@@ -205,6 +205,7 @@ pub fn writeError(state: *State, err: PipelineError) !void {
         error.AssertionFailed,
         error.NonRecordAccessAttempt,
         error.UnableToOpenFileDuringRedirect,
+        error.EntryNotFoundWithinRecord,
         => {
             try writeRuntimeError(state, writer);
         },

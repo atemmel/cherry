@@ -1,0 +1,3 @@
+person := [=]
+$person'attributes = [=]
+$person'attributes'height = 180

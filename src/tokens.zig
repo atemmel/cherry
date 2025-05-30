@@ -209,7 +209,6 @@ fn lexSymbol(state: *LexState) ?Token {
                 state.idx -= 2;
                 break :blk .LBracket;
             }
-            state.next();
             break :blk .EmptyRecord;
         },
         ']' => .RBracket,
@@ -790,4 +789,19 @@ test "lex arrow" {
 
     try expectEqual(1, tokens.len);
     try expectEqual(.RightArrow, tokens[0].kind);
+}
+
+test "lex record and newline" {
+    var state = testState();
+    defer state.deinit();
+
+    const tokens = try lex(&state,
+        \\[=]
+        \\[=]
+    );
+
+    try expectEqual(3, tokens.len);
+    try expectEqual(.EmptyRecord, tokens[0].kind);
+    try expectEqual(.Newline, tokens[1].kind);
+    try expectEqual(.EmptyRecord, tokens[2].kind);
 }
