@@ -425,7 +425,7 @@ fn parseAssignment(ctx: *Context, opt: struct { needs_newline: bool = true }) !?
     const accessor = try parseAccessorChain(ctx);
 
     const token = switch (ctx.peek().kind) {
-        .Assign, .AddAssign, .SubAssign, .MulAssign, .DivAssign => ctx.peek(),
+        .Assign, .AddAssign, .SubAssign, .MulAssign, .DivAssign, .PipeAssign => ctx.peek(),
         else => {
             ctx.idx = checkpoint;
             return null;

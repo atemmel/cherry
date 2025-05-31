@@ -1,10 +1,16 @@
+import completions
+
+$completions = []
+
+say $completions
+
+#{
 x := 1
 
 $x += 1
 
 assert $x == 2
 
-#{
 $x -= 1
 
 assert $x == 1

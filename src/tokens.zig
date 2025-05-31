@@ -37,6 +37,7 @@ pub const Token = struct {
         SubAssign, // -=
         MulAssign, // *=
         DivAssign, // /=
+        PipeAssign, // |=
         RightArrow, // ->
         // Keywords
         If,
@@ -175,16 +176,9 @@ fn lexSymbol(state: *LexState) ?Token {
         '-' => peekMustAssign(state, .SubAssign) orelse peekMust(state, '>', .RightArrow) orelse return null,
         '*' => peekMustAssign(state, .MulAssign) orelse return null,
         '/' => peekMustAssign(state, .DivAssign) orelse return null,
+        '|' => peekMustAssign(state, .PipeAssign) orelse peekMust(state, '>', .RedirectOut) orelse .Pipe,
         ':' => .Colon,
         ';' => .Semicolon,
-        '|' => blk: {
-            state.next();
-            if (state.eof() or state.get() != '>') {
-                state.idx -= 1;
-                break :blk .Pipe;
-            }
-            break :blk .RedirectOut;
-        },
         '<' => blk: {
             state.next();
             if (state.eof() or state.get() != '|') {

@@ -35,6 +35,7 @@ pub const InterpreterError = error{
     UnableToOpenFileDuringRedirect,
     ValueRequired,
     VariableAlreadyDeclared,
+    BadAssign,
 };
 
 pub const EvalError = builtins.BuiltinError || std.process.Child.RunError;
@@ -160,7 +161,11 @@ fn interpretAssignToModuleSucceded(ctx: *Context, assign: ast.Assignment) !bool 
     if (assign.accessor) |*accessor| {
         try assignToAccessor(accessor, record, value_to_assign);
         return true;
-    } else unreachable; //TODO
+    }
+    return err(ctx, .{
+        .msg = try std.fmt.allocPrint(ctx.ally, "'{s}' is a module and cannot be overwritten", .{assign.variable.token.value}),
+        .offending_token = assign.token,
+    }, InterpreterError.BadAssign);
 }
 
 fn interpretExpressionToAssign(ctx: *Context, assign: ast.Assignment) !*Value {
@@ -972,6 +977,11 @@ fn errNeverExported(ctx: *Context, token: *const tokens.Token, owning_module_nam
         .msg = try std.fmt.allocPrint(ctx.ally, "Module '{s}' does not export a function or variable named '{s}'.", .{ owning_module_name, func_name }),
     };
     return EvalError.FunctionNotFoundWithinModule;
+}
+
+fn err(ctx: *Context, error_report: pipeline.ErrorReport, e: InterpreterError) InterpreterError {
+    ctx.state.error_report = error_report;
+    return e;
 }
 
 fn ptrAdd(token: *const tokens.Token, steps: usize) *const tokens.Token {
