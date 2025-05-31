@@ -1,5 +1,5 @@
 fn my-func {
-    say I am in the func
+    say I am inside the func
 }
 
 my-func
@@ -7,7 +7,7 @@ my-func
 my-other-func James
 
 fn my-other-func who {
-    say $who is in the func
+    say $who is inside the func
 }
 
 x := false

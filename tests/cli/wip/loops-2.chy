@@ -1,0 +1,8 @@
+names := [alice bob chris danielle]
+i := 0
+
+for x in $names {
+    $i += 1
+}
+
+assert $i == (len $names)
