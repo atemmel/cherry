@@ -3,6 +3,8 @@ import completions
 assert [=] == $completions'map
 
 $completions'map'git = arg -> {
-
-
 }
+
+assert (len $completions'map) == 1
+
+say the completions module contains $completions # Should this work? It does now

@@ -138,32 +138,29 @@ fn interpretAssign(ctx: *Context, assign: ast.Assignment) !void {
         return errNeverDeclared(ctx, assign.variable.token);
     };
 
-    const value_to_insert = interpretExpressionToAssign(ctx, assign);
+    const value_to_insert = try interpretExpressionToAssign(ctx, assign);
     if (assign.accessor) |*accessor| {
-        var current = accessor;
-        var record = entry.value_ptr.*;
-        while (true) {
-            if (current.child == null) {
-                try record.as.record.put(current.member.token.value, value_to_insert);
-                break;
-            }
-            record = record.as.record.get(current.member.token.value) orelse unreachable;
-            current = current.child.?;
-        }
+        const original_record = entry.value_ptr.*;
+        try assignToAccessor(accessor, original_record, value_to_insert);
     } else {
         entry.value_ptr.* = value_to_insert;
     }
 }
 
 fn interpretAssignToModuleSucceded(ctx: *Context, assign: ast.Assignment) !bool {
-    _ = ctx;
-    var module = modules.lookup(assign.variable.token.value) orelse {
+    const module = modules.lookup(assign.variable.token.value) orelse {
         return false;
     };
     if (!module.was_imported) {
         return false;
     }
-    const record = module.record.as.record.get(assign.variable.token.value);
+    const record = module.record;
+    const value_to_assign = try interpretExpressionToAssign(ctx, assign);
+
+    if (assign.accessor) |*accessor| {
+        try assignToAccessor(accessor, record, value_to_assign);
+        return true;
+    } else unreachable; //TODO
 }
 
 fn interpretExpressionToAssign(ctx: *Context, assign: ast.Assignment) !*Value {
@@ -191,6 +188,19 @@ fn interpretExpressionToAssign(ctx: *Context, assign: ast.Assignment) !*Value {
     };
 
     return if (was_owned) try gc.cloneOrReference(value) else value;
+}
+
+fn assignToAccessor(accessor: *const ast.Accessor, original_record: *Value, value_to_insert: *Value) !void {
+    var current = accessor;
+    var record = original_record;
+    while (true) {
+        if (current.child == null) {
+            try record.as.record.put(current.member.token.value, value_to_insert);
+            break;
+        }
+        record = record.as.record.get(current.member.token.value) orelse unreachable;
+        current = current.child.?;
+    }
 }
 
 fn interpretBranches(ctx: *Context, branches: ast.Branches) !Returns {

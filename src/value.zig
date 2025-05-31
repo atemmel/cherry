@@ -73,7 +73,12 @@ pub const Value = struct {
                     el.value_ptr.*.mark();
                 }
             },
-            .closure => |*c| c.deinit(),
+            .closure => |*c| {
+                var it = c.upvalues.iterator();
+                while (it.next()) |entry| {
+                    entry.value_ptr.*.mark();
+                }
+            },
         }
     }
 
@@ -98,7 +103,7 @@ pub const Value = struct {
     }
 
     pub fn format(
-        self: Value,
+        self: *const Value,
         comptime fmt: []const u8,
         options: std.fmt.FormatOptions,
         writer: anytype,
@@ -131,21 +136,40 @@ pub const Value = struct {
                 }
                 try writer.print("]", .{});
             },
-            .closure => |*c| {
-                try writer.print("closure@{*}", .{c});
+            .closure => {
+                try writer.print("closure@{x}", .{@intFromPtr(self)});
             },
         }
     }
 
-    pub fn asStr(self: Value, ally: std.mem.Allocator) ![]u8 {
+    pub fn asStr(self: *const Value, ally: std.mem.Allocator) ![]u8 {
         return switch (self.as) {
             .string => |s| try ally.dupe(u8, s),
             .integer => |i| try std.fmt.allocPrint(ally, "{}", .{i}),
             .float => |f| try std.fmt.allocPrint(ally, "{}", .{f}),
             .boolean => |b| try ally.dupe(u8, if (b) "true" else "false"),
-            .list => |l| try std.fmt.allocPrint(ally, "[{any}]", .{l.items}),
-            .record => unreachable,
-            .closure => unreachable,
+            .list => |l| try std.fmt.allocPrint(ally, "[ {any} ]", .{l.items}),
+            .record => |r| blk: {
+                const write = std.fmt.format;
+                if (r.count() == 0) {
+                    return try ally.dupe(u8, "[=]");
+                }
+                std.debug.print("here\n", .{});
+                var string = try std.ArrayList(u8).initCapacity(ally, 16);
+                const writer = string.writer();
+                try write(writer, "[ ", .{});
+                var it = r.iterator();
+                while (it.next()) |*entry| {
+                    const key_str = entry.key_ptr.*;
+                    const value_str = try entry.value_ptr.*.asStr(ally);
+                    std.debug.print("this is it: {s}\n", .{value_str});
+                    defer ally.free(value_str);
+                    try write(writer, "{s} = {s} ", .{ key_str, value_str });
+                }
+                try write(writer, "]", .{});
+                break :blk try string.toOwnedSlice();
+            },
+            .closure => try std.fmt.allocPrint(ally, "fn@{x}", .{@intFromPtr(self)}),
         };
     }
 
