@@ -1,0 +1,2 @@
+twice := x -> (* $x 2)
+assert 4 == ($twice 2)
