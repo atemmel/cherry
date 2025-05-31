@@ -181,7 +181,6 @@ fn logTime(comptime prefix: []const u8, start_us: i64, stop_us: i64) void {
 
 pub fn writeError(state: *State, err: PipelineError) !void {
     const writer = std.io.getStdErr().writer();
-    std.debug.print("Error occured: {}\n", .{err});
     switch (err) {
         error.UnterminatedBlockComment => {
             try writeLexerError(state, writer);
@@ -207,6 +206,7 @@ pub fn writeError(state: *State, err: PipelineError) !void {
         error.UnableToOpenFileDuringRedirect,
         error.ValueRequired,
         error.VariableAlreadyDeclared,
+        error.NotImplemented,
         => {
             try writeRuntimeError(state, writer);
         },

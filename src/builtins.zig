@@ -161,12 +161,10 @@ const assert_info: BuiltinInfo = .{
 };
 
 fn assert(state: *State, args: []const *Value, call: ast.Call) !Result {
-    const stderr = std.io.getStdErr().writer();
     for (args, 0..) |arg, idx| {
         switch (arg.as) {
             .boolean => |b| {
                 if (!b) {
-                    try stderr.print("Assertion failed for value {}\n", .{idx});
                     const expr = call.arguments[idx];
                     const token = ast.tokenFromExpr(expr);
 

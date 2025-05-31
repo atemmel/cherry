@@ -36,6 +36,8 @@ pub const InterpreterError = error{
     ValueRequired,
     VariableAlreadyDeclared,
     BadAssign,
+
+    NotImplemented,
 };
 
 pub const EvalError = builtins.BuiltinError || std.process.Child.RunError;
@@ -175,7 +177,12 @@ fn interpretExpressionToAssign(ctx: *Context, assign: ast.Assignment) !*Value {
             const ptr = ptrAdd(assign.variable.token, 2);
             return errRequiresValue(ctx, ptr);
         },
-        .values => unreachable, //TODO: consider this
+        .values => {
+            return err(ctx, .{
+                .msg = "Multiple value assignment is not yet implemented",
+                .offending_token = assign.token,
+            }, InterpreterError.NotImplemented);
+        },
     };
 
     const was_owned = switch (assign.expression.as) {
