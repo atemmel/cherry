@@ -270,7 +270,15 @@ fn interpretLoop(ctx: *Context, loop: ast.Loop) !Returns {
     try gc.pushFrame();
     defer gc.popFrame();
 
-    if (loop.init_op) |init_op| {
+    return switch (loop.kind) {
+        .classic_loop => try interpretClassicLoop(ctx, loop),
+        .range_loop => try interpretRangeLoop(ctx, loop),
+    };
+}
+
+fn interpretClassicLoop(ctx: *Context, loop: ast.Loop) !Returns {
+    const classic = loop.kind.classic_loop;
+    if (classic.init_op) |init_op| {
         switch (init_op) {
             .assignment => |assign| try interpretAssign(ctx, assign),
             .declaration => |decl| try interpretVarDecl(ctx, decl),
@@ -278,7 +286,7 @@ fn interpretLoop(ctx: *Context, loop: ast.Loop) !Returns {
     }
 
     while (true) {
-        if (loop.expr) |expr| {
+        if (classic.expr) |expr| {
             const value = try evalExpression(ctx, expr);
             switch (value) {
                 .value => |val| {
@@ -308,7 +316,7 @@ fn interpretLoop(ctx: *Context, loop: ast.Loop) !Returns {
             .did_break => return .did_not_return,
         }
 
-        if (loop.post_op) |post_op| {
+        if (classic.post_op) |post_op| {
             switch (post_op) {
                 .assignment => |assign| try interpretAssign(ctx, assign),
                 .call => |call| _ = try evalCall(ctx, call),
@@ -317,6 +325,15 @@ fn interpretLoop(ctx: *Context, loop: ast.Loop) !Returns {
     }
 
     return .did_not_return;
+}
+
+fn interpretRangeLoop(ctx: *Context, loop: ast.Loop) !Returns {
+    var idx: usize = 0;
+    idx = 1;
+    _ = ctx;
+    _ = loop;
+
+    unreachable;
 }
 
 fn evalReturn(ctx: *Context, ret: ast.Return) !Returns {

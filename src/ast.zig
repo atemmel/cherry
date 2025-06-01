@@ -8,6 +8,8 @@ pub const dump = @import("ast_dump.zig").dump;
 
 pub const errors = error{ParseFailed} || std.mem.Allocator.Error;
 
+const assert = std.debug.assert;
+
 const string_primitive_lookup = std.StaticStringMap(semantics.TypeInfo).initComptime(.{
     .{ "bool", .boolean },
     .{ "float", .float },
@@ -172,10 +174,22 @@ pub const PostOp = union(enum) {
 
 pub const Loop = struct {
     token: *const Token,
+    kind: union(enum) {
+        classic_loop: ClassicLoop,
+        range_loop: RangeLoop,
+    },
+    scope: Scope,
+};
+
+pub const ClassicLoop = struct {
     init_op: ?InitOp,
     expr: ?Expression,
     post_op: ?PostOp,
-    scope: Scope,
+};
+
+pub const RangeLoop = struct {
+    name_of_temporary: *const Token,
+    name_of_iterable: Variable,
 };
 
 pub const Break = struct {
@@ -789,10 +803,55 @@ fn parsePostOp(ctx: *Context) !?PostOp {
 }
 
 fn parseLoop(ctx: *Context) !?Loop {
+    const err_no_loop_body_msg = "expected loop body";
     const token = ctx.getIf(.For) orelse {
         return null;
     };
 
+    if (try parseRangeLoopHeader(ctx)) |range_loop| {
+        return Loop{
+            .token = token,
+            .kind = .{
+                .range_loop = range_loop,
+            },
+            .scope = try parseScope(ctx, true) orelse {
+                return ctx.err(.{
+                    .msg = err_no_loop_body_msg,
+                });
+            },
+        };
+    }
+
+    const classic_loop = try parseClassicLoopHeader(ctx);
+
+    return Loop{
+        .token = token,
+        .kind = .{
+            .classic_loop = classic_loop,
+        },
+        .scope = try parseScope(ctx, true) orelse {
+            return ctx.err(.{
+                .msg = err_no_loop_body_msg,
+            });
+        },
+    };
+}
+
+fn parseRangeLoopHeader(ctx: *Context) !?RangeLoop {
+    const name_of_temporary = ctx.getIf(.Bareword) orelse return null;
+    _ = ctx.getIf(.In) orelse return null;
+    const name_of_iterable = try parseVariable(ctx) orelse {
+        return ctx.err(.{
+            .msg = "expected name of variable to iterate over",
+        });
+    };
+    return RangeLoop{
+        .name_of_iterable = name_of_iterable,
+        .name_of_temporary = name_of_temporary,
+    };
+}
+
+fn parseClassicLoopHeader(ctx: *Context) !ClassicLoop {
     const init_op = try parseInitOp(ctx);
     const left_semicolon = ctx.getIf(.Semicolon);
 
@@ -808,25 +867,17 @@ fn parseLoop(ctx: *Context) !?Loop {
     if (left_semicolon != null) {
         _ = ctx.getIf(.Semicolon) orelse {
             return ctx.err(.{
-                .msg = "",
+                .msg = "expected ';' after loop expression if a ';' is placed before the expression",
             });
         };
 
         post_op = try parsePostOp(ctx);
     }
 
-    const scope = try parseScope(ctx, true) orelse {
-        return ctx.err(.{
-            .msg = "expected ';' between initial operation and loop expression",
-        });
-    };
-
-    return .{
-        .token = token,
+    return ClassicLoop{
         .init_op = init_op,
         .expr = expr,
         .post_op = post_op,
-        .scope = scope,
     };
 }
 

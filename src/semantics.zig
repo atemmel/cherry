@@ -409,6 +409,15 @@ fn analyzeLoop(ctx: *Context, loop: ast.Loop) !void {
     ctx.enterLoop();
     defer ctx.exitLoop();
 
+    switch (loop.kind) {
+        .classic_loop => |l| try analyzeClassicLoop(ctx, l),
+        .range_loop => unreachable,
+    }
+
+    try analyzeScope(ctx, loop.scope);
+}
+
+fn analyzeClassicLoop(ctx: *Context, loop: ast.ClassicLoop) !void {
     if (loop.init_op) |init_op| {
         switch (init_op) {
             .declaration => |decl| try analyzeVarDecl(ctx, decl),
@@ -423,8 +432,6 @@ fn analyzeLoop(ctx: *Context, loop: ast.Loop) !void {
             .call => |call| _ = try analyzeCall(ctx, call),
         }
     }
-
-    try analyzeScope(ctx, loop.scope);
 }
 
 fn analyzeBreak(ctx: *Context, brk: ast.Break) !void {

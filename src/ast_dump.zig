@@ -158,6 +158,16 @@ fn dumpPostOp(post_op: ast.PostOp) void {
 fn dumpLoop(loop: ast.Loop) void {
     defer up();
     leaf("Loop\n", .{});
+    switch (loop.kind) {
+        .classic_loop => |l| dumpClassicLoop(l),
+        .range_loop => unreachable,
+    }
+    dumpScope(loop.scope);
+}
+
+fn dumpClassicLoop(loop: ast.ClassicLoop) void {
+    defer up();
+    leaf("ClassicLoop\n", .{});
     if (loop.init_op) |init_op| {
         dumpInitOp(init_op);
     }
@@ -167,7 +177,6 @@ fn dumpLoop(loop: ast.Loop) void {
     if (loop.post_op) |post_op| {
         dumpPostOp(post_op);
     }
-    dumpScope(loop.scope);
 }
 
 fn dumpBreak(_: ast.Break) void {
