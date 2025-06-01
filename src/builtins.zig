@@ -5,6 +5,7 @@ const gc = @import("gc.zig");
 const interpreter = @import("interpreter.zig");
 const semantics = @import("semantics.zig");
 const pipeline = @import("pipeline.zig");
+const Token = @import("tokens.zig").Token;
 
 const Signature = ast.Signature;
 const TypeInfo = semantics.TypeInfo;
@@ -514,23 +515,7 @@ fn orFn(state: *State, args: []const *Value, call: ast.Call) !Result {
 fn len(state: *State, args: []const *Value, call: ast.Call) !Result {
     var length: i64 = 0;
     for (args) |arg| {
-        switch (arg.as) {
-            .string => |s| {
-                length += @intCast(std.unicode.utf8CountCodepoints(s) catch |err| {
-                    return switch (err) {
-                        error.Utf8OverlongEncoding => Utf8Error.Utf8OverlongEncoding,
-                        error.Utf8EncodesSurrogateHalf => Utf8Error.Utf8EncodesSurrogateHalf,
-                        error.Utf8ExpectedContinuation => Utf8Error.Utf8ExpectedContinuation,
-                        error.Utf8CodepointTooLarge => Utf8Error.Utf8CodepointTooLarge,
-                        error.Utf8InvalidStartByte => Utf8Error.Utf8InvalidStartByte,
-                        error.TruncatedInput => Utf8Error.TruncatedInput,
-                    };
-                });
-            },
-            .integer, .float, .boolean, .closure => unreachable, //TODO: this
-            .list => |l| length += @intCast(l.items.len),
-            .record => |r| length += @intCast(r.count()),
-        }
+        length += @intCast(try genericLen(arg));
     }
     const opt = gc.ValueOptions{
         .origin = call.token,
@@ -538,6 +523,24 @@ fn len(state: *State, args: []const *Value, call: ast.Call) !Result {
     };
     const i = try gc.integer(length, opt);
     return something(i);
+}
+
+pub fn genericLen(value: *const Value) !usize {
+    return switch (value.as) {
+        .string => |s| std.unicode.utf8CountCodepoints(s) catch |err| {
+            return switch (err) {
+                error.Utf8OverlongEncoding => Utf8Error.Utf8OverlongEncoding,
+                error.Utf8EncodesSurrogateHalf => Utf8Error.Utf8EncodesSurrogateHalf,
+                error.Utf8ExpectedContinuation => Utf8Error.Utf8ExpectedContinuation,
+                error.Utf8CodepointTooLarge => Utf8Error.Utf8CodepointTooLarge,
+                error.Utf8InvalidStartByte => Utf8Error.Utf8InvalidStartByte,
+                error.TruncatedInput => Utf8Error.TruncatedInput,
+            };
+        },
+        .integer, .float, .boolean, .closure => unreachable, //TODO: this
+        .list => |l| l.items.len,
+        .record => |r| r.count(),
+    };
 }
 
 const append_info_list_of: TypeInfo = .{
@@ -626,21 +629,25 @@ fn get(state: *State, args: []const *Value, call: ast.Call) !Result {
         .float, .boolean, .list, .string, .record, .closure => unreachable,
     };
 
-    return switch (args[0].as) {
+    return something(try genericGet(state, args[0], @intCast(index), call.token));
+}
+
+pub fn genericGet(state: *State, iterable: *const Value, idx: usize, origin: *const Token) !*Value {
+    return switch (iterable.as) {
         //TODO: range check
-        .list => |l| something(l.items[@intCast(index)]),
+        .list => |l| l.items[idx],
         //TODO: This should be possible
         .string => |s| {
             const view = std.unicode.Utf8View.initUnchecked(s);
             var it = view.iterator();
             var i: i64 = 0;
             while (it.nextCodepointSlice()) |str| {
-                if (i == index) {
+                if (i == idx) {
                     const opt = gc.ValueOptions{
-                        .origin = call.token,
+                        .origin = origin,
                         .origin_module = state.current_module_in_process,
                     };
-                    return something(try gc.string(str, opt));
+                    return try gc.string(str, opt);
                 }
                 i += 1;
             }

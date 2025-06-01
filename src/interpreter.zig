@@ -328,12 +328,27 @@ fn interpretClassicLoop(ctx: *Context, loop: ast.Loop) !Returns {
 }
 
 fn interpretRangeLoop(ctx: *Context, loop: ast.Loop) !Returns {
+    const range = loop.kind.range_loop;
+    const iterable = try evalVariable(ctx, range.name_of_iterable);
     var idx: usize = 0;
-    idx = 1;
-    _ = ctx;
-    _ = loop;
 
-    unreachable;
+    try gc.insertSymbol(range.name_of_temporary.value, undefined);
+    while (idx < try builtins.genericLen(iterable)) : (idx += 1) {
+        const current_value = try builtins.genericGet(ctx.state, iterable, idx, range.name_of_temporary);
+        const entry = gc.getEntry(range.name_of_temporary.value).?;
+        entry.value_ptr.* = current_value;
+        const returned = try interpretScope(ctx, loop.scope, .{ .new_frame = true });
+        switch (returned) {
+            .did_return => |r| {
+                try appendParentRootIfReturnedValue(r);
+                return returned;
+            },
+            .did_not_return, .did_continue => {},
+            .did_break => return .did_not_return,
+        }
+    }
+
+    return .did_not_return;
 }
 
 fn evalReturn(ctx: *Context, ret: ast.Return) !Returns {

@@ -2,8 +2,8 @@ names := [alice bob chris danielle]
 i := 0
 
 for x in $names {
+    assert $x == (get $names $i)
     $i = (+ $i 1)
-    #$i += 1
 }
 
 assert $i == (len $names)
