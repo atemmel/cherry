@@ -838,8 +838,12 @@ fn parseLoop(ctx: *Context) !?Loop {
 }
 
 fn parseRangeLoopHeader(ctx: *Context) !?RangeLoop {
+    const checkpoint = ctx.idx;
     const name_of_temporary = ctx.getIf(.Bareword) orelse return null;
-    _ = ctx.getIf(.In) orelse return null;
+    _ = ctx.getIf(.In) orelse {
+        ctx.idx = checkpoint;
+        return null;
+    };
     const name_of_iterable = try parseVariable(ctx) orelse {
         return ctx.err(.{
             .msg = "expected name of variable to iterate over",
