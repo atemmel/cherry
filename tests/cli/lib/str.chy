@@ -1,0 +1,7 @@
+import str
+
+# is-space
+assert (str'is-space " ")
+
+# trim-left
+assert (str'trim-left " hasse") == hasse

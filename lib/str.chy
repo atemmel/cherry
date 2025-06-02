@@ -1,5 +1,38 @@
 package str
 
+pub fn is-space s {
+    assert (len $s) == 1
+    return $s == " "
+}
+
+pub fn trim-left s {
+    i := 0
+    for ; (< $i (len $s)); (+ $i 1) {
+        if !(is-space (get $s $i)) {
+            break
+        }
+    }
+    return (slice $s $i (len $s))
+}
+
+#{
+pub fn trim-right s {
+    if s == "" {
+        return s
+    }
+    i := (+ 1 (len $s))
+    for ; (<= $i 0); (- $i 1) {
+        if !(is-space (get $s $i)) {
+            break
+        }
+    }
+    return (slice $s 0 $i)
+}
+
+pub fn trim s {
+    return (trim-left (trim-right $s))
+}
+
 pub fn index-of haystack needle {
     needle-len := (len $needle)
     haystack-len := (len $haystack)
@@ -16,3 +49,4 @@ pub fn index-of haystack needle {
     }
     return -1
 }
+#}
