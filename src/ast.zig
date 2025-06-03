@@ -263,6 +263,15 @@ const Context = struct {
         return c.peek();
     }
 
+    pub fn getNewlineOrComma(c: *Context) ?*const Token {
+        if (c.getIf(.Newline)) |token| {
+            return token;
+        } else if (c.getIf(.Semicolon)) |token| {
+            return token;
+        }
+        return null;
+    }
+
     pub const Pair = struct {
         first: *const Token,
         second: *const Token,
@@ -419,7 +428,7 @@ fn parseVarDeclaration(ctx: *Context, opt: struct { needs_newline: bool = true }
 
     if (opt.needs_newline) {
         // the assignment must be followed by a terminating newline or eot
-        if (ctx.getIf(.Newline) == null and !ctx.eot()) {
+        if (ctx.getNewlineOrComma() == null and !ctx.eot()) {
             return ctx.err(.{
                 .msg = "expected newline (\\n)",
             });
@@ -457,7 +466,7 @@ fn parseAssignment(ctx: *Context, opt: struct { needs_newline: bool = true }) !?
 
     if (opt.needs_newline) {
         // the assignment must be followed by a terminating newline or eot
-        if (ctx.getIf(.Newline) == null and !ctx.eot()) {
+        if (ctx.getNewlineOrComma() == null and !ctx.eot()) {
             return ctx.err(.{
                 .msg = "expected newline (\\n)",
             });
@@ -542,7 +551,7 @@ fn parseScope(ctx: *Context, needsNewline: bool) !?Scope {
     if (lbrace == null) {
         return null;
     }
-    _ = ctx.getIf(.Newline);
+    _ = ctx.getNewlineOrComma();
 
     var statements = std.ArrayList(Statement).init(ctx.ally);
     defer statements.deinit();
@@ -557,7 +566,7 @@ fn parseScope(ctx: *Context, needsNewline: bool) !?Scope {
             .trailing = true,
         });
     };
-    if (needsNewline and ctx.getIf(.Newline) == null and !ctx.eot()) {
+    if (needsNewline and ctx.getNewlineOrComma() == null and !ctx.eot()) {
         return ctx.err(.{
             .msg = "expected newline (\\n)",
         });
@@ -966,7 +975,7 @@ fn parsePipeline(ctx: *Context) !?Call {
         innermost_call.redirect_out = redirect_out;
     }
 
-    if (ctx.getIf(.Newline) == null and !ctx.eot()) {
+    if (ctx.getNewlineOrComma() == null and !ctx.eot()) {
         return ctx.err(.{
             .msg = "expected newline (\\n) or additional function arguments",
         });
@@ -1313,7 +1322,7 @@ fn parseRecordLiteral(ctx: *Context) !?RecordLiteral {
             .trailing = true,
         });
     };
-    _ = ctx.getIf(.Newline) orelse {
+    _ = ctx.getNewlineOrComma() orelse {
         return ctx.err(.{
             .msg = "expected newline",
         });
@@ -1342,7 +1351,7 @@ fn parseRecordLiteral(ctx: *Context) !?RecordLiteral {
             });
         };
 
-        _ = ctx.getIf(.Newline) orelse {
+        _ = ctx.getNewlineOrComma() orelse {
             return ctx.err(.{
                 .msg = "expected newline",
             });
