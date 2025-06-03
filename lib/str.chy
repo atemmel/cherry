@@ -15,7 +15,6 @@ pub fn trim-left s {
     return (slice $s $i (len $s))
 }
 
-#{
 pub fn trim-right s {
     if s == "" {
         return s
@@ -49,4 +48,3 @@ pub fn index-of haystack needle {
     }
     return -1
 }
-#}

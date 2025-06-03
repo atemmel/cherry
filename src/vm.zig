@@ -161,6 +161,11 @@ pub const HeapNode = struct {
     }
 };
 
+pub const Local = struct {
+    //name: Token,
+    depth: usize,
+};
+
 pub const Values = std.ArrayList(Value);
 pub const Instructions = std.ArrayList(usize); //TODO: should perhaps be made more compact
 
