@@ -139,9 +139,11 @@ pub const HeapNode = struct {
         string,
     };
 
-    data: union(Kind) {
+    pub const Data = union(Kind) {
         string: []const u8,
-    },
+    };
+
+    data: Data,
     next: ?*HeapNode,
 
     pub fn deinit(self: *HeapNode, ally: std.mem.Allocator) void {
@@ -342,7 +344,25 @@ pub const VM = struct {
         if (std.meta.activeTag(self.peek(1)) != tag) {
             return Errors.UnexpectedTypeOfValue;
         }
-        return @field(self.stack.pop().?, @tagName(tag));
+
+        return switch (tag) {
+            .integer,
+            .boolean,
+            => @field(self.stack.pop().?, @tagName(tag)),
+            .string,
+            => unreachable,
+        };
+    }
+
+    pub fn readConstantString(self: *VM) []const u8 {
+        return self.readConstant().string.data.string;
+    }
+
+    pub fn popHeapField(self: *VM, comptime tag: HeapNode.Kind) Errors!std.meta.TagPayload(HeapNode.Data, tag) {
+        return switch (self.peek(1)) {
+            .integer, .boolean => Errors.UnexpectedTypeOfValue,
+            .string => @field(self.stack.pop().?, @tagName(tag)).data.string,
+        };
     }
 };
 
@@ -409,20 +429,20 @@ pub fn interpret(vm: *VM, chunk: *Chunk) !void {
                 return;
             },
             .define_global => {
-                const name = try vm.popField(.string);
-                try vm.globals.put(name, vm.peek(0));
+                const name = vm.readConstantString();
+                try vm.globals.put(name, vm.peek(1));
                 _ = vm.pop();
             },
             .get_global => {
-                const name = try vm.popField(.string);
+                const name = vm.readConstantString();
                 const global = vm.globals.get(name) orelse {
                     @panic("did not find global");
                 };
                 vm.push(global);
             },
             .set_global => {
-                const name = try vm.popField(.string);
-                const fetch = try vm.globals.fetchPut(name, vm.peek(0));
+                const name = vm.readConstantString();
+                const fetch = try vm.globals.fetchPut(name, vm.peek(1));
                 std.debug.assert(fetch != null);
             },
         }
@@ -510,6 +530,42 @@ test "more basic vm instructions using strings" {
     try chunk.addInstruction(.Add);
     try chunk.addInstruction(.Return);
     try chunk.disassemble("string_concat_chunk");
+
+    _ = try interpret(&vm, &chunk);
+}
+
+test "global variables" {
+    var chunk: Chunk = .{
+        .instructions = Instructions.init(std.testing.allocator),
+        .constants = Values.init(std.testing.allocator),
+    };
+    defer chunk.deinit();
+
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    var vm = try VM.init(arena.allocator(), std.testing.allocator);
+    defer vm.deinit();
+
+    const name = try chunk.addConstant(try vm.allocateString("hasse"));
+    try chunk.addInstruction(.Constant);
+    try chunk.addAdress(name);
+
+    const value = try chunk.addConstant(.{ .integer = 5 });
+    try chunk.addInstruction(.Constant);
+    try chunk.addAdress(value);
+
+    try chunk.addInstruction(.define_global);
+    try chunk.addAdress(name);
+
+    try chunk.addInstruction(.get_global);
+    try chunk.addAdress(name);
+
+    try chunk.addInstruction(.get_global);
+    try chunk.addAdress(name);
+
+    try chunk.addInstruction(.Add);
+    try chunk.addInstruction(.Return);
+    try chunk.disassemble("global_variables_define_and_get_chunk");
 
     _ = try interpret(&vm, &chunk);
 }
