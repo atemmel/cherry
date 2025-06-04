@@ -427,8 +427,9 @@ fn loadImports(state: *State, module: Module) !void {
 }
 
 pub fn testState() State {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     return .{
-        .scratch_arena = std.heap.ArenaAllocator.init(std.testing.allocator),
+        .scratch_arena = arena,
         .verboseLexer = false,
         .verboseParser = false,
         .verboseAnalysis = false,
@@ -438,5 +439,6 @@ pub fn testState() State {
         .env_map = std.process.EnvMap.init(std.testing.allocator),
         .modules = undefined,
         .remaining_args = &.{},
+        .job_table = Jobs.init(arena.allocator()),
     };
 }
