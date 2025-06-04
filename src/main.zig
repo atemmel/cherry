@@ -157,6 +157,7 @@ pub fn main() !u8 {
         .color = std.io.tty.detectConfig(std.io.getStdOut()),
         .env_map = try std.process.getEnvMap(ally),
         .remaining_args = remaining_args,
+        .job_table = pipeline.Jobs.init(arena_allocator),
     };
     defer state.deinit();
 

@@ -28,6 +28,8 @@ pub const Module = struct {
     ast: ast.Module,
 };
 
+pub const Jobs = std.ArrayList(std.process.Child);
+
 pub const State = struct {
     scratch_arena: std.heap.ArenaAllocator,
     modules: std.StringHashMap(Module),
@@ -43,6 +45,10 @@ pub const State = struct {
     analysis: semantics.Analysis = .{},
     env_map: std.process.EnvMap,
     remaining_args: []const []const u8,
+
+    // handle signals
+    is_interrupted: bool = false,
+    job_table: Jobs,
 
     pub fn deinit(self: *State) void {
         self.scratch_arena.deinit();
