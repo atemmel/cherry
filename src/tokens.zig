@@ -1,6 +1,7 @@
 const std = @import("std");
 const ast = @import("ast.zig");
-const PipelineState = @import("pipeline.zig").State;
+const pipeline = @import("pipeline.zig");
+const PipelineState = pipeline.State;
 
 pub const LexerError = error{
     UnterminatedBlockComment,
@@ -467,10 +468,10 @@ const expectEqual = std.testing.expectEqual;
 const expectEqualStrings = std.testing.expectEqualStrings;
 
 test "lex barewords" {
-    var state = testState();
-    defer state.deinit();
+    testState();
+    defer pipeline.deinit();
 
-    const tokens = try lex(&state, "ls -l -a");
+    const tokens = try lex(&pipeline.state, "ls -l -a");
 
     try expectEqual(3, tokens.len);
     try expectEqualStrings("ls", tokens[0].value);
@@ -482,10 +483,10 @@ test "lex barewords" {
 }
 
 test "lex string literals" {
-    var state = testState();
-    defer state.deinit();
+    testState();
+    defer pipeline.deinit();
 
-    const tokens = try lex(&state, "\"hi\" \"hello\"");
+    const tokens = try lex(&pipeline.state, "\"hi\" \"hello\"");
 
     try expectEqual(2, tokens.len);
     try expectEqualStrings("hi", tokens[0].value);
@@ -495,10 +496,10 @@ test "lex string literals" {
 }
 
 test "lex var declaration" {
-    var state = testState();
-    defer state.deinit();
+    testState();
+    defer pipeline.deinit();
 
-    const tokens = try lex(&state, "x := \"hello\"");
+    const tokens = try lex(&pipeline.state, "x := \"hello\"");
 
     try expectEqual(4, tokens.len);
     try expectEqual(Token.Kind.Bareword, tokens[0].kind);
@@ -508,10 +509,10 @@ test "lex var declaration" {
 }
 
 test "lex call with variable" {
-    var state = testState();
-    defer state.deinit();
+    testState();
+    defer pipeline.deinit();
 
-    const tokens = try lex(&state, "say $x");
+    const tokens = try lex(&pipeline.state, "say $x");
 
     try expectEqual(2, tokens.len);
     try expectEqual(Token.Kind.Bareword, tokens[0].kind);
@@ -520,10 +521,10 @@ test "lex call with variable" {
 }
 
 test "lex equals" {
-    var state = testState();
-    defer state.deinit();
+    testState();
+    defer pipeline.deinit();
 
-    const tokens = try lex(&state, "== 1 2");
+    const tokens = try lex(&pipeline.state, "== 1 2");
 
     try expectEqual(3, tokens.len);
     try expectEqual(.Equals, tokens[0].kind);
@@ -535,10 +536,10 @@ test "lex equals" {
 }
 
 test "lex rpar rpar" {
-    var state = testState();
-    defer state.deinit();
+    testState();
+    defer pipeline.deinit();
 
-    const tokens = try lex(&state, "3))");
+    const tokens = try lex(&pipeline.state, "3))");
 
     try expectEqual(3, tokens.len);
     try expectEqual(.IntegerLiteral, tokens[0].kind);
@@ -547,10 +548,10 @@ test "lex rpar rpar" {
 }
 
 test "lex assert equals rpar" {
-    var state = testState();
-    defer state.deinit();
+    testState();
+    defer pipeline.deinit();
 
-    const tokens = try lex(&state, "assert (== \"hello\" $x)");
+    const tokens = try lex(&pipeline.state, "assert (== \"hello\" $x)");
 
     try expectEqual(6, tokens.len);
     try expectEqual(.Bareword, tokens[0].kind);
@@ -562,10 +563,10 @@ test "lex assert equals rpar" {
 }
 
 test "lex assert str str" {
-    var state = testState();
-    defer state.deinit();
+    testState();
+    defer pipeline.deinit();
 
-    const tokens = try lex(&state, "assert (== \"H\" \"H\")");
+    const tokens = try lex(&pipeline.state, "assert (== \"H\" \"H\")");
 
     try expectEqual(6, tokens.len);
     try expectEqual(.Bareword, tokens[0].kind);
@@ -577,10 +578,10 @@ test "lex assert str str" {
 }
 
 test "lex x y newline }" {
-    var state = testState();
-    defer state.deinit();
+    testState();
+    defer pipeline.deinit();
 
-    const tokens = try lex(&state, "\tassert true\n}");
+    const tokens = try lex(&pipeline.state, "\tassert true\n}");
 
     try expectEqual(4, tokens.len);
     try expectEqual(.Bareword, tokens[0].kind);
@@ -590,10 +591,10 @@ test "lex x y newline }" {
 }
 
 test "lex integer" {
-    var state = testState();
-    defer state.deinit();
+    testState();
+    defer pipeline.deinit();
 
-    const tokens = try lex(&state, "3 5");
+    const tokens = try lex(&pipeline.state, "3 5");
 
     try expectEqual(2, tokens.len);
     try expectEqual(.IntegerLiteral, tokens[0].kind);
@@ -603,10 +604,10 @@ test "lex integer" {
 }
 
 test "lex multiline string" {
-    var state = testState();
-    defer state.deinit();
+    testState();
+    defer pipeline.deinit();
 
-    const tokens = try lex(&state,
+    const tokens = try lex(&pipeline.state,
         \\say `
         \\
         \\guys`
@@ -620,10 +621,10 @@ test "lex multiline string" {
 }
 
 test "lex block comment" {
-    var state = testState();
-    defer state.deinit();
+    testState();
+    defer pipeline.deinit();
 
-    const tokens = try lex(&state,
+    const tokens = try lex(&pipeline.state,
         \\hello
         \\#{
         \\  comment
@@ -640,10 +641,10 @@ test "lex block comment" {
 }
 
 test "lex nested block comment" {
-    var state = testState();
-    defer state.deinit();
+    testState();
+    defer pipeline.deinit();
 
-    const tokens = try lex(&state,
+    const tokens = try lex(&pipeline.state,
         \\hello
         \\#{
         \\comment
@@ -664,10 +665,10 @@ test "lex nested block comment" {
 }
 
 test "lex negative number" {
-    var state = testState();
-    defer state.deinit();
+    testState();
+    defer pipeline.deinit();
 
-    const tokens = try lex(&state,
+    const tokens = try lex(&pipeline.state,
         \\say -1
     );
 
@@ -679,10 +680,10 @@ test "lex negative number" {
 }
 
 test "lex subtraction" {
-    var state = testState();
-    defer state.deinit();
+    testState();
+    defer pipeline.deinit();
 
-    const tokens = try lex(&state,
+    const tokens = try lex(&pipeline.state,
         \\(- 3 2)
     );
 
@@ -698,10 +699,10 @@ test "lex subtraction" {
 }
 
 test "lex double dot" {
-    var state = testState();
-    defer state.deinit();
+    testState();
+    defer pipeline.deinit();
 
-    const tokens = try lex(&state,
+    const tokens = try lex(&pipeline.state,
         \\..
     );
 
@@ -711,10 +712,10 @@ test "lex double dot" {
 }
 
 test "lex redirect out" {
-    var state = testState();
-    defer state.deinit();
+    testState();
+    defer pipeline.deinit();
 
-    const tokens = try lex(&state,
+    const tokens = try lex(&pipeline.state,
         \\|>
     );
 
@@ -723,10 +724,10 @@ test "lex redirect out" {
 }
 
 test "lex pipe greater than" {
-    var state = testState();
-    defer state.deinit();
+    testState();
+    defer pipeline.deinit();
 
-    const tokens = try lex(&state,
+    const tokens = try lex(&pipeline.state,
         \\| >
     );
 
@@ -736,10 +737,10 @@ test "lex pipe greater than" {
 }
 
 test "lex redirect in" {
-    var state = testState();
-    defer state.deinit();
+    testState();
+    defer pipeline.deinit();
 
-    const tokens = try lex(&state,
+    const tokens = try lex(&pipeline.state,
         \\<|
     );
 
@@ -748,10 +749,10 @@ test "lex redirect in" {
 }
 
 test "lex less than pipe" {
-    var state = testState();
-    defer state.deinit();
+    testState();
+    defer pipeline.deinit();
 
-    const tokens = try lex(&state,
+    const tokens = try lex(&pipeline.state,
         \\< |
     );
 
@@ -761,10 +762,10 @@ test "lex less than pipe" {
 }
 
 test "lex equals combinations" {
-    var state = testState();
-    defer state.deinit();
+    testState();
+    defer pipeline.deinit();
 
-    const tokens = try lex(&state,
+    const tokens = try lex(&pipeline.state,
         \\-= += /= *=
     );
 
@@ -776,10 +777,10 @@ test "lex equals combinations" {
 }
 
 test "lex arrow" {
-    var state = testState();
-    defer state.deinit();
+    testState();
+    defer pipeline.deinit();
 
-    const tokens = try lex(&state,
+    const tokens = try lex(&pipeline.state,
         \\->
     );
 
@@ -788,10 +789,10 @@ test "lex arrow" {
 }
 
 test "lex record and newline" {
-    var state = testState();
-    defer state.deinit();
+    testState();
+    defer pipeline.deinit();
 
-    const tokens = try lex(&state,
+    const tokens = try lex(&pipeline.state,
         \\[=]
         \\[=]
     );

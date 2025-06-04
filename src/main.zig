@@ -145,7 +145,7 @@ pub fn main() !u8 {
         }
     }
 
-    var state = pipeline.State{
+    pipeline.init(pipeline.State{
         .scratch_arena = std.heap.ArenaAllocator.init(ally),
         .modules = std.StringHashMap(pipeline.Module).init(arena_allocator),
         .verboseLexer = verboseLexer,
@@ -158,30 +158,28 @@ pub fn main() !u8 {
         .env_map = try std.process.getEnvMap(ally),
         .remaining_args = remaining_args,
         .job_table = pipeline.Jobs.init(arena_allocator),
-    };
-    defer state.deinit();
+    });
+    defer pipeline.deinit();
 
-    try gc.init(ally, &state);
+    try gc.init(ally);
     defer gc.deinit();
 
     try modules.init();
     // no cleanup, this is garbage collected
 
-    defer state.env_map.deinit();
-
     if (file == null) {
-        try repl(&state, ally);
+        try repl(ally);
         return 0;
     }
 
     const source = try algo.readfile(arena_allocator, file.?);
 
-    pipeline.run(&state, .{
+    pipeline.run(.{
         .root_module_name = file.?,
         .root_module_source = source,
         .root_scope_already_exists = false,
     }) catch |err| {
-        try pipeline.writeError(&state, err);
+        try pipeline.writeError(err);
         return 1;
     };
     return 0;

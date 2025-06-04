@@ -338,23 +338,23 @@ test "escape backslash" {
 }
 
 test "dealias tilde" {
-    var state = pipeline.testState();
-    defer state.deinit();
-    try state.env_map.put("HOME", "/home/person");
-    defer state.env_map.deinit();
+    pipeline.testState();
+    defer pipeline.deinit();
+    try pipeline.state.env_map.put("HOME", "/home/person");
+    defer pipeline.state.env_map.deinit();
 
-    const dealiased = try dealias(&state, state.scratch_arena.allocator(), "ls ~/config");
+    const dealiased = try dealias(&pipeline.state, pipeline.state.scratch_arena.allocator(), "ls ~/config");
 
     try expectEqualStrings("ls /home/person/config", dealiased);
 }
 
 test "dealias tilde 2" {
-    var state = pipeline.testState();
-    defer state.deinit();
-    try state.env_map.put("HOME", "/home/person");
-    defer state.env_map.deinit();
+    pipeline.testState();
+    defer pipeline.deinit();
+    try pipeline.state.env_map.put("HOME", "/home/person");
+    defer pipeline.state.env_map.deinit();
 
-    const dealiased = try processBareword(&state, state.scratch_arena.allocator(), "~/config");
+    const dealiased = try processBareword(&pipeline.state, pipeline.state.scratch_arena.allocator(), "~/config");
 
     try expectEqualStrings("/home/person/config", dealiased.string);
 }
@@ -362,54 +362,54 @@ test "dealias tilde 2" {
 test "interpolate single value" {
     const ally = std.testing.allocator;
 
-    var state = pipeline.testState();
-    defer state.deinit();
-    try gc.init(ally, &state);
+    pipeline.testState();
+    defer pipeline.deinit();
+    try gc.init(ally);
     defer gc.deinit();
     try gc.pushFrame();
 
     try gc.insertSymbol("y", try gc.string("x", undefined));
 
-    const result = try interpolate(state.scratch_arena.allocator(), "x {y}");
+    const result = try interpolate(pipeline.state.scratch_arena.allocator(), "x {y}");
     try expectEqualStrings("x x", result);
 }
 
 test "interpolate multiple values" {
     const ally = std.testing.allocator;
 
-    var state = pipeline.testState();
-    defer state.deinit();
-    try gc.init(ally, &state);
+    pipeline.testState();
+    defer pipeline.deinit();
+    try gc.init(ally);
     defer gc.deinit();
     try gc.pushFrame();
 
     try gc.insertSymbol("y", try gc.string("x", undefined));
 
-    const result = try interpolate(state.scratch_arena.allocator(), "x {y} {y}");
+    const result = try interpolate(pipeline.state.scratch_arena.allocator(), "x {y} {y}");
     try expectEqualStrings("x x x", result);
 }
 
 test "interpolate no values" {
     const ally = std.testing.allocator;
 
-    var state = pipeline.testState();
-    defer state.deinit();
-    try gc.init(ally, &state);
+    pipeline.testState();
+    defer pipeline.deinit();
+    try gc.init(ally);
     defer gc.deinit();
 
-    const result = try interpolate(state.scratch_arena.allocator(), "x");
+    const result = try interpolate(pipeline.state.scratch_arena.allocator(), "x");
     try expectEqualStrings("x", result);
 }
 
 test "escape interpolation" {
     const ally = std.testing.allocator;
 
-    var state = pipeline.testState();
-    defer state.deinit();
-    try gc.init(ally, &state);
+    pipeline.testState();
+    defer pipeline.deinit();
+    try gc.init(ally);
     defer gc.deinit();
 
-    const result = try interpolate(state.scratch_arena.allocator(), "{{x}}");
+    const result = try interpolate(pipeline.state.scratch_arena.allocator(), "{{x}}");
     try expectEqualStrings("{x}", result);
 }
 

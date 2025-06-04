@@ -3,7 +3,7 @@ const builtin = @import("builtin");
 const ast = @import("ast.zig");
 const values = @import("value.zig");
 const tokens = @import("tokens.zig");
-const PipelineState = @import("pipeline.zig").State;
+const pipeline = @import("pipeline.zig");
 const InterpreterError = @import("interpreter.zig").InterpreterError;
 const Value = @import("value.zig").Value;
 
@@ -42,7 +42,6 @@ const Aliases = std.ArrayList(Alias);
 var gc_list: GcList = undefined;
 var program_stack: ProgramStack = undefined;
 var persistent_allocator: std.mem.Allocator = undefined;
-var pipeline_state: *PipelineState = undefined;
 var n_allocs: usize = 0;
 var allocs_until_collect: usize = 800;
 var total_collections: usize = 0;
@@ -58,13 +57,12 @@ var false_value: *Value = undefined;
 
 pub var aliases: Aliases = undefined; // exposed for convenience
 
-pub fn init(ally: std.mem.Allocator, state: *PipelineState) !void {
+pub fn init(ally: std.mem.Allocator) !void {
     gc_list = try GcList.initCapacity(ally, 128);
     program_stack = try ProgramStack.initCapacity(ally, 16);
     aliases = try Aliases.initCapacity(ally, 16);
 
     persistent_allocator = ally;
-    pipeline_state = state;
 
     if (fast_booleans) {
         true_value = try persistent_allocator.create(values.Value);
@@ -91,6 +89,7 @@ pub fn init(ally: std.mem.Allocator, state: *PipelineState) !void {
 }
 
 pub fn deinit() void {
+    pipeline.state.env_map.deinit();
     defer aliases.deinit();
     defer gc_list.deinit();
     defer program_stack.deinit();
@@ -127,7 +126,7 @@ pub fn dump() void {
             std.debug.print("Begin GC dump\n", .{});
             for (gc_list.items) |value| {
                 std.debug.print("{*} {any} {s}\n", .{ value, value.origin.kind, value.origin.value });
-                pipeline_state.dumpSourceAtToken(value.origin, value.origin_module);
+                pipeline.state.dumpSourceAtToken(value.origin, value.origin_module);
             }
         },
         else => {
@@ -149,9 +148,9 @@ fn sweep() void {
         if (ptr.marked) {
             ptr.unmark();
         } else { // collect
-            if (pipeline_state.verboseGc) {
+            if (pipeline.state.verboseGc) {
                 std.debug.print("collecting: {*} {any} {s}\n", .{ ptr, ptr.origin.kind, ptr.origin.value });
-                pipeline_state.dumpSourceAtToken(ptr.origin, ptr.origin_module);
+                pipeline.state.dumpSourceAtToken(ptr.origin, ptr.origin_module);
             }
             ptr.deinit(persistent_allocator);
             persistent_allocator.destroy(ptr);
@@ -418,7 +417,7 @@ fn markFrame(frame: *Frame) void {
 pub fn insertSymbol(key: []const u8, value: *Value) !void {
     const frame = topFrame();
     if (frame.symtable.get(key) != null) {
-        pipeline_state.dumpSourceAtToken(value.origin, value.origin_module);
+        pipeline.state.dumpSourceAtToken(value.origin, value.origin_module);
         return InterpreterError.VariableAlreadyDeclared;
     }
     return try frame.symtable.put(try persistent_allocator.dupe(u8, key), value);

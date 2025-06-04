@@ -21,7 +21,6 @@ const Mode = enum {
 };
 
 const State = struct {
-    pipeline_state: *pipeline.State,
     out_writer: std.io.BufferedWriter(4096, std.fs.File.Writer),
     history: History,
     cwd_buffer: [std.fs.max_path_bytes]u8 = undefined,
@@ -46,10 +45,6 @@ const State = struct {
         self.persistent_arena.deinit();
         self.completion_arena.deinit();
         self.term.restore() catch unreachable; // no balls
-    }
-
-    pub fn homeOrEmpty(self: *const State) []const u8 {
-        return self.pipeline_state.readEnv("HOME") orelse "";
     }
 
     pub fn writer(self: *State) @TypeOf(self.out_writer.writer()) {
@@ -98,7 +93,7 @@ const State = struct {
     }
 
     pub fn writePrefix(self: *State) !void {
-        const home = self.homeOrEmpty();
+        const home = pipeline.state.homeOrEmpty();
         const out = self.writer();
         terminal.clearLine(out, self.prefixLen() + 7 + self.length);
         switch (self.mode) {
@@ -128,7 +123,7 @@ const State = struct {
     }
 
     pub fn prefixLen(self: *State) usize {
-        const home = self.homeOrEmpty();
+        const home = pipeline.state.homeOrEmpty();
         return switch (self.mode) {
             .prompt => if (startsWith(u8, self.cwd, home)) self.cwd.len - home.len + 1 + 4 else self.cwd.len + 4,
             .search => blk: {
@@ -158,12 +153,11 @@ fn fmts(writer: anytype, comptime str: []const u8) void {
 //TODO
 // - display commands in a nice way (colors, etc)
 
-pub fn repl(pipeline_state: *pipeline.State, persistent_allocator: std.mem.Allocator) !void {
+pub fn repl(persistent_allocator: std.mem.Allocator) !void {
     var persistent_arena = std.heap.ArenaAllocator.init(persistent_allocator);
     var state = State{
         .history = try History.initCapacity(persistent_arena.allocator(), 512),
         .out_writer = std.io.bufferedWriter(std.io.getStdOut().writer()),
-        .pipeline_state = pipeline_state,
         .term = try Term.init(),
         .history_scroll_idx = 0,
         .persistent_arena = &persistent_arena,
@@ -173,7 +167,7 @@ pub fn repl(pipeline_state: *pipeline.State, persistent_allocator: std.mem.Alloc
 
     main.active_term = &state.term;
 
-    const home = state.homeOrEmpty();
+    const home = pipeline.state.homeOrEmpty();
 
     if (state.histfile_path.len == 0) {
         state.histfile_path = try std.fs.path.join(
@@ -321,7 +315,7 @@ fn eval(state: *State) !void {
     // clearing the scratch arena resets GC debug info, among other things
     // only done for release builds
     defer if (builtin.mode != .Debug) {
-        _ = state.pipeline_state.scratch_arena.reset(.retain_capacity);
+        _ = pipeline.state.scratch_arena.reset(.retain_capacity);
     };
     appendHistory(state) catch |e| {
         state.print("Could not write history, {any}\r\n", .{e});
@@ -338,16 +332,16 @@ fn eval(state: *State) !void {
     }
 
     const cmd = try aliasLookup(state, state.line());
-    const source = try state.pipeline_state.scratch_arena.allocator().dupe(u8, cmd);
+    const source = try pipeline.state.scratch_arena.allocator().dupe(u8, cmd);
 
-    pipeline.run(state.pipeline_state, .{
+    pipeline.run(.{
         .root_module_name = "interactive",
         .root_module_source = source,
         .root_scope_already_exists = true,
     }) catch |e| {
-        const maybe_module = state.pipeline_state.modules.get("interactive");
+        const maybe_module = pipeline.state.modules.get("interactive");
         const tokens = if (maybe_module != null) maybe_module.?.tokens else &.{};
-        if (state.pipeline_state.verboseInterpretation) {
+        if (pipeline.state.verboseInterpretation) {
             std.debug.print("Error has occured while evaluating: {any}\nTokens: ", .{e});
             for (tokens) |tok| {
                 std.debug.print("{any}\n", .{tok.kind});
@@ -358,7 +352,7 @@ fn eval(state: *State) !void {
         if (should_try_auto_cd and tryAutoCd(state, tokens[0].value)) {
             // All ok
         } else {
-            pipeline.writeError(state.pipeline_state, e) catch |err| {
+            pipeline.writeError(e) catch |err| {
                 //TODO: handle these
                 state.print("Error: {any}\r\n", .{err});
                 state.flush();
@@ -413,17 +407,17 @@ fn appendHistory(state: *State) !void {
 fn readHistory(state: *State) !void {
     const file = std.fs.cwd().openFile(state.histfile_path, .{}) catch |e|
         switch (e) {
-        error.FileNotFound => return,
-        else => {
-            fmt(
-                state.writer(),
-                "Could not open histfile at {s}, error: {}\r\n",
-                .{ state.histfile_path, e },
-            );
-            state.flush();
-            return;
-        },
-    };
+            error.FileNotFound => return,
+            else => {
+                fmt(
+                    state.writer(),
+                    "Could not open histfile at {s}, error: {}\r\n",
+                    .{ state.histfile_path, e },
+                );
+                state.flush();
+                return;
+            },
+        };
     defer file.close();
 
     const ally = state.persistent_arena.allocator();
@@ -505,7 +499,7 @@ fn tryAutocompletePath2(state: *State) !void {
     const arena = state.completion_arena.allocator();
 
     const original_line = state.line();
-    const processed_bareword = try strings.processBareword(state.pipeline_state, arena, original_line);
+    const processed_bareword = try strings.processBareword(&pipeline.state, arena, original_line);
 
     const line = switch (processed_bareword) {
         .string => |s| s,
@@ -793,17 +787,17 @@ fn reverseSearch(state: *State, reset: enum { reset, forward }) !void {
 fn readRc(state: *State) !void {
     const file = std.fs.cwd().openFile(state.rc_path, .{}) catch |e|
         switch (e) {
-        error.FileNotFound => return,
-        else => {
-            fmt(
-                state.writer(),
-                "Could not open histfile at {s}, error: {}\r\n",
-                .{ state.rc_path, e },
-            );
-            state.flush();
-            return;
-        },
-    };
+            error.FileNotFound => return,
+            else => {
+                fmt(
+                    state.writer(),
+                    "Could not open histfile at {s}, error: {}\r\n",
+                    .{ state.rc_path, e },
+                );
+                state.flush();
+                return;
+            },
+        };
     defer file.close();
 
     const ally = state.persistent_arena.allocator();
@@ -817,7 +811,7 @@ fn readRc(state: *State) !void {
     }
     state.flush();
 
-    pipeline.run(state.pipeline_state, .{
+    pipeline.run(.{
         .root_module_name = "cherryrc",
         .root_module_source = rc_src,
         .root_scope_already_exists = true,
@@ -869,13 +863,12 @@ fn testReplState() State {
         .history = undefined,
         .term = undefined,
         .history_scroll_idx = undefined,
-        .pipeline_state = undefined,
     };
 }
 
 test "Single alias lookup" {
-    var pipeline_state = pipelineTestState();
-    try gc.init(std.testing.allocator, &pipeline_state);
+    pipelineTestState();
+    try gc.init(std.testing.allocator);
     defer gc.deinit();
 
     var state = testReplState();
@@ -891,8 +884,8 @@ test "Single alias lookup" {
 }
 
 test "Single alias lookup failure" {
-    var pipeline_state = pipelineTestState();
-    try gc.init(std.testing.allocator, &pipeline_state);
+    pipelineTestState();
+    try gc.init(std.testing.allocator);
     defer gc.deinit();
     var state = testReplState();
 
@@ -907,8 +900,8 @@ test "Single alias lookup failure" {
 }
 
 test "Single alias lookup success but keeps arg" {
-    var pipeline_state = pipelineTestState();
-    try gc.init(std.testing.allocator, &pipeline_state);
+    pipelineTestState();
+    try gc.init(std.testing.allocator);
     defer gc.deinit();
     var state = testReplState();
 
@@ -923,8 +916,8 @@ test "Single alias lookup success but keeps arg" {
 }
 
 test "Nested alias lookup success" {
-    var pipeline_state = pipelineTestState();
-    try gc.init(std.testing.allocator, &pipeline_state);
+    pipelineTestState();
+    try gc.init(std.testing.allocator);
     defer gc.deinit();
     var state = testReplState();
 

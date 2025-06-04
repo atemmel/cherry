@@ -54,8 +54,12 @@ pub const State = struct {
         self.scratch_arena.deinit();
     }
 
-    pub fn readEnv(state: *const State, env: []const u8) ?[]const u8 {
-        return state.env_map.get(env);
+    pub fn readEnv(self: *const State, env: []const u8) ?[]const u8 {
+        return self.env_map.get(env);
+    }
+
+    pub fn homeOrEmpty(self: *const State) []const u8 {
+        return self.readEnv("HOME") orelse "";
     }
 
     pub fn reportError(self: *State, report: ErrorReport) void {
@@ -71,9 +75,9 @@ pub const State = struct {
         trailing_error: bool,
     };
 
-    pub fn errorInfo(state: *const State) ErrorInfo {
-        const module = state.modules.get(state.current_module_in_process) orelse unreachable;
-        const report = state.error_report orelse @panic("Developer error: No error stored");
+    pub fn errorInfo(self: *const State) ErrorInfo {
+        const module = self.modules.get(self.current_module_in_process) orelse unreachable;
+        const report = self.error_report orelse @panic("Developer error: No error stored");
         const bad_token = report.offending_token;
         const src_ptr_begin = module.source.ptr;
         const src_ptr_offset = bad_token.value.ptr;
@@ -116,8 +120,8 @@ pub const State = struct {
         };
     }
 
-    fn errorInfoPtr(state: *const State, token: *const Token, module_name: []const u8) ErrorInfo {
-        const module = state.modules.get(module_name) orelse unreachable;
+    fn errorInfoPtr(self: *const State, token: *const Token, module_name: []const u8) ErrorInfo {
+        const module = self.modules.get(module_name) orelse unreachable;
         const src_ptr_begin = module.source.ptr;
         const src_ptr_offset = token.value.ptr;
         const src_offset = @intFromPtr(src_ptr_offset) - @intFromPtr(src_ptr_begin);
@@ -158,13 +162,21 @@ pub const State = struct {
         };
     }
 
-    pub fn dumpSourceAtToken(state: *const State, token: *const Token, module_name: []const u8) void {
-        const source_info = errorInfoPtr(state, token, module_name);
+    pub fn dumpSourceAtToken(self: *const State, token: *const Token, module_name: []const u8) void {
+        const source_info = errorInfoPtr(self, token, module_name);
         const writer = std.io.getStdErr().writer();
         writer.print("{s}\n", .{source_info.row_str}) catch {};
         writeErrorSource(source_info, writer) catch {};
     }
 };
+
+pub fn init(arg: State) void {
+    state = arg;
+}
+
+pub fn deinit() void {
+    state.deinit();
+}
 
 fn logTime(comptime prefix: []const u8, start_us: i64, stop_us: i64) void {
     //const s = @as(f64, @floatFromInt(stop_us - start_us)) / std.time.us_per_ms;
@@ -185,17 +197,17 @@ fn logTime(comptime prefix: []const u8, start_us: i64, stop_us: i64) void {
     }
 }
 
-pub fn writeError(state: *State, err: PipelineError) !void {
+pub fn writeError(err: PipelineError) !void {
     const writer = std.io.getStdErr().writer();
     switch (err) {
         error.UnterminatedBlockComment => {
-            try writeLexerError(state, writer);
+            try writeLexerError(writer);
         },
         error.ParseFailed => {
-            try writeAstError(state, writer);
+            try writeAstError(writer);
         },
         error.SemanticError => {
-            try writeSemanticsError(state, writer);
+            try writeSemanticsError(writer);
         },
         error.ArgsCountMismatch,
         error.AssertionFailed,
@@ -214,7 +226,7 @@ pub fn writeError(state: *State, err: PipelineError) !void {
         error.VariableAlreadyDeclared,
         error.NotImplemented,
         => {
-            try writeRuntimeError(state, writer);
+            try writeRuntimeError(writer);
         },
         error.OutOfMemory,
         error.FileNotFound,
@@ -275,7 +287,7 @@ pub fn writeError(state: *State, err: PipelineError) !void {
     }
 }
 
-pub fn writeLexerError(state: *State, writer: anytype) !void {
+pub fn writeLexerError(writer: anytype) !void {
     //TODO: handle error information better when there are no tokens
     //const info = state.errorInfo();
     //const file = state.filename;
@@ -284,14 +296,14 @@ pub fn writeLexerError(state: *State, writer: anytype) !void {
     try writer.print("<{s}>: lexer error\n", .{state.current_module_in_process});
 }
 
-pub fn writeAstError(state: *State, writer: anytype) !void {
+pub fn writeAstError(writer: anytype) !void {
     const info = state.errorInfo();
     const file = state.current_module_in_process;
     try writer.print("<{s}>:{}:{}: syntax error: {s}\n{s}\n", .{ file, info.row, info.col, info.msg, info.row_str });
     try writeErrorSource(info, writer);
 }
 
-pub fn writeSemanticsError(state: *State, writer: anytype) !void {
+pub fn writeSemanticsError(writer: anytype) !void {
     assert(state.analysis.errors.len > 0);
     for (state.analysis.errors) |error_report| {
         state.error_report = error_report;
@@ -302,7 +314,7 @@ pub fn writeSemanticsError(state: *State, writer: anytype) !void {
     }
 }
 
-pub fn writeRuntimeError(state: *State, writer: anytype) !void {
+pub fn writeRuntimeError(writer: anytype) !void {
     const info = state.errorInfo();
     const file = state.current_module_in_process;
     try writer.print("<{s}>:{}:{}: runtime error: {s}\n{s}\n", .{ file, info.row, info.col, info.msg, info.row_str });
@@ -328,14 +340,14 @@ pub const RunOptions = struct {
     root_scope_already_exists: bool,
 };
 
-pub fn run(state: *State, opt: RunOptions) PipelineError!void {
-    const root_module = try loadModuleFromSource(state, opt.root_module_name, opt.root_module_source);
-    try loadImports(state, root_module);
+pub fn run(opt: RunOptions) PipelineError!void {
+    const root_module = try loadModuleFromSource(opt.root_module_name, opt.root_module_source);
+    try loadImports(root_module);
     state.current_module_in_process = opt.root_module_name;
 
     if (state.useSemanticAnalysis) {
         const analyze_start_us = microTimestamp();
-        try semantics.analyze(state);
+        try semantics.analyze(&state);
 
         const analyze_stop_us = microTimestamp();
         if (state.verboseAnalysis) {
@@ -344,7 +356,7 @@ pub fn run(state: *State, opt: RunOptions) PipelineError!void {
     }
 
     const interpret_start_us = microTimestamp();
-    try interpreter.interpret(state, .{
+    try interpreter.interpret(&state, .{
         .root_module_name = opt.root_module_name,
         .root_scope_already_exists = opt.root_scope_already_exists,
     });
@@ -355,7 +367,7 @@ pub fn run(state: *State, opt: RunOptions) PipelineError!void {
     }
 }
 
-pub fn loadModuleFromSource(state: *State, name: []const u8, source: []const u8) !Module {
+pub fn loadModuleFromSource(name: []const u8, source: []const u8) !Module {
     state.current_module_in_process = name;
     const result = try state.modules.getOrPut(name);
 
@@ -374,7 +386,7 @@ pub fn loadModuleFromSource(state: *State, name: []const u8, source: []const u8)
 
     // text -> tokens
     const lexer_start_us = microTimestamp();
-    const lexed_tokens = try tokens.lex(state, source);
+    const lexed_tokens = try tokens.lex(&state, source);
     const lexer_stop_us = microTimestamp();
 
     partial_module.tokens = lexed_tokens;
@@ -385,7 +397,7 @@ pub fn loadModuleFromSource(state: *State, name: []const u8, source: []const u8)
 
     // tokens -> ast
     const ast_start_us = microTimestamp();
-    const parsed_ast = try ast.parse(state, lexed_tokens, name);
+    const parsed_ast = try ast.parse(&state, lexed_tokens, name);
     const ast_stop_us = microTimestamp();
 
     partial_module.ast = parsed_ast;
@@ -398,7 +410,7 @@ pub fn loadModuleFromSource(state: *State, name: []const u8, source: []const u8)
     return partial_module.*;
 }
 
-fn loadImports(state: *State, module: Module) !void {
+fn loadImports(module: Module) !void {
     const scratch = state.scratch_arena.allocator();
     const std_import_dir = "./lib/";
     var it = module.ast.imports.valueIterator();
@@ -420,15 +432,23 @@ fn loadImports(state: *State, module: Module) !void {
         };
 
         //TODO: check if import already exists
-        const imported_module = try loadModuleFromSource(state, to_import.name, source);
+        const imported_module = try loadModuleFromSource(to_import.name, source);
         //TODO: recursively import parent modules
         try state.modules.put(to_import.name, imported_module);
     }
 }
 
-pub fn testState() State {
+pub var state: State = undefined;
+
+pub fn sigintHandler(signo: i32) callconv(.c) void {
+    if (signo == std.os.linux.SIG.INT) {
+        std.debug.print("SIGINT\n");
+    }
+}
+
+pub fn testState() void {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
-    return .{
+    state = .{
         .scratch_arena = arena,
         .verboseLexer = false,
         .verboseParser = false,
