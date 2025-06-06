@@ -137,9 +137,9 @@ pub const Term = struct {
         };
     }
 
-    pub fn restore(self: Term) !void {
-        defer self.tty.close();
+    pub fn restore(self: *Term) !void {
         try posix.tcsetattr(self.tty.handle, .FLUSH, self.original_termios);
+        self.tty.close();
     }
 
     pub fn readByte(self: Term) !u8 {
@@ -272,7 +272,7 @@ const escape_key_codes = blk: {
             //.{ "[23~", .{ .function = 11 } },
             //.{ "[24~", .{ .function = 12 } },
             //.{ "a", .{ .alt = 'a' } },
-            .{ "b",Term.Event{ .alt = 'b' } },
+            .{ "b", Term.Event{ .alt = 'b' } },
             //.{ "c", .{ .alt = 'c' } },
             //.{ "d", .{ .alt = 'd' } },
             //.{ "e", .{ .alt = 'e' } },

@@ -28,8 +28,6 @@ pub const Module = struct {
     ast: ast.Module,
 };
 
-pub const Jobs = std.ArrayList(std.process.Child);
-
 pub const State = struct {
     scratch_arena: std.heap.ArenaAllocator,
     modules: std.StringHashMap(Module),
@@ -48,7 +46,6 @@ pub const State = struct {
 
     // handle signals
     is_interrupted: bool = false,
-    job_table: Jobs,
 
     pub fn deinit(self: *State) void {
         self.scratch_arena.deinit();
@@ -441,13 +438,11 @@ fn loadImports(module: Module) !void {
 pub var state: State = undefined;
 
 pub fn sigintHandler(signo: i32) callconv(.c) void {
-    if (signo == std.os.linux.SIG.INT) {
-        std.debug.print("SIGINT\n");
-    }
+    _ = signo;
 }
 
 pub fn testState() void {
-    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    const arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     state = .{
         .scratch_arena = arena,
         .verboseLexer = false,
@@ -459,6 +454,5 @@ pub fn testState() void {
         .env_map = std.process.EnvMap.init(std.testing.allocator),
         .modules = undefined,
         .remaining_args = &.{},
-        .job_table = Jobs.init(arena.allocator()),
     };
 }

@@ -191,6 +191,14 @@ pub fn repl(persistent_allocator: std.mem.Allocator) !void {
 
     const out = state.writer();
 
+    var sa = std.os.linux.Sigaction{
+        .handler = .{ .handler = pipeline.sigintHandler },
+        .mask = std.os.linux.empty_sigset,
+        .flags = std.os.linux.SA.RESTART | std.os.linux.SA.ONSTACK,
+    };
+
+    _ = std.os.linux.sigaction(std.os.linux.SIG.INT, &sa, null);
+
     while (true) {
         try state.writePrefix();
         const event = try state.term.readEvent();
@@ -198,7 +206,9 @@ pub fn repl(persistent_allocator: std.mem.Allocator) !void {
             .key => |key| {
                 switch (key) {
                     '\r' => switch (state.mode) {
-                        .prompt => try eval(&state),
+                        .prompt => {
+                            try eval(&state);
+                        },
                         .search => {
                             if (state.search_idx) |idx| { // if holds a match from history
                                 state.flush();

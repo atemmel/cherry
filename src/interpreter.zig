@@ -674,7 +674,12 @@ fn evalProc(ctx: *Context, call: ast.Call) !Result {
             }
             return e;
         };
-        last_code = tm.Exited;
+        last_code = switch (tm) {
+            .Exited => |e| e,
+            .Signal => |e| @truncate(e),
+            .Unknown => |e| @truncate(e),
+            .Stopped => |e| @truncate(e),
+        };
     }
 
     if (capturing) {
