@@ -385,7 +385,7 @@ pub fn moveLeft(writer: anytype, steps: usize) void {
 }
 
 pub fn clear(writer: anytype) void {
-    _ = writer.print("\x1B[2J", .{}) catch unreachable;
+    _ = writer.print("\x1B[3J\x1B[2J", .{}) catch unreachable;
 }
 
 pub fn clearRect(writer: anytype, pos: Vec2, rect: Vec2) void {
