@@ -245,6 +245,13 @@ pub fn repl(persistent_allocator: std.mem.Allocator) !void {
                         state.cursor = 0;
                         state.mode = .prompt;
                     },
+                    'h' => {
+                        const last_space = std.mem.lastIndexOfScalar(u8, state.line(), ' ');
+                        terminal.clearLine(out, state.length + state.prefixLen());
+                        state.length = last_space orelse 0;
+                        state.cursor = last_space orelse 0;
+                    },
+
                     'u' => {
                         terminal.clearLine(out, state.length + state.prefixLen());
                         state.length = 0;
