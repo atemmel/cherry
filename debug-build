@@ -1,0 +1,2 @@
+#!/bin/cherry
+zig build "-Dtarget=x86_64-linux-gnu" "-Dcpu=x86_64"

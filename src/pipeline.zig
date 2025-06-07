@@ -369,7 +369,7 @@ pub fn loadModuleFromSource(name: []const u8, source: []const u8) !Module {
     const result = try state.modules.getOrPut(name);
 
     // never directly overwrite existing modules
-    if (!result.found_existing) {
+    if (!result.found_existing or std.mem.eql(u8, name, "interactive")) {
         result.value_ptr.* = .{
             .ast = undefined,
             .filename = name,
