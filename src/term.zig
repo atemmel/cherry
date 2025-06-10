@@ -39,6 +39,10 @@ pub const BoldHi = struct {
     pub const gray = "\x1b[1;98m";
 };
 
+pub const Underline = struct {
+    pub const red = "\x1b[4:3m\x1b[58:2::240:143:104";
+};
+
 // shoutout to big man over at:
 // https://zig.news/lhp/want-to-create-a-tui-application-the-basics-of-uncooked-terminal-io-17gm
 
@@ -173,8 +177,8 @@ pub const Term = struct {
             unreachable;
         }
         return .{
-            .x = l_size.row,
-            .y = l_size.col,
+            .x = l_size.col,
+            .y = l_size.row,
         };
     }
 

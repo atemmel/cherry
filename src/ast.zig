@@ -452,6 +452,11 @@ fn parseAssignment(ctx: *Context, opt: struct { needs_newline: bool = true }) !?
     const variable = try parseVariable(ctx) orelse return null;
     const accessor = try parseAccessorChain(ctx);
 
+    if (ctx.eot()) {
+        ctx.idx = checkpoint;
+        return null;
+    }
+
     const token = switch (ctx.peek().kind) {
         .Assign, .AddAssign, .SubAssign, .MulAssign, .DivAssign, .PipeAssign => ctx.peek(),
         else => {

@@ -275,7 +275,6 @@ fn lexVariable(state: *LexState) ?Token {
     const begin = state.idx;
     while (!state.eof() and (std.ascii.isAlphabetic(state.get()) or state.get() == '-')) : (state.next()) {}
     const end = state.idx;
-    if (begin == end) unreachable;
     state.idx -= 1;
     return .{
         .kind = .Variable,

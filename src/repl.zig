@@ -11,6 +11,7 @@ const Term = terminal.Term;
 const Color = terminal.Color;
 const Hi = terminal.Hi;
 const BoldHi = terminal.BoldHi;
+const Underline = terminal.Underline;
 const startsWith = std.mem.startsWith;
 
 const History = std.ArrayList([]const u8);
@@ -99,7 +100,8 @@ const State = struct {
 
     pub fn writePrefix(self: *State) !void {
         const out = self.writer();
-        terminal.clearLine(out, self.prefixLen() + 7 + self.length);
+        const size = self.term.size();
+        terminal.clearLine(out, size.x);
         switch (self.mode) {
             .prompt => {
                 try self.writePromptAndLine();
@@ -129,7 +131,9 @@ const State = struct {
             .root_module_source = self.line(),
             .arena = &self.repl_loop_arena,
         }) catch {
-            fmt(out, "{s}{s}{s}\r", .{ Color.yellow, self.line(), Color.white });
+            const info = pipeline.state.errorInfo();
+            //TODO: check for COLORTERM=truecolor
+            fmt(out, "{s}{s}{s}   {s}{s}\r", .{ Hi.red, self.line(), Hi.black, info.msg, Color.white });
             return;
         };
         if (mod.tokens.len == 0) {
@@ -140,10 +144,51 @@ const State = struct {
         while (n_token < mod.tokens.len) : (n_token += 1) {
             const token = mod.tokens[n_token];
             const token_idc = token.indicies(self.line());
-            fmt(out, "{s}{s}", .{
-                self.line()[n_src..token_idc.from],
-                self.line()[token_idc.from..token_idc.to],
-            });
+            fmt(out, "{s}", .{self.line()[n_src..token_idc.from]});
+            const color = switch (token.kind) {
+                .If,
+                .Else,
+                .For,
+                .Fn,
+                .In,
+                .Return,
+                .Break,
+                .Continue,
+                .True,
+                .False,
+                .Import,
+                .Pub,
+                => Color.cyan,
+                .Bang,
+                .Colon,
+                .Semicolon,
+                .Assign,
+                .Pipe,
+                .LParens,
+                .RParens,
+                .LBrace,
+                .RBrace,
+                .LBracket,
+                .RBracket,
+                .RedirectOut,
+                .RedirectIn,
+                .SingleQuote,
+                .Equals,
+                .NotEquals,
+                .AddAssign,
+                .SubAssign,
+                .MulAssign,
+                .DivAssign,
+                .PipeAssign,
+                .RightArrow,
+                => Hi.white,
+                .StringLiteral => Color.green,
+                .IntegerLiteral => Color.purple,
+                .Variable => BoldHi.blue,
+                .Bareword, .EmptyRecord, .Newline => "",
+            };
+            const color_end = if (color.len > 0) Color.white else "";
+            fmt(out, "{s}{s}{s}", .{ color, self.line()[token_idc.from..token_idc.to], color_end });
             n_src = token_idc.to;
         }
         fmt(out, "{s}\r", .{self.line()[n_src..]});

@@ -126,7 +126,7 @@ fn interpretVarDecl(ctx: *Context, var_decl: ast.VarDecl) !void {
             return errRequiresValue(ctx, ptr);
         },
         .values => |vals| {
-            assert(var_decl.tokens.len == vals.len);
+            assert(var_decl.tokens.len == vals.len); //TODO: this should not be an assertion, but a runtime error
             for (var_decl.tokens, 0..) |tok, i| {
                 const value = vals[i];
                 try gc.insertSymbol(tok.value, value);
