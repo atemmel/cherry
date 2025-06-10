@@ -39,6 +39,10 @@ pub fn lookup(module_name: []const u8) ?*InternalModule {
     return internal_module_table.get(module_name);
 }
 
+const ExportedVariable = struct {
+    name: []const u8,
+};
+
 var fs_module = InternalModule{
     .builtins_table = builtins.BuiltinsTable.initComptime(.{
         .{ "exists", fs_exists },
@@ -139,6 +143,10 @@ pub fn init() !void {
     for (internal_module_table.values()) |*mod| {
         mod.*.record = try gc.emptyRecord(no_tracing);
     }
-    const completions = internal_module_table.get("completions") orelse unreachable;
-    try completions.record.as.record.putNoClobber("map", try gc.emptyRecord(no_tracing));
+
+    // completions
+    {
+        const completions = internal_module_table.get("completions").?;
+        try completions.record.as.record.putNoClobber("map", try gc.emptyRecord(no_tracing));
+    }
 }

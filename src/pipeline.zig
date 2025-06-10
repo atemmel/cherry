@@ -337,6 +337,12 @@ pub const RunOptions = struct {
     root_scope_already_exists: bool,
 };
 
+pub const SemanticsOptions = struct {
+    root_module_name: []const u8,
+    root_module_source: []const u8,
+    arena: ?*std.heap.ArenaAllocator = null,
+};
+
 pub fn run(opt: RunOptions) PipelineError!void {
     const root_module = try loadModuleFromSource(opt.root_module_name, opt.root_module_source);
     try loadImports(root_module);
@@ -362,6 +368,30 @@ pub fn run(opt: RunOptions) PipelineError!void {
     if (state.verboseInterpretation) {
         logTime("Interpretation: ", interpret_start_us, interpret_stop_us);
     }
+}
+
+pub fn runOnlySemantics(opt: SemanticsOptions) !Module {
+    const old_allocator = state.scratch_arena;
+    defer state.scratch_arena = old_allocator;
+    if (opt.arena) |arena| {
+        state.scratch_arena = arena.*;
+    }
+    defer if (opt.arena) |arena| {
+        arena.* = state.scratch_arena;
+    };
+    const root_module = try loadModuleFromSource(opt.root_module_name, opt.root_module_source);
+    try loadImports(root_module);
+    state.current_module_in_process = opt.root_module_name;
+
+    if (state.useSemanticAnalysis) {
+        const analyze_start_us = microTimestamp();
+        try semantics.analyze(&state);
+        const analyze_stop_us = microTimestamp();
+        if (state.verboseAnalysis) {
+            logTime("Analysis: ", analyze_start_us, analyze_stop_us);
+        }
+    }
+    return root_module;
 }
 
 pub fn loadModuleFromSource(name: []const u8, source: []const u8) !Module {

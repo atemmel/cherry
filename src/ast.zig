@@ -9,6 +9,7 @@ pub const dump = @import("ast_dump.zig").dump;
 pub const errors = error{ParseFailed} || std.mem.Allocator.Error;
 
 const assert = std.debug.assert;
+const main = @import("main.zig");
 
 const string_primitive_lookup = std.StaticStringMap(semantics.TypeInfo).initComptime(.{
     .{ "bool", .boolean },
@@ -292,8 +293,12 @@ const Context = struct {
     }
 
     pub fn err(c: *Context, s: struct { msg: []const u8, trailing: bool = false }) errors {
-        if (builtin.mode == .Debug) {
+        const inside_repl = std.mem.eql(u8, "interactive", c.state.current_module_in_process);
+        if (builtin.mode == .Debug and !inside_repl) {
             const bar = "===============================================";
+            if (main.active_term) |t| {
+                t.restore() catch {};
+            }
             std.debug.print("Encountered an error while parsing the ast:\n\n{s}\n\n", .{bar});
             std.debug.dumpCurrentStackTrace(null);
             std.debug.print("\n{s}\n\nThe actual error message produced is as follows:\n\n", .{bar});

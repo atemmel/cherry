@@ -26,6 +26,8 @@ const State = struct {
     cwd_buffer: [std.fs.max_path_bytes]u8 = undefined,
     cwd: []const u8 = "",
     buffer: [4096]u8 = undefined,
+    prior_buffer: [4096]u8 = undefined,
+    prior_slice: []const u8 = "",
     length: usize = 0,
     cursor: usize = 0,
     term: Term,
@@ -35,7 +37,7 @@ const State = struct {
     search_reached_end: bool = false,
     rc_path: []const u8 = "",
     persistent_arena: *std.heap.ArenaAllocator,
-    completion_arena: std.heap.ArenaAllocator,
+    repl_loop_arena: std.heap.ArenaAllocator,
 
     mode: Mode = .prompt,
 
@@ -43,7 +45,7 @@ const State = struct {
 
     pub fn deinit(self: *State) void {
         self.persistent_arena.deinit();
-        self.completion_arena.deinit();
+        self.repl_loop_arena.deinit();
         self.term.restore() catch unreachable; // no balls
     }
 
@@ -96,18 +98,11 @@ const State = struct {
     }
 
     pub fn writePrefix(self: *State) !void {
-        const home = pipeline.state.homeOrEmpty();
         const out = self.writer();
         terminal.clearLine(out, self.prefixLen() + 7 + self.length);
         switch (self.mode) {
             .prompt => {
-                const cwd = try self.calcCwd();
-                if (startsWith(u8, cwd, home)) {
-                    const cwd_after_home = cwd[home.len..];
-                    fmt(out, "~{s} {s}|>{s} {s}\r", .{ cwd_after_home, BoldHi.white, Color.gray, self.line() });
-                } else {
-                    fmt(out, "{s} {s}|>{s} {s}\r", .{ cwd, BoldHi.white, Color.gray, self.line() });
-                }
+                try self.writePromptAndLine();
             },
             .search => {
                 if (self.search_idx) |idx| {
@@ -123,6 +118,47 @@ const State = struct {
         }
         terminal.moveRight(out, self.prefixLen() + self.cursor);
         self.flush();
+    }
+
+    pub fn writePromptAndLine(self: *State) !void {
+        const out = self.writer();
+        try self.writePrompt();
+
+        const mod = pipeline.runOnlySemantics(.{
+            .root_module_name = "interactive",
+            .root_module_source = self.line(),
+            .arena = &self.repl_loop_arena,
+        }) catch {
+            fmt(out, "{s}{s}{s}\r", .{ Color.yellow, self.line(), Color.white });
+            return;
+        };
+        if (mod.tokens.len == 0) {
+            fmt(out, "{s}\r", .{self.line()});
+        }
+        var n_token: usize = 0;
+        var n_src: usize = 0;
+        while (n_token < mod.tokens.len) : (n_token += 1) {
+            const token = mod.tokens[n_token];
+            const token_idc = token.indicies(self.line());
+            fmt(out, "{s}{s}", .{
+                self.line()[n_src..token_idc.from],
+                self.line()[token_idc.from..token_idc.to],
+            });
+            n_src = token_idc.to;
+        }
+        fmt(out, "{s}\r", .{self.line()[n_src..]});
+    }
+
+    pub fn writePrompt(self: *State) !void {
+        const home = pipeline.state.homeOrEmpty();
+        const out = self.writer();
+        const cwd = try self.calcCwd();
+        if (startsWith(u8, cwd, home)) {
+            const cwd_after_home = cwd[home.len..];
+            fmt(out, "~{s} {s}|>{s} ", .{ cwd_after_home, BoldHi.white, Color.gray });
+        } else {
+            fmt(out, "{s} {s}|>{s} ", .{ cwd, BoldHi.white, Color.gray });
+        }
     }
 
     pub fn prefixLen(self: *State) usize {
@@ -164,7 +200,7 @@ pub fn repl(persistent_allocator: std.mem.Allocator) !void {
         .term = try Term.init(),
         .history_scroll_idx = 0,
         .persistent_arena = &persistent_arena,
-        .completion_arena = std.heap.ArenaAllocator.init(persistent_allocator),
+        .repl_loop_arena = std.heap.ArenaAllocator.init(persistent_allocator),
     };
     defer state.deinit();
 
@@ -203,6 +239,7 @@ pub fn repl(persistent_allocator: std.mem.Allocator) !void {
     _ = std.os.linux.sigaction(std.os.linux.SIG.INT, &sa, null);
 
     while (true) {
+        defer _ = state.repl_loop_arena.reset(.retain_capacity);
         try state.writePrefix();
         const event = try state.term.readEvent();
         switch (event) {
@@ -470,7 +507,7 @@ fn nextCommand(state: *State) void {
 
 fn replaceCommand(state: *State, cmd: []const u8) void {
     terminal.clearLine(state.writer(), state.prefixLen() + 7 + state.length);
-    @memset(&state.buffer, 0);
+    @memset(state.buffer[0..state.length], 0);
     @memcpy(state.buffer[0..cmd.len], cmd);
     state.cursor = cmd.len;
     state.length = cmd.len;
@@ -487,8 +524,7 @@ fn tryAutocomplete(state: *State) !void {
 }
 
 fn tryAutocompleteCmd2(state: *State) !void {
-    defer _ = state.completion_arena.reset(.retain_capacity);
-    const arena = state.completion_arena.allocator();
+    const arena = state.repl_loop_arena.allocator();
 
     const line = state.line();
 
@@ -514,8 +550,7 @@ fn tryAutocompleteCmd2(state: *State) !void {
 }
 
 fn tryAutocompletePath2(state: *State) !void {
-    defer _ = state.completion_arena.reset(.retain_capacity);
-    const arena = state.completion_arena.allocator();
+    const arena = state.repl_loop_arena.allocator();
 
     const original_line = state.line();
     const processed_bareword = try strings.processBareword(&pipeline.state, arena, original_line);
@@ -535,7 +570,7 @@ fn tryAutocompletePath2(state: *State) !void {
 
     var cmp_ctx: CompletionContext = .{
         .source = last_cmd,
-        .arena = state.completion_arena.allocator(),
+        .arena = arena,
     };
     const result = try tryAutocompletePathImpl(&cmp_ctx);
     try displayCompletionResults(state, result);
@@ -876,7 +911,7 @@ const expectEqualStrings = std.testing.expectEqualStrings;
 fn testReplState() State {
     return State{
         .persistent_arena = undefined,
-        .completion_arena = undefined,
+        .repl_loop_arena = undefined,
         .out_writer = undefined,
         .history = undefined,
         .term = undefined,

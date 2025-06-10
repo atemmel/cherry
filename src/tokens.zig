@@ -69,6 +69,19 @@ pub const Token = struct {
         };
     }
 
+    pub fn indicies(token: *const Token, src: []const u8) struct {
+        from: usize,
+        to: usize,
+    } {
+        const token_begin = @intFromPtr(token.value.ptr);
+        const token_end = @intFromPtr(token.value.ptr) + token.value.len;
+        const src_begin = @intFromPtr(src.ptr);
+        return .{
+            .from = token_begin - src_begin,
+            .to = token_end - src_begin,
+        };
+    }
+
     kind: Kind,
     value: []const u8,
 };

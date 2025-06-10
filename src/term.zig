@@ -140,6 +140,7 @@ pub const Term = struct {
     pub fn restore(self: *Term) !void {
         try posix.tcsetattr(self.tty.handle, .FLUSH, self.original_termios);
         self.tty.close();
+        self.tty = fs.File{ .handle = 0 };
     }
 
     pub fn readByte(self: Term) !u8 {
