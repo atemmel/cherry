@@ -69,6 +69,9 @@ const State = struct {
     }
 
     pub fn writeKeyAtCursor(self: *State, key: u8) void {
+        if (self.length == self.buffer.len) {
+            return;
+        }
         std.mem.rotate(u8, self.buffer[self.cursor .. self.length + 1], self.length - self.cursor);
         self.buffer[self.cursor] = key;
         self.cursor += 1;
@@ -422,19 +425,18 @@ fn appendHistory(state: *State) !void {
 }
 
 fn readHistory(state: *State) !void {
-    const file = std.fs.cwd().openFile(state.histfile_path, .{}) catch |e|
-        switch (e) {
-            error.FileNotFound => return,
-            else => {
-                fmt(
-                    state.writer(),
-                    "Could not open histfile at {s}, error: {}\r\n",
-                    .{ state.histfile_path, e },
-                );
-                state.flush();
-                return;
-            },
-        };
+    const file = std.fs.cwd().openFile(state.histfile_path, .{}) catch |e| switch (e) {
+        error.FileNotFound => return,
+        else => {
+            fmt(
+                state.writer(),
+                "Could not open histfile at {s}, error: {}\r\n",
+                .{ state.histfile_path, e },
+            );
+            state.flush();
+            return;
+        },
+    };
     defer file.close();
 
     const ally = state.persistent_arena.allocator();
@@ -802,19 +804,18 @@ fn reverseSearch(state: *State, reset: enum { reset, forward }) !void {
 }
 
 fn readRc(state: *State) !void {
-    const file = std.fs.cwd().openFile(state.rc_path, .{}) catch |e|
-        switch (e) {
-            error.FileNotFound => return,
-            else => {
-                fmt(
-                    state.writer(),
-                    "Could not open histfile at {s}, error: {}\r\n",
-                    .{ state.rc_path, e },
-                );
-                state.flush();
-                return;
-            },
-        };
+    const file = std.fs.cwd().openFile(state.rc_path, .{}) catch |e| switch (e) {
+        error.FileNotFound => return,
+        else => {
+            fmt(
+                state.writer(),
+                "Could not open histfile at {s}, error: {}\r\n",
+                .{ state.rc_path, e },
+            );
+            state.flush();
+            return;
+        },
+    };
     defer file.close();
 
     const ally = state.persistent_arena.allocator();
