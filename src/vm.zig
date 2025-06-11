@@ -2,20 +2,20 @@ const std = @import("std");
 const print = std.debug.print;
 
 pub const Op = enum(usize) {
-    False,
-    True,
-    Constant,
-    Add,
-    Mul,
-    Sub,
-    Div,
-    Negate,
-    And,
-    Or,
-    Equals,
-    NotEquals,
-    Not,
-    Return,
+    false,
+    true,
+    constant,
+    add,
+    mul,
+    sub,
+    div,
+    negate,
+    @"and",
+    @"or",
+    equals,
+    not_equals,
+    not,
+    @"return",
     define_global,
     set_global,
     get_global,
@@ -205,21 +205,21 @@ pub const Chunk = struct {
         const inst = try std.meta.intToEnum(Op, chunk.instructions.items[offset]);
 
         return switch (inst) {
-            .False,
-            .True,
-            .Return,
-            .Negate,
-            .Add,
-            .Mul,
-            .Div,
-            .Sub,
-            .And,
-            .Or,
-            .Equals,
-            .NotEquals,
-            .Not,
+            .false,
+            .true,
+            .@"return",
+            .negate,
+            .add,
+            .mul,
+            .div,
+            .sub,
+            .@"and",
+            .@"or",
+            .equals,
+            .not_equals,
+            .not,
             => simpleInstruction(inst, offset),
-            .Constant,
+            .constant,
             .define_global,
             .set_global,
             .get_global,
@@ -377,10 +377,10 @@ pub fn interpret(vm: *VM, chunk: *Chunk) !void {
 
     while (true) { //TODO: not like this
         switch (vm.readInstruction()) {
-            .False => vm.push(.{ .boolean = false }),
-            .True => vm.push(.{ .boolean = true }),
-            .Constant => vm.push(vm.readConstant()),
-            .Add => {
+            .false => vm.push(.{ .boolean = false }),
+            .true => vm.push(.{ .boolean = true }),
+            .constant => vm.push(vm.readConstant()),
+            .add => {
                 if (vm.peek(1).isString() and vm.peek(2).isString()) {
                     const rhs = vm.pop().string.data.string;
                     const lhs = vm.pop().string.data.string;
@@ -390,22 +390,22 @@ pub fn interpret(vm: *VM, chunk: *Chunk) !void {
                     vm.push(.{ .integer = try vm.popField(.integer) + try vm.popField(.integer) });
                 }
             },
-            .Mul => vm.push(.{ .integer = try vm.popField(.integer) * try vm.popField(.integer) }),
-            .Sub => {
+            .mul => vm.push(.{ .integer = try vm.popField(.integer) * try vm.popField(.integer) }),
+            .sub => {
                 const rhs = try vm.popField(.integer);
                 const lhs = try vm.popField(.integer);
                 vm.push(.{ .integer = lhs - rhs });
             },
-            .Div => {
+            .div => {
                 const rhs = try vm.popField(.integer);
                 const lhs = try vm.popField(.integer);
                 vm.push(.{ .integer = @divFloor(lhs, rhs) });
             },
-            .Negate => vm.push(Value{ .integer = -try vm.popField(.integer) }),
-            .And => vm.push(.{ .boolean = try vm.popField(.boolean) and try vm.popField(.boolean) }),
-            .Or => vm.push(.{ .boolean = try vm.popField(.boolean) or try vm.popField(.boolean) }),
-            .Not => vm.push(.{ .boolean = !try vm.popField(.boolean) }),
-            .Equals => {
+            .negate => vm.push(Value{ .integer = -try vm.popField(.integer) }),
+            .@"and" => vm.push(.{ .boolean = try vm.popField(.boolean) and try vm.popField(.boolean) }),
+            .@"or" => vm.push(.{ .boolean = try vm.popField(.boolean) or try vm.popField(.boolean) }),
+            .not => vm.push(.{ .boolean = !try vm.popField(.boolean) }),
+            .equals => {
                 const rhs = vm.pop();
                 const lhs = vm.pop();
                 vm.push(.{
@@ -417,7 +417,7 @@ pub fn interpret(vm: *VM, chunk: *Chunk) !void {
                     },
                 });
             },
-            .NotEquals => {
+            .not_equals => {
                 const rhs = vm.pop();
                 const lhs = vm.pop();
                 vm.push(.{
@@ -429,7 +429,7 @@ pub fn interpret(vm: *VM, chunk: *Chunk) !void {
                     },
                 });
             },
-            .Return => {
+            .@"return" => {
                 std.debug.print("VM produced: {}\n", .{vm.pop()});
                 return;
             },
@@ -462,10 +462,10 @@ test "basic vm instructions using integers" {
     defer chunk.deinit();
 
     const constant = try chunk.addConstant(.{ .integer = 5 });
-    try chunk.addInstruction(.Constant);
+    try chunk.addInstruction(.constant);
     try chunk.addAdress(constant);
-    try chunk.addInstruction(.Negate);
-    try chunk.addInstruction(.Return);
+    try chunk.addInstruction(.negate);
+    try chunk.addInstruction(.@"return");
 
     try chunk.disassemble("example_chunk");
 
@@ -491,18 +491,18 @@ test "basic vm instructions using strings" {
 
     {
         const constant = try chunk.addConstant(try vm.allocateString("hasse"));
-        try chunk.addInstruction(.Constant);
+        try chunk.addInstruction(.constant);
         try chunk.addAdress(constant);
     }
 
     {
         const constant = try chunk.addConstant(try vm.allocateString("hasse"));
-        try chunk.addInstruction(.Constant);
+        try chunk.addInstruction(.constant);
         try chunk.addAdress(constant);
     }
 
-    try chunk.addInstruction(.Equals);
-    try chunk.addInstruction(.Return);
+    try chunk.addInstruction(.equals);
+    try chunk.addInstruction(.@"return");
     try chunk.disassemble("string_eq_chunk");
 
     _ = try interpret(&vm, &chunk);
@@ -522,18 +522,18 @@ test "more basic vm instructions using strings" {
 
     {
         const constant = try chunk.addConstant(try vm.allocateString("hasse"));
-        try chunk.addInstruction(.Constant);
+        try chunk.addInstruction(.constant);
         try chunk.addAdress(constant);
     }
 
     {
         const constant = try chunk.addConstant(try vm.allocateString("boyyyy"));
-        try chunk.addInstruction(.Constant);
+        try chunk.addInstruction(.constant);
         try chunk.addAdress(constant);
     }
 
-    try chunk.addInstruction(.Add);
-    try chunk.addInstruction(.Return);
+    try chunk.addInstruction(.add);
+    try chunk.addInstruction(.@"return");
     try chunk.disassemble("string_concat_chunk");
 
     _ = try interpret(&vm, &chunk);
@@ -552,11 +552,11 @@ test "global variables" {
     defer vm.deinit();
 
     const name = try chunk.addConstant(try vm.allocateString("hasse"));
-    try chunk.addInstruction(.Constant);
+    try chunk.addInstruction(.constant);
     try chunk.addAdress(name);
 
     const value = try chunk.addConstant(.{ .integer = 5 });
-    try chunk.addInstruction(.Constant);
+    try chunk.addInstruction(.constant);
     try chunk.addAdress(value);
 
     try chunk.addInstruction(.define_global);
@@ -568,8 +568,8 @@ test "global variables" {
     try chunk.addInstruction(.get_global);
     try chunk.addAdress(name);
 
-    try chunk.addInstruction(.Add);
-    try chunk.addInstruction(.Return);
+    try chunk.addInstruction(.add);
+    try chunk.addInstruction(.@"return");
     try chunk.disassemble("global_variables_define_and_get_chunk");
 
     _ = try interpret(&vm, &chunk);
