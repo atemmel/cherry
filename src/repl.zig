@@ -764,6 +764,10 @@ fn tryAutocompleteCmdImpl(ctx: *CompletionContext) !CompletionResult {
                 continue;
             }
 
+            if (!startsWith(u8, entry.name, ctx.source)) {
+                continue;
+            }
+
             const stat = dir.statFile(entry.name) catch {
                 continue;
             };
@@ -771,10 +775,7 @@ fn tryAutocompleteCmdImpl(ctx: *CompletionContext) !CompletionResult {
             if (stat.mode & 0b1 == 0) {
                 continue;
             }
-
-            if (startsWith(u8, entry.name, ctx.source)) {
-                try result_list.append(try ctx.arena.dupe(u8, entry.name));
-            }
+            try result_list.append(try ctx.arena.dupe(u8, entry.name));
         }
     }
 
