@@ -26,11 +26,10 @@ const State = struct {
     history: History,
     cwd_buffer: [std.fs.max_path_bytes]u8 = undefined,
     cwd: []const u8 = "",
-    buffer: [4096]u8 = undefined,
-    prior_buffer: [4096]u8 = undefined,
-    prior_slice: []const u8 = "",
-    length: usize = 0,
-    cursor: usize = 0,
+    buffer: [4096]u21 = undefined,
+    bytes_buffer: [4096]u8 = undefined,
+    length: usize = 0, // in bytes
+    cursor: usize = 0, // in codepoints
     term: Term,
     histfile_path: []const u8 = "",
     history_scroll_idx: usize,
@@ -62,8 +61,13 @@ const State = struct {
         self.out_writer.flush() catch {};
     }
 
-    pub fn line(self: *State) []const u8 {
+    pub fn line(self: *State) []const u21 {
         return self.buffer[0..self.length];
+    }
+
+    pub fn lineAsBytes(self: *State) []const u8 {
+        const idx = algo.writeU21SliceToU8Slice(self.line(), &self.bytes_buffer);
+        return self.bytes_buffer[0..idx];
     }
 
     pub fn calcCwd(self: *State) ![]const u8 {
@@ -71,11 +75,11 @@ const State = struct {
         return self.cwd;
     }
 
-    pub fn writeKeyAtCursor(self: *State, key: u8) void {
-        if (self.length == self.buffer.len) {
+    pub fn writeKeyAtCursor(self: *State, key: u21) void {
+        if (self.length + 1 >= self.buffer.len) {
             return;
         }
-        std.mem.rotate(u8, self.buffer[self.cursor .. self.length + 1], self.length - self.cursor);
+        std.mem.rotate(u21, self.buffer[self.cursor .. self.length + 1], self.length - self.cursor);
         self.buffer[self.cursor] = key;
         self.cursor += 1;
         self.length += 1;
@@ -109,12 +113,12 @@ const State = struct {
             .search => {
                 if (self.search_idx) |idx| {
                     if (self.search_reached_end) {
-                        fmt(out, "(reverse-search) {s} -> {s} (Search reached end)\r", .{ self.line(), self.history.items[idx] });
+                        fmt(out, "(reverse-search) {s} -> {s} (Search reached end)\r", .{ self.lineAsBytes(), self.history.items[idx] });
                     } else {
-                        fmt(out, "(reverse-search) {s} -> {s}\r", .{ self.line(), self.history.items[idx] });
+                        fmt(out, "(reverse-search) {s} -> {s}\r", .{ self.lineAsBytes(), self.history.items[idx] });
                     }
                 } else {
-                    fmt(out, "(reverse-search) {s}\r", .{self.line()});
+                    fmt(out, "(reverse-search) {s}\r", .{self.lineAsBytes()});
                 }
             },
         }
@@ -128,23 +132,23 @@ const State = struct {
 
         const mod = pipeline.runOnlySemantics(.{
             .root_module_name = "interactive",
-            .root_module_source = self.line(),
+            .root_module_source = self.lineAsBytes(),
             .arena = &self.repl_loop_arena,
         }) catch {
             const info = pipeline.state.errorInfo();
             //TODO: check for COLORTERM=truecolor
-            fmt(out, "{s}{s}{s}   {s}{s}\r", .{ Hi.red, self.line(), Hi.black, info.msg, Color.white });
+            fmt(out, "{s}{s}{s}   {s}{s}\r", .{ Hi.red, self.lineAsBytes(), Hi.black, info.msg, Color.white });
             return;
         };
         if (mod.tokens.len == 0) {
-            fmt(out, "{s}\r", .{self.line()});
+            fmt(out, "{s}\r", .{self.lineAsBytes()});
         }
         var n_token: usize = 0;
         var n_src: usize = 0;
         while (n_token < mod.tokens.len) : (n_token += 1) {
             const token = mod.tokens[n_token];
-            const token_idc = token.indicies(self.line());
-            fmt(out, "{s}", .{self.line()[n_src..token_idc.from]});
+            const token_idc = token.indicies(self.lineAsBytes());
+            fmt(out, "{s}", .{self.lineAsBytes()[n_src..token_idc.from]});
             const color = switch (token.kind) {
                 .If,
                 .Else,
@@ -188,10 +192,10 @@ const State = struct {
                 .Bareword, .EmptyRecord, .Newline => "",
             };
             const color_end = if (color.len > 0) Color.white else "";
-            fmt(out, "{s}{s}{s}", .{ color, self.line()[token_idc.from..token_idc.to], color_end });
+            fmt(out, "{s}{s}{s}", .{ color, self.lineAsBytes()[token_idc.from..token_idc.to], color_end });
             n_src = token_idc.to;
         }
-        fmt(out, "{s}\r", .{self.line()[n_src..]});
+        fmt(out, "{s}\r", .{self.lineAsBytes()[n_src..]});
     }
 
     pub fn writePrompt(self: *State) !void {
@@ -449,7 +453,7 @@ fn eval(state: *State) !void {
         state.cursor = 0;
     }
 
-    const cmd = try aliasLookup(state, state.line());
+    const cmd = try aliasLookup(state, state.lineAsBytes());
     const source = try pipeline.state.scratch_arena.allocator().dupe(u8, cmd);
 
     pipeline.run(.{
@@ -501,14 +505,14 @@ fn appendHistory(state: *State) !void {
     }
 
     if (state.history.getLastOrNull()) |prev| {
-        if (std.mem.eql(u8, prev, state.line())) {
+        if (std.mem.eql(u8, prev, state.lineAsBytes())) {
             return;
         }
     }
 
     const ally = state.persistent_arena.allocator();
 
-    const cmd_copy = try ally.dupe(u8, state.line());
+    const cmd_copy = try ally.dupe(u8, state.lineAsBytes());
     try state.history.append(cmd_copy);
     state.history_scroll_idx = state.history.items.len;
 
@@ -569,9 +573,9 @@ fn nextCommand(state: *State) void {
 fn replaceCommand(state: *State, cmd: []const u8) void {
     terminal.clearLine(state.writer(), state.prefixLen() + 7 + state.length);
     @memset(state.buffer[0..state.length], 0);
-    @memcpy(state.buffer[0..cmd.len], cmd);
-    state.cursor = cmd.len;
-    state.length = cmd.len;
+    const len = algo.writeU8SliceToU21Slice(cmd, &state.buffer);
+    state.cursor = len;
+    state.length = len;
 }
 
 fn tryAutocomplete(state: *State) !void {
@@ -936,7 +940,7 @@ fn readRc(state: *State) !void {
     state.flush();
 }
 
-fn aliasLookup(state: *State, cmd_arg: []const u8) ![]const u8 {
+fn aliasLookup(_: *State, cmd_arg: []const u8) ![]const u8 {
     var cmd = cmd_arg;
 
     const aliases = gc.aliases.items;
@@ -959,8 +963,9 @@ fn aliasLookup(state: *State, cmd_arg: []const u8) ![]const u8 {
                 "{s}{s}",
                 .{ alias.to, cmd[alias.from.len..] },
             );
-            @memcpy(state.buffer[0..cmd.len], static.replacement_buffer[0..cmd.len]);
-            cmd = state.buffer[0..cmd.len];
+
+            //const len = algo.writeU8SliceToU21Slice(&static.replacement_buffer, &state.buffer);
+            //cmd = state.buffer[0..len];
         }
     }
     return cmd;

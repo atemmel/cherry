@@ -105,7 +105,7 @@ pub const Term = struct {
 
     pub const Key = union(enum) {
         special: Special,
-        key: u8,
+        key: u21,
     };
 
     pub const Event = union(enum) {
@@ -185,10 +185,14 @@ pub const Term = struct {
         self.tty = fs.File{ .handle = 0 };
     }
 
-    pub fn readByte(self: Term) !u8 {
-        var buffer: [1]u8 = undefined;
-        _ = try self.tty.read(&buffer);
-        return buffer[0];
+    pub fn readByte(self: Term) !u21 {
+        var buffer: [4]u8 = undefined;
+        _ = try self.tty.read(buffer[0..1]);
+        const len = std.unicode.utf8ByteSequenceLength(buffer[0]) catch {
+            return buffer[0];
+        };
+        _ = try self.tty.read(buffer[1..len]);
+        return std.unicode.utf8Decode(buffer[0..len]);
     }
 
     pub fn getCursor(self: Term) !Vec2 {
