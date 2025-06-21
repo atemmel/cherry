@@ -288,36 +288,87 @@ pub fn repl(persistent_allocator: std.mem.Allocator) !void {
         try state.writePrefix();
         const event = try state.term.readEvent();
         switch (event) {
-            .key => |key| {
-                switch (key) {
-                    '\r' => switch (state.mode) {
-                        .prompt => {
-                            try eval(&state);
-                        },
-                        .search => {
-                            if (state.search_idx) |idx| { // if holds a match from history
-                                state.flush();
-                                const match = state.history.items[idx];
-                                replaceCommand(&state, match);
-                                state.mode = .prompt;
-                                try state.writePrefix();
+            .key => |k| switch (k) {
+                .key => |key| {
+                    switch (key) {
+                        '\r' => switch (state.mode) {
+                            .prompt => {
                                 try eval(&state);
-                            }
-                            // otherwise, ignore
+                            },
+                            .search => {
+                                if (state.search_idx) |idx| { // if holds a match from history
+                                    state.flush();
+                                    const match = state.history.items[idx];
+                                    replaceCommand(&state, match);
+                                    state.mode = .prompt;
+                                    try state.writePrefix();
+                                    try eval(&state);
+                                }
+                                // otherwise, ignore
+                            },
                         },
+                        '\n' => {},
+                        else => switch (state.mode) {
+                            .prompt => state.writeKeyAtCursor(key),
+                            .search => {
+                                state.writeKeyAtCursor(key);
+                                try reverseSearch(&state, .reset);
+                            },
+                        },
+                    }
+                },
+                .special => |s| switch (s) {
+                    .arrow_down => switch (state.mode) {
+                        .prompt => {
+                            nextCommand(&state);
+                        },
+                        .search => {},
                     },
-                    '\n' => {},
-                    else => switch (state.mode) {
-                        .prompt => state.writeKeyAtCursor(key),
-                        .search => {
-                            state.writeKeyAtCursor(key);
+                    .arrow_up => switch (state.mode) {
+                        .prompt => {
+                            previousCommand(&state);
+                        },
+                        .search => {},
+                    },
+                    .arrow_left => {
+                        if (state.cursor > 0) {
+                            state.cursor -= 1;
+                        }
+                    },
+                    .arrow_right => {
+                        if (state.cursor < state.length) {
+                            state.cursor += 1;
+                        }
+                    },
+                    .backspace => {
+                        state.removeKeyAtCursor();
+                        if (state.mode == .search) {
                             try reverseSearch(&state, .reset);
-                        },
+                        }
                     },
-                }
+                    .delete => {
+                        state.removeKeyBehindCursor();
+                        if (state.mode == .search) {
+                            try reverseSearch(&state, .reset);
+                        }
+                    },
+                    .home => {
+                        state.cursor = 0;
+                    },
+                    .end => {
+                        state.cursor = state.length;
+                    },
+                    .tab => switch (state.mode) {
+                        .prompt => {
+                            try tryAutocomplete(&state);
+                        },
+                        .search => {},
+                    },
+                    .escape, .insert, .page_down, .page_up, .unknown => {},
+                },
             },
-            .ctrl => |ctrl| {
-                switch (ctrl) {
+            .ctrl => |c| switch (c) {
+                .key => |ctrl| switch (ctrl) {
                     'd' => {
                         fmts(out, "exit");
                         state.flush();
@@ -360,55 +411,20 @@ pub fn repl(persistent_allocator: std.mem.Allocator) !void {
                         }
                     },
                     else => {}, // ignore
-                }
-            },
-            .arrow_down => switch (state.mode) {
-                .prompt => {
-                    nextCommand(&state);
                 },
-                .search => {},
-            },
-            .arrow_up => switch (state.mode) {
-                .prompt => {
-                    previousCommand(&state);
+                .special => |s| switch (s) {
+                    .arrow_left => {
+                        const idx = std.mem.lastIndexOfScalar(u8, state.buffer[0..state.cursor], ' ') orelse 0;
+                        state.cursor = idx;
+                    },
+                    .arrow_right => {
+                        const idx = std.mem.indexOfScalarPos(u8, state.buffer[0..state.length], state.cursor, ' ') orelse state.length - 1;
+                        state.cursor = idx + 1;
+                    },
+                    else => {},
                 },
-                .search => {},
             },
-            .arrow_left => {
-                if (state.cursor > 0) {
-                    state.cursor -= 1;
-                }
-            },
-            .arrow_right => {
-                if (state.cursor < state.length) {
-                    state.cursor += 1;
-                }
-            },
-            .backspace => {
-                state.removeKeyAtCursor();
-                if (state.mode == .search) {
-                    try reverseSearch(&state, .reset);
-                }
-            },
-            .delete => {
-                state.removeKeyBehindCursor();
-                if (state.mode == .search) {
-                    try reverseSearch(&state, .reset);
-                }
-            },
-            .home => {
-                state.cursor = 0;
-            },
-            .end => {
-                state.cursor = state.length;
-            },
-            .tab => switch (state.mode) {
-                .prompt => {
-                    try tryAutocomplete(&state);
-                },
-                .search => {},
-            },
-            .alt, .escape, .insert, .page_down, .page_up, .unknown => {},
+            .alt => {},
         }
     }
 }

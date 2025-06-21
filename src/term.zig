@@ -57,6 +57,14 @@ fn key(k: Term.Key) Term.Event {
     };
 }
 
+fn special(s: Term.Special) Term.Event {
+    return .{
+        .key = .{
+            .special = s,
+        },
+    };
+}
+
 fn alt(k: u8) Term.Event {
     return .{
         .alt = .{
@@ -228,9 +236,9 @@ pub const Term = struct {
                 try posix.tcsetattr(self.tty.handle, .NOW, self.state);
 
                 if (esc_read == 0) {
-                    break :res .escape;
+                    break :res special(.escape);
                 }
-                break :res escape_key_codes.get(esc_buffer[0..esc_read]) orelse .unknown;
+                break :res escape_key_codes.get(esc_buffer[0..esc_read]) orelse special(.unknown);
             },
             'a' & '\x1F' => ctrl('a'),
             'b' & '\x1F' => ctrl('b'),
@@ -261,9 +269,9 @@ pub const Term = struct {
             'x' & '\x1F' => ctrl('x'),
             'y' & '\x1F' => ctrl('y'),
             'z' & '\x1F' => ctrl('z'),
-            9 => key(.tab),
-            127 => .backspace,
-            else => ctrl(byte),
+            9 => special(.tab),
+            127 => special(.backspace),
+            else => key(.{ .key = byte }),
         };
     }
 };
@@ -274,26 +282,26 @@ const escape_key_codes = blk: {
     break :blk std.StaticStringMap(Term.Event).initComptime(
         .{
             // Legacy
-            .{ "[A", .arrow_up },
-            .{ "OA", .arrow_up },
-            .{ "[B", .arrow_down },
-            .{ "OB", .arrow_down },
-            .{ "[C", .arrow_right },
-            .{ "OC", .arrow_right },
-            .{ "[D", .arrow_left },
-            .{ "OD", .arrow_left },
-            .{ "[2~", .insert },
-            .{ "[3~", .delete },
-            .{ "[5~", .page_up },
-            .{ "[6~", .page_down },
-            .{ "[F", .end },
-            .{ "OF", .end },
-            .{ "[4~", .home },
-            .{ "[8~", .home },
-            .{ "[H", .home },
-            .{ "[1~", .home },
-            .{ "[7~", .home },
-            .{ "[H~", .home },
+            .{ "[A", special(.arrow_up) },
+            .{ "OA", special(.arrow_up) },
+            .{ "[B", special(.arrow_down) },
+            .{ "OB", special(.arrow_down) },
+            .{ "[C", special(.arrow_right) },
+            .{ "OC", special(.arrow_right) },
+            .{ "[D", special(.arrow_left) },
+            .{ "OD", special(.arrow_left) },
+            .{ "[2~", special(.insert) },
+            .{ "[3~", special(.delete) },
+            .{ "[5~", special(.page_up) },
+            .{ "[6~", special(.page_down) },
+            .{ "[F", special(.end) },
+            .{ "OF", special(.end) },
+            .{ "[4~", special(.home) },
+            .{ "[8~", special(.home) },
+            .{ "[H", special(.home) },
+            .{ "[1~", special(.home) },
+            .{ "[7~", special(.home) },
+            .{ "[H~", special(.home) },
             //.{ "OP", .{ .function = 1 } },
             //.{ "OQ", .{ .function = 2 } },
             //.{ "OR", .{ .function = 3 } },
@@ -307,11 +315,11 @@ const escape_key_codes = blk: {
             //.{ "[23~", .{ .function = 11 } },
             //.{ "[24~", .{ .function = 12 } },
             //.{ "a", .{ .alt = 'a' } },
-            .{ "b", Term.alt('b') },
+            .{ "b", alt('b') },
             //.{ "c", .{ .alt = 'c' } },
             //.{ "d", .{ .alt = 'd' } },
             //.{ "e", .{ .alt = 'e' } },
-            .{ "f", Term.alt('f') },
+            .{ "f", alt('f') },
             //.{ "g", .{ .alt = 'g' } },
             //.{ "h", .{ .alt = 'h' } },
             //.{ "i", .{ .alt = 'i' } },
@@ -334,7 +342,7 @@ const escape_key_codes = blk: {
             //.{ "z", .{ .alt = 'z' } },
 
             // Kitty
-            .{ "[27u", .escape },
+            .{ "[27u", special(.escape) },
             .{ "[97;5u", ctrl('a') },
             .{ "[98;5u", ctrl('b') },
             .{ "[99;5u", ctrl('c') },
@@ -389,8 +397,8 @@ const escape_key_codes = blk: {
             .{ "[122;3u", alt('z') },
 
             // Other
-            .{ "[1;5C", ctrl(0) },
-            .{ "[1;5D", ctrl(1) },
+            .{ "[1;5C", Term.Event{ .ctrl = .{ .special = .arrow_right } } },
+            .{ "[1;5D", Term.Event{ .ctrl = .{ .special = .arrow_left } } },
         },
     );
 };
