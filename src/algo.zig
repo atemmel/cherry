@@ -81,6 +81,16 @@ pub fn writeU8SliceToU21Slice(from: []const u8, to: []u21) usize {
     return idx;
 }
 
+pub fn allocU8SliceFromU21Slice(from: []const u21, arena: std.mem.Allocator) []u8 {
+    var into_len: usize = 0;
+    for (from) |c| {
+        into_len += std.unicode.utf8CodepointSequenceLength(c) catch @panic("Error allocU8SliceFromU21Slice");
+    }
+    const buffer = arena.alloc(u8, into_len) catch @panic("OOM");
+    _ = writeU21SliceToU8Slice(from, buffer);
+    return buffer;
+}
+
 const expectEqual = std.testing.expectEqual;
 const expectEqualStrings = std.testing.expectEqualStrings;
 

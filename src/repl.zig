@@ -28,6 +28,7 @@ const State = struct {
     cwd: []const u8 = "",
     buffer: [4096]u21 = undefined,
     bytes_buffer: [4096]u8 = undefined,
+    bytes_buffer_end_idx: ?usize = null,
     length: usize = 0, // in bytes
     cursor: usize = 0, // in codepoints
     term: Term,
@@ -66,7 +67,11 @@ const State = struct {
     }
 
     pub fn lineAsBytes(self: *State) []const u8 {
+        if (self.bytes_buffer_end_idx) |idx| {
+            return self.bytes_buffer[0..idx];
+        }
         const idx = algo.writeU21SliceToU8Slice(self.line(), &self.bytes_buffer);
+        self.bytes_buffer_end_idx = idx;
         return self.bytes_buffer[0..idx];
     }
 
@@ -89,7 +94,7 @@ const State = struct {
         if (self.cursor <= 0) return;
 
         const cursor_and_behind = self.buffer[self.cursor - 1 .. self.length];
-        std.mem.rotate(u8, cursor_and_behind, 1);
+        std.mem.rotate(u21, cursor_and_behind, 1);
         self.cursor -= 1;
         self.length -= 1;
     }
@@ -98,7 +103,7 @@ const State = struct {
         if (self.cursor >= self.length) return;
 
         const behind_cursor = self.buffer[self.cursor..self.length];
-        std.mem.rotate(u8, behind_cursor, 1);
+        std.mem.rotate(u21, behind_cursor, 1);
         self.length -= 1;
     }
 
@@ -288,6 +293,7 @@ pub fn repl(persistent_allocator: std.mem.Allocator) !void {
     _ = std.os.linux.sigaction(std.os.linux.SIG.INT, &sa, null);
 
     while (true) {
+        state.bytes_buffer_end_idx = null;
         defer _ = state.repl_loop_arena.reset(.retain_capacity);
         try state.writePrefix();
         const event = try state.term.readEvent();
@@ -386,7 +392,7 @@ pub fn repl(persistent_allocator: std.mem.Allocator) !void {
                         state.mode = .prompt;
                     },
                     'h' => {
-                        const last_space = std.mem.lastIndexOfScalar(u8, state.line(), ' ');
+                        const last_space = std.mem.lastIndexOfScalar(u21, state.line(), ' ');
                         terminal.clearLine(out, state.length + state.prefixLen());
                         state.length = last_space orelse 0;
                         state.cursor = last_space orelse 0;
@@ -418,11 +424,11 @@ pub fn repl(persistent_allocator: std.mem.Allocator) !void {
                 },
                 .special => |s| switch (s) {
                     .arrow_left => {
-                        const idx = std.mem.lastIndexOfScalar(u8, state.buffer[0..state.cursor], ' ') orelse 0;
+                        const idx = std.mem.lastIndexOfScalar(u21, state.buffer[0..state.cursor], ' ') orelse 0;
                         state.cursor = idx;
                     },
                     .arrow_right => {
-                        const idx = std.mem.indexOfScalarPos(u8, state.buffer[0..state.length], state.cursor, ' ') orelse state.length - 1;
+                        const idx = std.mem.indexOfScalarPos(u21, state.buffer[0..state.length], state.cursor, ' ') orelse state.length - 1;
                         state.cursor = idx + 1;
                     },
                     else => {},
@@ -579,7 +585,7 @@ fn replaceCommand(state: *State, cmd: []const u8) void {
 }
 
 fn tryAutocomplete(state: *State) !void {
-    const has_spaces = std.mem.indexOfScalar(u8, state.line(), ' ') != null;
+    const has_spaces = std.mem.indexOfScalar(u21, state.line(), ' ') != null;
 
     if (has_spaces) {
         tryAutocompletePath2(state) catch {};
@@ -593,14 +599,14 @@ fn tryAutocompleteCmd2(state: *State) !void {
 
     const line = state.line();
 
-    var last_cmd_begin = std.mem.lastIndexOfScalar(u8, line, ' ') orelse 0;
+    var last_cmd_begin = std.mem.lastIndexOfScalar(u21, line, ' ') orelse 0;
     if (last_cmd_begin < line.len and last_cmd_begin != 0) {
         last_cmd_begin += 1;
     }
     const last_cmd = line[last_cmd_begin..];
 
     var cmp_ctx: CompletionContext = .{
-        .source = last_cmd,
+        .source = algo.allocU8SliceFromU21Slice(last_cmd, arena),
         .arena = arena,
     };
     const result = try tryAutocompleteCmdImpl(&cmp_ctx);
@@ -617,7 +623,7 @@ fn tryAutocompleteCmd2(state: *State) !void {
 fn tryAutocompletePath2(state: *State) !void {
     const arena = state.repl_loop_arena.allocator();
 
-    const original_line = state.line();
+    const original_line = state.lineAsBytes();
     const processed_bareword = try strings.processBareword(&pipeline.state, arena, original_line);
 
     const line = switch (processed_bareword) {
@@ -644,7 +650,7 @@ fn tryAutocompletePath2(state: *State) !void {
 fn displayCompletionResults(state: *State, result: CompletionResult) !void {
     const line = state.line();
 
-    var last_cmd_begin = std.mem.lastIndexOfScalar(u8, line, ' ') orelse 0;
+    var last_cmd_begin = std.mem.lastIndexOfScalar(u21, line, ' ') orelse 0;
     if (last_cmd_begin < line.len and last_cmd_begin != 0) {
         last_cmd_begin += 1;
     }
@@ -656,8 +662,9 @@ fn displayCompletionResults(state: *State, result: CompletionResult) !void {
             const offset = line.len - last_cmd_begin;
 
             defer {
-                state.length += str.len - offset;
-                state.cursor += str.len - offset;
+                const codepoints = std.unicode.utf8CountCodepoints;
+                state.length += (codepoints(str) catch @panic("Bad unicode byte")) - offset;
+                state.cursor += (codepoints(str) catch @panic("Bad unicode byte")) - offset;
             }
 
             const stat = std.fs.cwd().statFile(str) catch std.fs.Dir.Stat{
@@ -671,11 +678,13 @@ fn displayCompletionResults(state: *State, result: CompletionResult) !void {
             };
             if (stat.kind == .directory) {
                 //TODO: make bufPrint to state.buffer-pattern into separate function
-                _ = try std.fmt.bufPrint(state.buffer[state.length - offset ..], "{s}/", .{str});
+                _ = algo.writeU8SliceToU21Slice(str, state.buffer[state.length - offset ..]);
+                state.buffer[state.length + 1] = '/';
+
                 state.length += 1;
                 state.cursor += 1;
             } else {
-                _ = try std.fmt.bufPrint(state.buffer[state.length - offset ..], "{s}", .{str});
+                _ = algo.writeU8SliceToU21Slice(str, state.buffer[state.length - offset ..]);
             }
         },
         // currently presents completion results like bash, in a table-like format
@@ -683,7 +692,7 @@ fn displayCompletionResults(state: *State, result: CompletionResult) !void {
             const delta = all.shared_match.len - last_cmd.len;
             if (delta > 0) {
                 const shared_match_substr = all.shared_match[last_cmd.len..];
-                _ = try std.fmt.bufPrint(state.buffer[state.length..], "{s}", .{shared_match_substr});
+                _ = algo.writeU8SliceToU21Slice(shared_match_substr, state.buffer[state.length..]);
                 state.length += delta;
                 state.cursor += delta;
             }
@@ -889,7 +898,7 @@ fn reverseSearch(state: *State, reset: enum { reset, forward }) !void {
     }
 
     while (true) : (start_index -= 1) {
-        const has_substring = std.mem.indexOfPos(u8, state.history.items[start_index - 1], 0, state.line()) != null;
+        const has_substring = std.mem.indexOfPos(u8, state.history.items[start_index - 1], 0, state.lineAsBytes()) != null;
         if (has_substring) {
             state.search_idx = start_index - 1;
             return;
