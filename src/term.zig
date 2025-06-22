@@ -51,29 +51,67 @@ pub const Vec2 = struct {
     y: u16,
 };
 
+fn key(k: Term.Key) Term.Event {
+    return .{
+        .key = k,
+    };
+}
+
+fn special(s: Term.Special) Term.Event {
+    return .{
+        .key = .{
+            .special = s,
+        },
+    };
+}
+
+fn alt(k: u8) Term.Event {
+    return .{
+        .alt = .{
+            .key = k,
+        },
+    };
+}
+
+fn ctrl(k: u8) Term.Event {
+    return .{
+        .ctrl = .{
+            .key = k,
+        },
+    };
+}
+
 pub const Term = struct {
     tty: fs.File,
     original_termios: posix.termios,
     state: posix.termios,
 
+    pub const Special = enum {
+        escape,
+        arrow_down,
+        arrow_left,
+        arrow_right,
+        arrow_up,
+        backspace,
+        delete,
+        end,
+        home,
+        insert,
+        page_down,
+        page_up,
+        unknown,
+        tab,
+    };
+
+    pub const Key = union(enum) {
+        special: Special,
+        key: u21,
+    };
+
     pub const Event = union(enum) {
-        key: u8,
-        ctrl: u8,
-        alt: u8,
-        escape: void,
-        arrow_down: void,
-        arrow_left: void,
-        arrow_right: void,
-        arrow_up: void,
-        backspace: void,
-        delete: void,
-        end: void,
-        home: void,
-        insert: void,
-        page_down: void,
-        page_up: void,
-        unknown: void,
-        tab: void,
+        key: Key,
+        ctrl: Key,
+        alt: Key,
     };
 
     pub fn init() !Term {
@@ -147,10 +185,14 @@ pub const Term = struct {
         self.tty = fs.File{ .handle = 0 };
     }
 
-    pub fn readByte(self: Term) !u8 {
-        var buffer: [1]u8 = undefined;
-        _ = try self.tty.read(&buffer);
-        return buffer[0];
+    pub fn readByte(self: Term) !u21 {
+        var buffer: [4]u8 = undefined;
+        _ = try self.tty.read(buffer[0..1]);
+        const len = std.unicode.utf8ByteSequenceLength(buffer[0]) catch {
+            return buffer[0];
+        };
+        _ = try self.tty.read(buffer[1..len]);
+        return std.unicode.utf8Decode(buffer[0..len]);
     }
 
     pub fn getCursor(self: Term) !Vec2 {
@@ -198,42 +240,42 @@ pub const Term = struct {
                 try posix.tcsetattr(self.tty.handle, .NOW, self.state);
 
                 if (esc_read == 0) {
-                    break :res .escape;
+                    break :res special(.escape);
                 }
-                break :res escape_key_codes.get(esc_buffer[0..esc_read]) orelse .unknown;
+                break :res escape_key_codes.get(esc_buffer[0..esc_read]) orelse special(.unknown);
             },
-            'a' & '\x1F' => Event{ .ctrl = 'a' },
-            'b' & '\x1F' => Event{ .ctrl = 'b' },
-            'c' & '\x1F' => Event{ .ctrl = 'c' },
-            'd' & '\x1F' => Event{ .ctrl = 'd' },
-            'e' & '\x1F' => Event{ .ctrl = 'e' },
-            'f' & '\x1F' => Event{ .ctrl = 'f' },
-            'g' & '\x1F' => Event{ .ctrl = 'g' },
-            'h' & '\x1F' => Event{ .ctrl = 'h' },
+            'a' & '\x1F' => ctrl('a'),
+            'b' & '\x1F' => ctrl('b'),
+            'c' & '\x1F' => ctrl('c'),
+            'd' & '\x1F' => ctrl('d'),
+            'e' & '\x1F' => ctrl('e'),
+            'f' & '\x1F' => ctrl('f'),
+            'g' & '\x1F' => ctrl('g'),
+            'h' & '\x1F' => ctrl('h'),
             // Duplicate
             //'i' & '\x1F' => Event{ .ctrl = 'i' },
             // Duplicate
             //'j' & '\x1F' => Event{ .ctrl = 'j' },
-            'k' & '\x1F' => Event{ .ctrl = 'k' },
-            'l' & '\x1F' => Event{ .ctrl = 'l' },
+            'k' & '\x1F' => ctrl('k'),
+            'l' & '\x1F' => ctrl('l'),
             // Duplicate
             //'m' & '\x1F' => Event{ .ctrl = 'm' },
-            'n' & '\x1F' => Event{ .ctrl = 'n' },
-            'o' & '\x1F' => Event{ .ctrl = 'o' },
-            'p' & '\x1F' => Event{ .ctrl = 'p' },
-            'q' & '\x1F' => Event{ .ctrl = 'q' },
-            'r' & '\x1F' => Event{ .ctrl = 'r' },
-            's' & '\x1F' => Event{ .ctrl = 's' },
-            't' & '\x1F' => Event{ .ctrl = 't' },
-            'u' & '\x1F' => Event{ .ctrl = 'u' },
-            'v' & '\x1F' => Event{ .ctrl = 'v' },
-            'w' & '\x1F' => Event{ .ctrl = 'w' },
-            'x' & '\x1F' => Event{ .ctrl = 'x' },
-            'y' & '\x1F' => Event{ .ctrl = 'y' },
-            'z' & '\x1F' => Event{ .ctrl = 'z' },
-            9 => .tab,
-            127 => .backspace,
-            else => Event{ .key = byte },
+            'n' & '\x1F' => ctrl('n'),
+            'o' & '\x1F' => ctrl('o'),
+            'p' & '\x1F' => ctrl('p'),
+            'q' & '\x1F' => ctrl('q'),
+            'r' & '\x1F' => ctrl('r'),
+            's' & '\x1F' => ctrl('s'),
+            't' & '\x1F' => ctrl('t'),
+            'u' & '\x1F' => ctrl('u'),
+            'v' & '\x1F' => ctrl('v'),
+            'w' & '\x1F' => ctrl('w'),
+            'x' & '\x1F' => ctrl('x'),
+            'y' & '\x1F' => ctrl('y'),
+            'z' & '\x1F' => ctrl('z'),
+            9 => special(.tab),
+            127 => special(.backspace),
+            else => key(.{ .key = byte }),
         };
     }
 };
@@ -244,26 +286,26 @@ const escape_key_codes = blk: {
     break :blk std.StaticStringMap(Term.Event).initComptime(
         .{
             // Legacy
-            .{ "[A", .arrow_up },
-            .{ "OA", .arrow_up },
-            .{ "[B", .arrow_down },
-            .{ "OB", .arrow_down },
-            .{ "[C", .arrow_right },
-            .{ "OC", .arrow_right },
-            .{ "[D", .arrow_left },
-            .{ "OD", .arrow_left },
-            .{ "[2~", .insert },
-            .{ "[3~", .delete },
-            .{ "[5~", .page_up },
-            .{ "[6~", .page_down },
-            .{ "[F", .end },
-            .{ "OF", .end },
-            .{ "[4~", .home },
-            .{ "[8~", .home },
-            .{ "[H", .home },
-            .{ "[1~", .home },
-            .{ "[7~", .home },
-            .{ "[H~", .home },
+            .{ "[A", special(.arrow_up) },
+            .{ "OA", special(.arrow_up) },
+            .{ "[B", special(.arrow_down) },
+            .{ "OB", special(.arrow_down) },
+            .{ "[C", special(.arrow_right) },
+            .{ "OC", special(.arrow_right) },
+            .{ "[D", special(.arrow_left) },
+            .{ "OD", special(.arrow_left) },
+            .{ "[2~", special(.insert) },
+            .{ "[3~", special(.delete) },
+            .{ "[5~", special(.page_up) },
+            .{ "[6~", special(.page_down) },
+            .{ "[F", special(.end) },
+            .{ "OF", special(.end) },
+            .{ "[4~", special(.home) },
+            .{ "[8~", special(.home) },
+            .{ "[H", special(.home) },
+            .{ "[1~", special(.home) },
+            .{ "[7~", special(.home) },
+            .{ "[H~", special(.home) },
             //.{ "OP", .{ .function = 1 } },
             //.{ "OQ", .{ .function = 2 } },
             //.{ "OR", .{ .function = 3 } },
@@ -277,11 +319,11 @@ const escape_key_codes = blk: {
             //.{ "[23~", .{ .function = 11 } },
             //.{ "[24~", .{ .function = 12 } },
             //.{ "a", .{ .alt = 'a' } },
-            .{ "b", Term.Event{ .alt = 'b' } },
+            .{ "b", alt('b') },
             //.{ "c", .{ .alt = 'c' } },
             //.{ "d", .{ .alt = 'd' } },
             //.{ "e", .{ .alt = 'e' } },
-            .{ "f", Term.Event{ .alt = 'f' } },
+            .{ "f", alt('f') },
             //.{ "g", .{ .alt = 'g' } },
             //.{ "h", .{ .alt = 'h' } },
             //.{ "i", .{ .alt = 'i' } },
@@ -304,63 +346,63 @@ const escape_key_codes = blk: {
             //.{ "z", .{ .alt = 'z' } },
 
             // Kitty
-            .{ "[27u", .escape },
-            .{ "[97;5u", Term.Event{ .ctrl = 'a' } },
-            .{ "[98;5u", Term.Event{ .ctrl = 'b' } },
-            .{ "[99;5u", Term.Event{ .ctrl = 'c' } },
-            .{ "[100;5u", Term.Event{ .ctrl = 'd' } },
-            .{ "[101;5u", Term.Event{ .ctrl = 'e' } },
-            .{ "[102;5u", Term.Event{ .ctrl = 'f' } },
-            .{ "[103;5u", Term.Event{ .ctrl = 'g' } },
-            .{ "[104;5u", Term.Event{ .ctrl = 'h' } },
-            .{ "[105;5u", Term.Event{ .ctrl = 'i' } },
-            .{ "[106;5u", Term.Event{ .ctrl = 'j' } },
-            .{ "[107;5u", Term.Event{ .ctrl = 'k' } },
-            .{ "[108;5u", Term.Event{ .ctrl = 'l' } },
-            .{ "[109;5u", Term.Event{ .ctrl = 'm' } },
-            .{ "[110;5u", Term.Event{ .ctrl = 'n' } },
-            .{ "[111;5u", Term.Event{ .ctrl = 'o' } },
-            .{ "[112;5u", Term.Event{ .ctrl = 'p' } },
-            .{ "[113;5u", Term.Event{ .ctrl = 'q' } },
-            .{ "[114;5u", Term.Event{ .ctrl = 'r' } },
-            .{ "[115;5u", Term.Event{ .ctrl = 's' } },
-            .{ "[116;5u", Term.Event{ .ctrl = 't' } },
-            .{ "[117;5u", Term.Event{ .ctrl = 'u' } },
-            .{ "[118;5u", Term.Event{ .ctrl = 'v' } },
-            .{ "[119;5u", Term.Event{ .ctrl = 'w' } },
-            .{ "[120;5u", Term.Event{ .ctrl = 'x' } },
-            .{ "[121;5u", Term.Event{ .ctrl = 'y' } },
-            .{ "[122;5u", Term.Event{ .ctrl = 'z' } },
-            .{ "[97;3u", Term.Event{ .alt = 'a' } },
-            .{ "[98;3u", Term.Event{ .alt = 'b' } },
-            .{ "[99;3u", Term.Event{ .alt = 'c' } },
-            .{ "[100;3u", Term.Event{ .alt = 'd' } },
-            .{ "[101;3u", Term.Event{ .alt = 'e' } },
-            .{ "[102;3u", Term.Event{ .alt = 'f' } },
-            .{ "[103;3u", Term.Event{ .alt = 'g' } },
-            .{ "[104;3u", Term.Event{ .alt = 'h' } },
-            .{ "[105;3u", Term.Event{ .alt = 'i' } },
-            .{ "[106;3u", Term.Event{ .alt = 'j' } },
-            .{ "[107;3u", Term.Event{ .alt = 'k' } },
-            .{ "[108;3u", Term.Event{ .alt = 'l' } },
-            .{ "[109;3u", Term.Event{ .alt = 'm' } },
-            .{ "[110;3u", Term.Event{ .alt = 'n' } },
-            .{ "[111;3u", Term.Event{ .alt = 'o' } },
-            .{ "[112;3u", Term.Event{ .alt = 'p' } },
-            .{ "[113;3u", Term.Event{ .alt = 'q' } },
-            .{ "[114;3u", Term.Event{ .alt = 'r' } },
-            .{ "[115;3u", Term.Event{ .alt = 's' } },
-            .{ "[116;3u", Term.Event{ .alt = 't' } },
-            .{ "[117;3u", Term.Event{ .alt = 'u' } },
-            .{ "[118;3u", Term.Event{ .alt = 'v' } },
-            .{ "[119;3u", Term.Event{ .alt = 'w' } },
-            .{ "[120;3u", Term.Event{ .alt = 'x' } },
-            .{ "[121;3u", Term.Event{ .alt = 'y' } },
-            .{ "[122;3u", Term.Event{ .alt = 'z' } },
+            .{ "[27u", special(.escape) },
+            .{ "[97;5u", ctrl('a') },
+            .{ "[98;5u", ctrl('b') },
+            .{ "[99;5u", ctrl('c') },
+            .{ "[100;5u", ctrl('d') },
+            .{ "[101;5u", ctrl('e') },
+            .{ "[102;5u", ctrl('f') },
+            .{ "[103;5u", ctrl('g') },
+            .{ "[104;5u", ctrl('h') },
+            .{ "[105;5u", ctrl('i') },
+            .{ "[106;5u", ctrl('j') },
+            .{ "[107;5u", ctrl('k') },
+            .{ "[108;5u", ctrl('l') },
+            .{ "[109;5u", ctrl('m') },
+            .{ "[110;5u", ctrl('n') },
+            .{ "[111;5u", ctrl('o') },
+            .{ "[112;5u", ctrl('p') },
+            .{ "[113;5u", ctrl('q') },
+            .{ "[114;5u", ctrl('r') },
+            .{ "[115;5u", ctrl('s') },
+            .{ "[116;5u", ctrl('t') },
+            .{ "[117;5u", ctrl('u') },
+            .{ "[118;5u", ctrl('v') },
+            .{ "[119;5u", ctrl('w') },
+            .{ "[120;5u", ctrl('x') },
+            .{ "[121;5u", ctrl('y') },
+            .{ "[122;5u", ctrl('z') },
+            .{ "[97;3u", alt('a') },
+            .{ "[98;3u", alt('b') },
+            .{ "[99;3u", alt('c') },
+            .{ "[100;3u", alt('d') },
+            .{ "[101;3u", alt('e') },
+            .{ "[102;3u", alt('f') },
+            .{ "[103;3u", alt('g') },
+            .{ "[104;3u", alt('h') },
+            .{ "[105;3u", alt('i') },
+            .{ "[106;3u", alt('j') },
+            .{ "[107;3u", alt('k') },
+            .{ "[108;3u", alt('l') },
+            .{ "[109;3u", alt('m') },
+            .{ "[110;3u", alt('n') },
+            .{ "[111;3u", alt('o') },
+            .{ "[112;3u", alt('p') },
+            .{ "[113;3u", alt('q') },
+            .{ "[114;3u", alt('r') },
+            .{ "[115;3u", alt('s') },
+            .{ "[116;3u", alt('t') },
+            .{ "[117;3u", alt('u') },
+            .{ "[118;3u", alt('v') },
+            .{ "[119;3u", alt('w') },
+            .{ "[120;3u", alt('x') },
+            .{ "[121;3u", alt('y') },
+            .{ "[122;3u", alt('z') },
 
             // Other
-            .{ "[1;5C", Term.Event{ .ctrl = 0 } },
-            .{ "[1;5D", Term.Event{ .ctrl = 1 } },
+            .{ "[1;5C", Term.Event{ .ctrl = .{ .special = .arrow_right } } },
+            .{ "[1;5D", Term.Event{ .ctrl = .{ .special = .arrow_left } } },
         },
     );
 };
