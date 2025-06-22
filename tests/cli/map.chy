@@ -1,0 +1,31 @@
+fn map list func {
+    new-list := []
+    for e in $list {
+        $new-list = (append $new-list ($func $e))
+    }
+    return $new-list
+}
+
+fn filter list predicate {
+    new-list := []
+    for e in $list {
+        if ($predicate $e) {
+            $new-list = (append $new-list $e)
+        }
+    }
+    return $new-list
+}
+
+expected := [ 1 4 9 16]
+numbers  := [ 1 2 3 4 ]
+
+assert (map $numbers n -> (* $n $n)) == $expected
+
+square := what -> (* $what $what)
+
+assert (map $numbers $square) == $expected
+
+
+# This does not work today
+#result := (map (filter $numbers n -> $n == 2) $square)
+#say $result
