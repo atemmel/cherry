@@ -67,6 +67,7 @@ const State = struct {
     }
 
     pub fn lineAsBytes(self: *State) []const u8 {
+        // cache latest write to buffer
         if (self.bytes_buffer_end_idx) |idx| {
             return self.bytes_buffer[0..idx];
         }
@@ -200,7 +201,13 @@ const State = struct {
             fmt(out, "{s}{s}{s}", .{ color, self.lineAsBytes()[token_idc.from..token_idc.to], color_end });
             n_src = token_idc.to;
         }
-        fmt(out, "{s}\r", .{self.lineAsBytes()[n_src..]});
+        const rem = self.lineAsBytes()[n_src..];
+        const maybe_idx = std.mem.indexOfScalar(u8, rem, '#');
+        if (maybe_idx) |idx| {
+            fmt(out, "{s}{s}{s}{s}\r", .{ rem[0..idx], Hi.black, rem[idx..], Color.white });
+        } else {
+            fmt(out, "{s}\r", .{rem});
+        }
     }
 
     pub fn writePrompt(self: *State) !void {
@@ -340,15 +347,31 @@ pub fn repl(persistent_allocator: std.mem.Allocator) !void {
                         },
                         .search => {},
                     },
-                    .arrow_left => {
-                        if (state.cursor > 0) {
-                            state.cursor -= 1;
-                        }
+                    .arrow_left => switch (state.mode) {
+                        .prompt => {
+                            if (state.cursor > 0) {
+                                state.cursor -= 1;
+                            }
+                        },
+                        .search => {
+                            state.mode = .prompt;
+                            if (state.cursor > 0) {
+                                state.cursor -= 1;
+                            }
+                        },
                     },
-                    .arrow_right => {
-                        if (state.cursor < state.length) {
-                            state.cursor += 1;
-                        }
+                    .arrow_right => switch (state.mode) {
+                        .prompt => {
+                            if (state.cursor < state.length) {
+                                state.cursor += 1;
+                            }
+                        },
+                        .search => {
+                            state.mode = .prompt;
+                            if (state.cursor < state.length) {
+                                state.cursor += 1;
+                            }
+                        },
                     },
                     .backspace => {
                         state.removeKeyAtCursor();
