@@ -671,6 +671,7 @@ fn tryAutocompletePath2(state: *State) !void {
 }
 
 fn displayCompletionResults(state: *State, result: CompletionResult) !void {
+    const codepoints = std.unicode.utf8CountCodepoints;
     const line = state.line();
 
     var last_cmd_begin = std.mem.lastIndexOfScalar(u21, line, ' ') orelse 0;
@@ -685,7 +686,6 @@ fn displayCompletionResults(state: *State, result: CompletionResult) !void {
             const offset = line.len - last_cmd_begin;
 
             defer {
-                const codepoints = std.unicode.utf8CountCodepoints;
                 state.length += (codepoints(str) catch @panic("Bad unicode byte")) - offset;
                 state.cursor += (codepoints(str) catch @panic("Bad unicode byte")) - offset;
             }
@@ -699,10 +699,11 @@ fn displayCompletionResults(state: *State, result: CompletionResult) !void {
                 .mtime = undefined,
                 .size = undefined,
             };
+
             if (stat.kind == .directory) {
                 //TODO: make bufPrint to state.buffer-pattern into separate function
-                _ = algo.writeU8SliceToU21Slice(str, state.buffer[state.length - offset ..]);
-                state.buffer[state.length + 1] = '/';
+                const len = algo.writeU8SliceToU21Slice(str, state.buffer[state.length - offset ..]);
+                state.buffer[state.length - offset + len] = '/';
 
                 state.length += 1;
                 state.cursor += 1;
