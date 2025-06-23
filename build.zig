@@ -37,6 +37,8 @@ pub fn build(b: *std.Build) void {
         .root_source_file = b.path("src/main.zig"),
         .target = target,
         .optimize = optimize,
+        .use_llvm = optimize != .Debug,
+        .use_lld = optimize != .Debug,
     });
 
     const options = b.addOptions();
