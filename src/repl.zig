@@ -229,7 +229,7 @@ const State = struct {
             .search => blk: {
                 var sum = "(reverse-search) ".len;
                 if (self.search_idx) |idx| {
-                    sum += " -> ".len + self.history.items[idx].len;
+                    sum += " -> ".len + (std.unicode.utf8CountCodepoints(self.history.items[idx]) catch 0);
                     if (self.search_reached_end) {
                         sum += " (Search reached end)".len;
                     }
