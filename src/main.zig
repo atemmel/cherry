@@ -21,7 +21,7 @@ pub var active_term: ?*terminal.Term = null;
 
 pub fn panic(msg: []const u8, _: ?*std.builtin.StackTrace, addr: ?usize) noreturn {
     if (active_term) |term| {
-        term.restore() catch {};
+        term.restore();
     }
     std.debug.print("\n\n--- Runtime panic ---\n\n", .{});
     std.debug.defaultPanic(msg, addr);
