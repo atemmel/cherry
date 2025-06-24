@@ -47,7 +47,7 @@ const State = struct {
     pub fn deinit(self: *State) void {
         self.persistent_arena.deinit();
         self.repl_loop_arena.deinit();
-        self.term.restore() catch unreachable; // no balls
+        self.term.restore();
     }
 
     pub fn writer(self: *State) @TypeOf(self.out_writer.writer()) {
@@ -427,7 +427,7 @@ pub fn repl(persistent_allocator: std.mem.Allocator) !void {
                         state.cursor = 0;
                     },
                     'l' => {
-                        terminal.moveCursor(state.term.tty.writer(), 0, 0);
+                        terminal.moveCursor(state.term.tty.?.writer(), 0, 0);
                         terminal.clear(out);
                     },
                     'r' => {
@@ -474,7 +474,7 @@ fn eval(state: *State) !void {
     };
     state.print("\r\n", .{});
     terminal.clearLine(state.writer(), state.prefixLen());
-    try state.term.restore();
+    state.term.restore();
     state.flush();
     defer {
         state.term = Term.init() catch unreachable;
@@ -483,6 +483,7 @@ fn eval(state: *State) !void {
     }
 
     const cmd = try aliasLookup(state, state.lineAsBytes());
+    std.debug.print("expanded to {s}\n", .{cmd});
     const source = try pipeline.state.scratch_arena.allocator().dupe(u8, cmd);
 
     pipeline.run(.{
@@ -955,7 +956,7 @@ fn readRc(state: *State) !void {
     const ally = state.persistent_arena.allocator();
     const rc_src = file.readToEndAlloc(ally, 1_000_000_000) catch return;
 
-    try state.term.restore();
+    state.term.restore();
     defer {
         state.term = Term.init() catch unreachable;
         state.length = 0;
@@ -973,7 +974,7 @@ fn readRc(state: *State) !void {
     state.flush();
 }
 
-fn aliasLookup(_: *State, cmd_arg: []const u8) ![]const u8 {
+fn aliasLookup(state: *State, cmd_arg: []const u8) ![]const u8 {
     var cmd = cmd_arg;
 
     const aliases = gc.aliases.items;
@@ -981,24 +982,17 @@ fn aliasLookup(_: *State, cmd_arg: []const u8) ![]const u8 {
         return cmd;
     }
 
-    const static = struct {
-        var replacement_buffer: [4096]u8 = undefined;
-    };
-
     var it = std.mem.reverseIterator(aliases);
     while (it.next()) |alias| {
         if (!startsWith(u8, cmd, alias.from)) {
             continue;
         }
         if (cmd.len == alias.from.len or cmd[alias.from.len] == ' ') {
-            cmd = try std.fmt.bufPrint(
-                &static.replacement_buffer,
+            cmd = try std.fmt.allocPrint(
+                state.repl_loop_arena.allocator(),
                 "{s}{s}",
                 .{ alias.to, cmd[alias.from.len..] },
             );
-
-            //const len = algo.writeU8SliceToU21Slice(&static.replacement_buffer, &state.buffer);
-            //cmd = state.buffer[0..len];
         }
     }
     return cmd;
@@ -1009,14 +1003,20 @@ const expectEqual = std.testing.expectEqual;
 const expectEqualStrings = std.testing.expectEqualStrings;
 
 fn testReplState() State {
-    return State{
+    var state = State{
         .persistent_arena = undefined,
-        .repl_loop_arena = undefined,
+        .repl_loop_arena = std.heap.ArenaAllocator.init(std.testing.allocator),
         .out_writer = undefined,
         .history = undefined,
-        .term = undefined,
+        .term = Term{
+            .tty = null,
+            .original_termios = undefined,
+            .state = undefined,
+        },
         .history_scroll_idx = undefined,
     };
+    state.persistent_arena = &state.repl_loop_arena;
+    return state;
 }
 
 test "Single alias lookup" {
@@ -1025,6 +1025,7 @@ test "Single alias lookup" {
     defer gc.deinit();
 
     var state = testReplState();
+    defer state.deinit();
 
     const cmd = "ls";
 
@@ -1041,6 +1042,7 @@ test "Single alias lookup failure" {
     try gc.init(std.testing.allocator);
     defer gc.deinit();
     var state = testReplState();
+    defer state.deinit();
 
     const cmd = "lsblk";
 
@@ -1057,6 +1059,7 @@ test "Single alias lookup success but keeps arg" {
     try gc.init(std.testing.allocator);
     defer gc.deinit();
     var state = testReplState();
+    defer state.deinit();
 
     const cmd = "ls /tmp";
 
@@ -1073,6 +1076,7 @@ test "Nested alias lookup success" {
     try gc.init(std.testing.allocator);
     defer gc.deinit();
     var state = testReplState();
+    defer state.deinit();
 
     const cmd = "ll";
 

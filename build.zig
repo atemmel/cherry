@@ -101,7 +101,9 @@ pub fn build(b: *std.Build) void {
     const exe_unit_tests = b.addTest(.{
         .root_source_file = b.path("src/main.zig"),
         .target = target,
-        .optimize = optimize,
+        .optimize = .Debug,
+        .use_llvm = false,
+        .use_lld = false,
     });
 
     const run_exe_unit_tests = b.addRunArtifact(exe_unit_tests);

@@ -82,7 +82,7 @@ fn ctrl(k: u8) Term.Event {
 }
 
 pub const Term = struct {
-    tty: fs.File,
+    tty: ?fs.File,
     original_termios: posix.termios,
     state: posix.termios,
 
@@ -179,26 +179,28 @@ pub const Term = struct {
         };
     }
 
-    pub fn restore(self: *Term) !void {
-        try posix.tcsetattr(self.tty.handle, .FLUSH, self.original_termios);
-        self.tty.close();
-        self.tty = fs.File{ .handle = 0 };
+    pub fn restore(self: *Term) void {
+        if (self.tty) |*tty| {
+            posix.tcsetattr(tty.handle, .FLUSH, self.original_termios) catch {};
+            tty.close();
+            self.tty = null;
+        }
     }
 
     pub fn readByte(self: Term) !u21 {
         var buffer: [4]u8 = undefined;
-        _ = try self.tty.read(buffer[0..1]);
+        _ = try self.tty.?.read(buffer[0..1]);
         const len = std.unicode.utf8ByteSequenceLength(buffer[0]) catch {
             return buffer[0];
         };
-        _ = try self.tty.read(buffer[1..len]);
+        _ = try self.tty.?.read(buffer[1..len]);
         return std.unicode.utf8Decode(buffer[0..len]);
     }
 
     pub fn getCursor(self: Term) !Vec2 {
-        try self.tty.writeAll("\x1b[6n");
+        try self.tty.?.writeAll("\x1b[6n");
         var buf: ["\x1b[256;256R".len]u8 = undefined;
-        const output = try self.tty.reader().readUntilDelimiter(&buf, 'R');
+        const output = try self.tty.?.reader().readUntilDelimiter(&buf, 'R');
         var splitter = std.mem.splitAny(u8, output, ";[");
         _ = splitter.next().?;
         const row_half = splitter.next() orelse return error.UnexpectedEnd;
@@ -214,7 +216,7 @@ pub const Term = struct {
     pub fn size(self: Term) Vec2 {
         const linux = std.os.linux;
         var l_size = std.mem.zeroes(std.posix.winsize);
-        const err = linux.ioctl(self.tty.handle, linux.T.IOCGWINSZ, @intFromPtr(&l_size));
+        const err = linux.ioctl(self.tty.?.handle, linux.T.IOCGWINSZ, @intFromPtr(&l_size));
         if (posix.errno(err) != .SUCCESS) {
             unreachable;
         }
@@ -230,14 +232,14 @@ pub const Term = struct {
             '\x1b' => res: {
                 self.state.cc[@intFromEnum(posix.system.V.TIME)] = 1;
                 self.state.cc[@intFromEnum(posix.system.V.MIN)] = 0;
-                try posix.tcsetattr(self.tty.handle, .NOW, self.state);
+                try posix.tcsetattr(self.tty.?.handle, .NOW, self.state);
 
                 var esc_buffer: [8]u8 = undefined;
-                const esc_read = try self.tty.read(&esc_buffer);
+                const esc_read = try self.tty.?.read(&esc_buffer);
 
                 self.state.cc[@intFromEnum(posix.system.V.TIME)] = 0;
                 self.state.cc[@intFromEnum(posix.system.V.MIN)] = 1;
-                try posix.tcsetattr(self.tty.handle, .NOW, self.state);
+                try posix.tcsetattr(self.tty.?.handle, .NOW, self.state);
 
                 if (esc_read == 0) {
                     break :res special(.escape);

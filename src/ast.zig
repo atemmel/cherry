@@ -297,7 +297,7 @@ const Context = struct {
         if (builtin.mode == .Debug and !inside_repl) {
             const bar = "===============================================";
             if (main.active_term) |t| {
-                t.restore() catch {};
+                t.restore();
             }
             std.debug.print("Encountered an error while parsing the ast:\n\n{s}\n\n", .{bar});
             std.debug.dumpCurrentStackTrace(null);
