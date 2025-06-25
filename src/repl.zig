@@ -483,7 +483,6 @@ fn eval(state: *State) !void {
     }
 
     const cmd = try aliasLookup(state, state.lineAsBytes());
-    std.debug.print("expanded to {s}\n", .{cmd});
     const source = try pipeline.state.scratch_arena.allocator().dupe(u8, cmd);
 
     pipeline.run(.{
@@ -602,10 +601,10 @@ fn nextCommand(state: *State) void {
 
 fn replaceCommand(state: *State, cmd: []const u8) void {
     terminal.clearLine(state.writer(), state.prefixLen() + 7 + state.length);
-    @memset(state.buffer[0..state.length], 0);
     const len = algo.writeU8SliceToU21Slice(cmd, &state.buffer);
     state.cursor = len;
     state.length = len;
+    state.bytes_buffer_end_idx = null;
 }
 
 fn tryAutocomplete(state: *State) !void {
