@@ -354,9 +354,14 @@ pub fn repl(persistent_allocator: std.mem.Allocator) !void {
                             }
                         },
                         .search => {
-                            state.mode = .prompt;
-                            if (state.cursor > 0) {
-                                state.cursor -= 1;
+                            if (state.search_idx) |idx| { // if holds a match from history
+                                state.flush();
+                                const match = state.history.items[idx];
+                                replaceCommand(&state, match);
+                                if (state.cursor > 0) {
+                                    state.cursor -= 1;
+                                }
+                                state.mode = .prompt;
                             }
                         },
                     },
