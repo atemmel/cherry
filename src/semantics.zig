@@ -360,7 +360,12 @@ fn analyzeSingleExpression(ctx: *Context, wants_type: TypeInfo, got_type: TypeIn
 }
 
 fn analyzeVarDecl(ctx: *Context, decl: ast.VarDecl) !void {
-    //TODO: apply to multiple declarations
+    if (decl.tokens.len == 1) {
+        try analyzeSingleVarDecl(ctx, decl);
+    } else unreachable;
+}
+
+fn analyzeSingleVarDecl(ctx: *Context, decl: ast.VarDecl) !void {
     if (ctx.lookupVariable(decl.tokens[0].value)) |_| {
         try ctx.errFmt(.{ .offending_token = decl.tokens[0] }, "variable '{s}' is already declared within current scope", .{decl.tokens[0].value});
     } else {
@@ -370,15 +375,25 @@ fn analyzeVarDecl(ctx: *Context, decl: ast.VarDecl) !void {
 }
 
 fn analyzeAssignment(ctx: *Context, assign: ast.Assignment) !void {
-    _ = ctx; // autofix
-    _ = assign; // autofix
-    //if (ctx.lookupVariable(assign.variable.token.value)) |variable| {
-    //const type_info = try analyzeExpression(ctx, assign.expression);
-    //_ = type_info; // autofix
-    //variable.eql(type_info, table: Table)
-    //} else {
-    //try ctx.errFmt(.{ .offending_token = assign.variable.token }, "variable '{s}' is already declared within current scope", .{assign.variable.value});
-    //}
+    const var_token = assign.variable.token;
+    const v = ctx.lookupVariable(var_token.value) orelse {
+        try ctx.errFmt(.{ .offending_token = var_token }, "variable '{s}' is never declared", .{var_token.value});
+        return;
+    };
+
+    const empty_table = Table.init(ctx.arena);
+
+    const type_info = try analyzeExpression(ctx, assign.expression);
+    if (!v.eql(type_info, empty_table)) {
+        const bad_token = ast.tokenFromExpr(assign.expression);
+        const other_type_str = try type_info.str(ctx.arena, empty_table);
+        const assignee_type_str = try v.str(ctx.arena, empty_table);
+        try ctx.errFmt(.{ .offending_token = bad_token }, "variable '{s}' of type {s} cannot be assigned value of type {s}", .{
+            var_token.value,
+            assignee_type_str,
+            other_type_str,
+        });
+    }
 }
 
 fn analyzeBranches(ctx: *Context, call: ast.Branches) !void {
