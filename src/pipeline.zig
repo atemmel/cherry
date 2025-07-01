@@ -197,7 +197,9 @@ fn logTime(comptime prefix: []const u8, start_us: i64, stop_us: i64) void {
 pub fn writeError(err: PipelineError) !void {
     const writer = std.io.getStdErr().writer();
     switch (err) {
-        error.UnterminatedBlockComment => {
+        error.UnterminatedStringLiteral,
+        error.UnterminatedBlockComment,
+        => {
             try writeLexerError(writer);
         },
         error.ParseFailed => {

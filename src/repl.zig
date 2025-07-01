@@ -6,7 +6,9 @@ const std = @import("std");
 const strings = @import("strings.zig");
 const terminal = @import("term.zig");
 const main = @import("main.zig");
+const tokens = @import("tokens.zig");
 
+const Token = tokens.Token;
 const Term = terminal.Term;
 const Color = terminal.Color;
 const Hi = terminal.Hi;
@@ -18,6 +20,7 @@ const History = std.ArrayList([]const u8);
 
 const Mode = enum {
     prompt,
+    multi_line_prompt,
     search,
 };
 
@@ -62,6 +65,30 @@ const State = struct {
         self.out_writer.flush() catch {};
     }
 
+    pub fn editIndex(self: *State) usize {
+        return switch (self.mode) {
+            Mode.prompt, Mode.search => self.cursor,
+            Mode.multi_line_prompt => blk: {
+                if (std.mem.lastIndexOfScalar(u21, self.line(), '\n')) |idx| {
+                    break :blk idx + 1 + self.cursor;
+                }
+                break :blk self.cursor;
+            },
+        };
+    }
+
+    pub fn clearLine(self: *State) void {
+        self.length = switch (self.mode) {
+            Mode.prompt, Mode.search => 0,
+            Mode.multi_line_prompt => blk: {
+                if (std.mem.lastIndexOfScalar(u21, self.line(), '\n')) |idx| {
+                    break :blk self.line().len - idx + 1;
+                }
+                break :blk 0;
+            },
+        };
+    }
+
     pub fn line(self: *State) []const u21 {
         return self.buffer[0..self.length];
     }
@@ -85,8 +112,8 @@ const State = struct {
         if (self.length + 1 >= self.buffer.len) {
             return;
         }
-        std.mem.rotate(u21, self.buffer[self.cursor .. self.length + 1], self.length - self.cursor);
-        self.buffer[self.cursor] = key;
+        std.mem.rotate(u21, self.buffer[self.editIndex() .. self.length + 1], self.length - self.editIndex());
+        self.buffer[self.editIndex()] = key;
         self.cursor += 1;
         self.length += 1;
     }
@@ -94,7 +121,7 @@ const State = struct {
     pub fn removeKeyAtCursor(self: *State) void {
         if (self.cursor <= 0) return;
 
-        const cursor_and_behind = self.buffer[self.cursor - 1 .. self.length];
+        const cursor_and_behind = self.buffer[self.editIndex() - 1 .. self.length];
         std.mem.rotate(u21, cursor_and_behind, 1);
         self.cursor -= 1;
         self.length -= 1;
@@ -103,7 +130,7 @@ const State = struct {
     pub fn removeKeyBehindCursor(self: *State) void {
         if (self.cursor >= self.length) return;
 
-        const behind_cursor = self.buffer[self.cursor..self.length];
+        const behind_cursor = self.buffer[self.editIndex()..self.length];
         std.mem.rotate(u21, behind_cursor, 1);
         self.length -= 1;
     }
@@ -115,6 +142,9 @@ const State = struct {
         switch (self.mode) {
             .prompt => {
                 try self.writePromptAndLine();
+            },
+            .multi_line_prompt => {
+                try self.writePromptAndMultiline();
             },
             .search => {
                 if (self.search_idx) |idx| {
@@ -135,26 +165,40 @@ const State = struct {
     pub fn writePromptAndLine(self: *State) !void {
         const out = self.writer();
         try self.writePrompt();
+        const src = self.lineAsBytes();
 
         const mod = pipeline.runOnlySemantics(.{
             .root_module_name = "interactive",
-            .root_module_source = self.lineAsBytes(),
+            .root_module_source = src,
             .arena = &self.repl_loop_arena,
-        }) catch {
-            const info = pipeline.state.errorInfo();
-            //TODO: check for COLORTERM=truecolor
-            fmt(out, "{s}{s}{s}   {s}{s}\r", .{ Hi.red, self.lineAsBytes(), Hi.black, info.msg, Color.white });
-            return;
+        }) catch |e| switch (e) {
+            error.UnterminatedStringLiteral => pipeline.Module{
+                .tokens = &[_]Token{},
+                .filename = undefined,
+                .source = undefined,
+                .ast = undefined,
+            },
+            else => {
+                const info = pipeline.state.errorInfo();
+                //TODO: check for COLORTERM=truecolor
+                fmt(out, "{s}{s}{s}   {s}{s}\r", .{ Hi.red, src, Hi.black, info.msg, Color.white });
+                return;
+            },
         };
         if (mod.tokens.len == 0) {
-            fmt(out, "{s}\r", .{self.lineAsBytes()});
+            fmt(out, "{s}\r", .{src});
+            return;
         }
         var n_token: usize = 0;
         var n_src: usize = 0;
         while (n_token < mod.tokens.len) : (n_token += 1) {
             const token = mod.tokens[n_token];
-            const token_idc = token.indicies(self.lineAsBytes());
-            fmt(out, "{s}", .{self.lineAsBytes()[n_src..token_idc.from]});
+            const token_idc = switch (token.kind) {
+                .StringLiteral => token.indiciesAndSurrounding(src),
+                .Variable => token.indiciesAndPrefix(src),
+                else => token.indicies(src),
+            };
+            fmt(out, "{s}", .{src[n_src..token_idc.from]});
             const color = switch (token.kind) {
                 .If,
                 .Else,
@@ -198,16 +242,23 @@ const State = struct {
                 .Bareword, .EmptyRecord, .Newline => "",
             };
             const color_end = if (color.len > 0) Color.white else "";
-            fmt(out, "{s}{s}{s}", .{ color, self.lineAsBytes()[token_idc.from..token_idc.to], color_end });
+            fmt(out, "{s}{s}{s}", .{ color, src[token_idc.from..token_idc.to], color_end });
             n_src = token_idc.to;
         }
-        const rem = self.lineAsBytes()[n_src..];
+        const rem = src[n_src..];
         const maybe_idx = std.mem.indexOfScalar(u8, rem, '#');
         if (maybe_idx) |idx| {
             fmt(out, "{s}{s}{s}{s}\r", .{ rem[0..idx], Hi.black, rem[idx..], Color.white });
         } else {
             fmt(out, "{s}\r", .{rem});
         }
+    }
+
+    pub fn writePromptAndMultiline(self: *State) !void {
+        const out = self.writer();
+        const src = self.lineAsBytes();
+        const n = std.mem.lastIndexOfScalar(u8, src, '\n') orelse 0;
+        fmt(out, "{s}->{s} {s}\r", .{ Hi.black, Color.white, src[n + 1 ..] });
     }
 
     pub fn writePrompt(self: *State) !void {
@@ -236,6 +287,7 @@ const State = struct {
                 }
                 break :blk sum;
             },
+            .multi_line_prompt => "-> ".len,
         };
     }
 };
@@ -309,8 +361,18 @@ pub fn repl(persistent_allocator: std.mem.Allocator) !void {
                 .key => |key| {
                     switch (key) {
                         '\r' => switch (state.mode) {
-                            .prompt => {
-                                try eval(&state);
+                            .prompt, .multi_line_prompt => {
+                                const result = try eval(&state);
+                                switch (result) {
+                                    .Ok => {
+                                        state.mode = .prompt;
+                                    },
+                                    .StringNeverClosed => {
+                                        state.writeKeyAtCursor('\n');
+                                        state.cursor = 0;
+                                        state.mode = .multi_line_prompt;
+                                    },
+                                }
                             },
                             .search => {
                                 if (state.search_idx) |idx| { // if holds a match from history
@@ -319,14 +381,14 @@ pub fn repl(persistent_allocator: std.mem.Allocator) !void {
                                     replaceCommand(&state, match);
                                     state.mode = .prompt;
                                     try state.writePrefix();
-                                    try eval(&state);
+                                    _ = try eval(&state);
                                 }
                                 // otherwise, ignore
                             },
                         },
                         '\n' => {},
                         else => switch (state.mode) {
-                            .prompt => state.writeKeyAtCursor(key),
+                            .prompt, .multi_line_prompt => state.writeKeyAtCursor(key),
                             .search => {
                                 state.writeKeyAtCursor(key);
                                 try reverseSearch(&state, .reset);
@@ -336,19 +398,19 @@ pub fn repl(persistent_allocator: std.mem.Allocator) !void {
                 },
                 .special => |s| switch (s) {
                     .arrow_down => switch (state.mode) {
-                        .prompt => {
+                        .prompt, .multi_line_prompt => {
                             nextCommand(&state);
                         },
                         .search => {},
                     },
                     .arrow_up => switch (state.mode) {
-                        .prompt => {
+                        .prompt, .multi_line_prompt => {
                             previousCommand(&state);
                         },
                         .search => {},
                     },
                     .arrow_left => switch (state.mode) {
-                        .prompt => {
+                        .prompt, .multi_line_prompt => {
                             if (state.cursor > 0) {
                                 state.cursor -= 1;
                             }
@@ -366,7 +428,7 @@ pub fn repl(persistent_allocator: std.mem.Allocator) !void {
                         },
                     },
                     .arrow_right => switch (state.mode) {
-                        .prompt => {
+                        .prompt, .multi_line_prompt => {
                             if (state.cursor < state.length) {
                                 state.cursor += 1;
                             }
@@ -397,7 +459,7 @@ pub fn repl(persistent_allocator: std.mem.Allocator) !void {
                         state.cursor = state.length;
                     },
                     .tab => switch (state.mode) {
-                        .prompt => {
+                        .prompt, .multi_line_prompt => {
                             try tryAutocomplete(&state);
                         },
                         .search => {},
@@ -428,7 +490,7 @@ pub fn repl(persistent_allocator: std.mem.Allocator) !void {
 
                     'u' => {
                         terminal.clearLine(out, state.length + state.prefixLen());
-                        state.length = 0;
+                        state.clearLine();
                         state.cursor = 0;
                     },
                     'l' => {
@@ -443,6 +505,7 @@ pub fn repl(persistent_allocator: std.mem.Allocator) !void {
                                 state.cursor = 0;
                                 state.mode = .search;
                             },
+                            .multi_line_prompt => {},
                             .search => {
                                 try reverseSearch(&state, .forward);
                             },
@@ -467,7 +530,12 @@ pub fn repl(persistent_allocator: std.mem.Allocator) !void {
     }
 }
 
-fn eval(state: *State) !void {
+const EvalResult = enum {
+    Ok,
+    StringNeverClosed,
+};
+
+fn eval(state: *State) !EvalResult {
     // clearing the scratch arena resets GC debug info, among other things
     // only done for release builds
     defer if (builtin.mode != .Debug) {
@@ -481,11 +549,6 @@ fn eval(state: *State) !void {
     terminal.clearLine(state.writer(), state.prefixLen());
     state.term.restore();
     state.flush();
-    defer {
-        state.term = Term.init() catch unreachable;
-        state.length = 0;
-        state.cursor = 0;
-    }
 
     const cmd = try aliasLookup(state, state.lineAsBytes());
     const source = try pipeline.state.scratch_arena.allocator().dupe(u8, cmd);
@@ -495,17 +558,22 @@ fn eval(state: *State) !void {
         .root_module_source = source,
         .root_scope_already_exists = true,
     }) catch |e| {
+        if (e == error.UnterminatedStringLiteral) {
+            state.term = Term.init() catch unreachable;
+            return EvalResult.StringNeverClosed;
+        }
+
         const maybe_module = pipeline.state.modules.get("interactive");
-        const tokens = if (maybe_module != null) maybe_module.?.tokens else &.{};
+        const all_tokens = if (maybe_module != null) maybe_module.?.tokens else &.{};
         if (pipeline.state.verboseInterpretation) {
             std.debug.print("Error has occured while evaluating: {any}\nTokens: ", .{e});
-            for (tokens) |tok| {
+            for (all_tokens) |tok| {
                 std.debug.print("{any}\n", .{tok.kind});
             }
         }
         //TODO: autocd is currently broken, but this should be rewritten regardless
-        const should_try_auto_cd = state.auto_cd and tokens.len == 1 and tokens[0].kind == .Bareword;
-        if (should_try_auto_cd and tryAutoCd(state, tokens[0].value)) {
+        const should_try_auto_cd = state.auto_cd and all_tokens.len == 1 and all_tokens[0].kind == .Bareword;
+        if (should_try_auto_cd and tryAutoCd(state, all_tokens[0].value)) {
             // All ok
         } else {
             pipeline.writeError(e) catch |err| {
@@ -515,7 +583,12 @@ fn eval(state: *State) !void {
             };
         }
     };
+
     state.flush();
+    state.term = Term.init() catch unreachable;
+    state.length = 0;
+    state.cursor = 0;
+    return EvalResult.Ok;
 }
 
 // returns true if cwd is changed

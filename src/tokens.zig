@@ -4,6 +4,7 @@ const pipeline = @import("pipeline.zig");
 const PipelineState = pipeline.State;
 
 pub const LexerError = error{
+    UnterminatedStringLiteral,
     UnterminatedBlockComment,
 } || std.mem.Allocator.Error;
 
@@ -69,16 +70,34 @@ pub const Token = struct {
         };
     }
 
-    pub fn indicies(token: *const Token, src: []const u8) struct {
+    pub const Range = struct {
         from: usize,
         to: usize,
-    } {
+    };
+
+    pub fn indicies(token: *const Token, src: []const u8) Range {
         const token_begin = @intFromPtr(token.value.ptr);
         const token_end = @intFromPtr(token.value.ptr) + token.value.len;
         const src_begin = @intFromPtr(src.ptr);
         return .{
             .from = token_begin - src_begin,
             .to = token_end - src_begin,
+        };
+    }
+
+    pub fn indiciesAndPrefix(token: *const Token, src: []const u8) Range {
+        const i = token.indicies(src);
+        return .{
+            .from = i.from - 1,
+            .to = i.to,
+        };
+    }
+
+    pub fn indiciesAndSurrounding(token: *const Token, src: []const u8) Range {
+        const i = token.indicies(src);
+        return .{
+            .from = i.from - 1,
+            .to = if (src.len == i.to) i.to else i.to + 1,
         };
     }
 
@@ -164,7 +183,7 @@ pub fn lex(state: *PipelineState, source: []const u8) LexerError![]Token {
             try lstate.list.append(variable);
         } else if (lexKeyword(&lstate)) |keyword| {
             try lstate.list.append(keyword);
-        } else if (lexStringLiteral(&lstate)) |string_literal| {
+        } else if (try lexStringLiteral(&lstate)) |string_literal| {
             try lstate.list.append(string_literal);
         } else if (lexIntegerLiteral(&lstate)) |integer_literal| {
             try lstate.list.append(integer_literal);
@@ -302,16 +321,16 @@ fn lexKeyword(state: *LexState) ?Token {
     }
 }
 
-fn lexStringLiteral(state: *LexState) ?Token {
-    if (lexSingleLineStringLiteral(state)) |lit| {
+fn lexStringLiteral(state: *LexState) !?Token {
+    if (try lexSingleLineStringLiteral(state)) |lit| {
         return lit;
-    } else if (lexMultiLineStringLiteral(state)) |lit| {
+    } else if (try lexMultiLineStringLiteral(state)) |lit| {
         return lit;
     }
     return null;
 }
 
-fn lexSingleLineStringLiteral(state: *LexState) ?Token {
+fn lexSingleLineStringLiteral(state: *LexState) !?Token {
     if (state.get() != '"') {
         return null;
     }
@@ -319,21 +338,23 @@ fn lexSingleLineStringLiteral(state: *LexState) ?Token {
     const begin = state.idx;
     while (!state.eof()) : (state.next()) {
         switch (state.get()) {
-            // TODO: handle error
-            '\n',
-            => unreachable,
             '"', //TODO: handle escapes
             => break,
             else => {},
         }
     }
+
+    if (state.eof()) {
+        return LexerError.UnterminatedStringLiteral;
+    }
+
     return .{
         .kind = .StringLiteral,
         .value = state.slice(begin, state.idx),
     };
 }
 
-fn lexMultiLineStringLiteral(state: *LexState) ?Token {
+fn lexMultiLineStringLiteral(state: *LexState) !?Token {
     if (state.get() != '`') {
         return null;
     }
@@ -346,6 +367,11 @@ fn lexMultiLineStringLiteral(state: *LexState) ?Token {
             else => {},
         }
     }
+
+    if (state.eof()) {
+        return LexerError.UnterminatedStringLiteral;
+    }
+
     return .{
         .kind = .StringLiteral,
         .value = state.slice(begin, state.idx),
