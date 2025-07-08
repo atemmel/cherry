@@ -1,5 +1,6 @@
 const std = @import("std");
 const print = std.debug.print;
+const assert = std.debug.assert;
 
 pub const Op = enum(usize) {
     false,
@@ -166,12 +167,34 @@ pub const Local = struct {
     depth: usize,
 };
 
+pub const Scopes = struct {
+    locals: Locals,
+    scope_depth: usize,
+
+    pub fn beginScope(self: *Scopes) void {
+        self.scope_depth += 1;
+    }
+
+    pub fn endScope(self: *Scopes) void {
+        assert(self.scope_depth > 0);
+        self.scope_depth -= 1;
+    }
+};
+
+pub const Locals = std.ArrayList(Local);
 pub const Values = std.ArrayList(Value);
 pub const Instructions = std.ArrayList(usize); //TODO: should perhaps be made more compact
 
 pub const Chunk = struct {
     instructions: Instructions,
     constants: Values,
+
+    pub fn init(alloc: std.mem.Allocator) Chunk {
+        return Chunk{
+            .instructions = Instructions.init(alloc),
+            .constants = Values.init(alloc),
+        };
+    }
 
     pub fn deinit(self: *Chunk) void {
         self.instructions.deinit();
@@ -247,6 +270,7 @@ pub const VM = struct {
     runtime_ally: std.mem.Allocator,
     interned_strings: std.StringHashMap(*HeapNode),
     globals: std.StringHashMap(Value),
+    scopes: Scopes,
 
     pub const Errors = error{
         UnexpectedTypeOfValue,
@@ -261,6 +285,10 @@ pub const VM = struct {
             .runtime_ally = ally,
             .interned_strings = std.StringHashMap(*HeapNode).init(ally),
             .globals = std.StringHashMap(Value).init(ally),
+            .scopes = .{
+                .locals = Locals.init(arena),
+                .scope_depth = 0,
+            },
         };
     }
 
