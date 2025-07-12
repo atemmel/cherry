@@ -46,6 +46,7 @@ fn compileRoot(ctx: *Context) !void {
 fn compileStatement(ctx: *Context, stmnt: ast.Statement) !void {
     switch (stmnt) {
         .var_decl => |v| try compileVarDeclaration(ctx, v),
+        .call => |c| try compileCall(ctx, c),
         else => unreachable,
     }
 }
@@ -55,6 +56,11 @@ fn compileVarDeclaration(ctx: *Context, decl: ast.VarDecl) !void {
         const name = ctx.makeConstant(try vm.allcateString(tok.value));
         try defineVariable(ctx, name);
     }
+}
+
+fn compileCall(ctx: *Context, call: ast.Call) !void {
+    _ = call; //TODO: this
+    _ = ctx;
 }
 
 fn defineVariable(ctx: *Context, global: usize) !void {

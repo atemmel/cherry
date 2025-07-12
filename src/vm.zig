@@ -20,6 +20,7 @@ pub const Op = enum(usize) {
     define_global,
     set_global,
     get_global,
+    call,
 };
 
 pub const Value = union(Kind) {
