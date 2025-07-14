@@ -27,5 +27,5 @@ assert (map $numbers $square) == $expected
 
 
 # This does not work today
-#result := (map (filter $numbers n -> $n == 2) $square)
-#say $result
+result := (map (filter $numbers n -> $n == 2) $square)
+say $result

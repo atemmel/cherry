@@ -160,7 +160,7 @@ fn dumpLoop(loop: ast.Loop) void {
     leaf("Loop\n", .{});
     switch (loop.kind) {
         .classic_loop => |l| dumpClassicLoop(l),
-        .range_loop => unreachable,
+        .range_loop => |l| dumpRangeLoop(l),
     }
     dumpScope(loop.scope);
 }
@@ -177,6 +177,15 @@ fn dumpClassicLoop(loop: ast.ClassicLoop) void {
     if (loop.post_op) |post_op| {
         dumpPostOp(post_op);
     }
+}
+
+fn dumpRangeLoop(loop: ast.RangeLoop) void {
+    defer up();
+    leaf("ClassicLoop\n", .{});
+    down();
+    defer up();
+    print("temporary: {s}", .{loop.name_of_temporary.value});
+    print("iterable: {s}", .{loop.name_of_iterable.token.value});
 }
 
 fn dumpBreak(_: ast.Break) void {

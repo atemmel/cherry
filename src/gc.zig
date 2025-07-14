@@ -268,7 +268,7 @@ pub fn record(r: values.Record, opt: ValueOptions) !*values.Value {
 }
 
 pub fn closure(c: ast.Closure, opt: ValueOptions) !*values.Value {
-    var cl: values.Closure = .{
+    const cl: values.Closure = .{
         .ast = c,
         .upvalues = values.Closure.Upvalues.init(allocator()),
     };
@@ -279,7 +279,7 @@ pub fn closure(c: ast.Closure, opt: ValueOptions) !*values.Value {
         .origin = opt.origin,
         .origin_module = opt.origin_module,
     };
-    try collectClosureParentUsages(&cl);
+    //try collectClosureParentUsages(&cl);
     return push(value);
 }
 
@@ -445,7 +445,11 @@ fn collectClosureScopeUsage(cl: *values.Closure, scope: ast.Scope) !void {
 fn collectClosureExpressionUsage(cl: *values.Closure, expr: *const ast.Expression) !void {
     switch (expr.as) {
         .variable => |v| {
-            const lookup = getSymbolAndStackDepth(v.token.value) orelse unreachable; //TODO
+            std.debug.print("value: {s}\n", .{v.token.value});
+            const lookup = getSymbolAndStackDepth(v.token.value) orelse {
+                varDump(true);
+                unreachable; //TODO
+            };
             std.debug.print("Variable {s} has depth {}, current depth {}\n", .{ v.token.value, lookup.depth, stackDepth() });
         },
         .binary_operator => |b| {

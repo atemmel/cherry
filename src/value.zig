@@ -14,7 +14,7 @@ const indexOfPos = std.mem.indexOfPos;
 pub const List = std.ArrayList(*Value);
 pub const Record = std.StringArrayHashMap(*Value);
 pub const Closure = struct {
-    pub const Upvalues = std.StringHashMap(*Value);
+    pub const Upvalues = std.ArrayList(*Value);
 
     ast: ast.Closure,
     upvalues: Upvalues,
@@ -73,10 +73,9 @@ pub const Value = struct {
                     el.value_ptr.*.mark();
                 }
             },
-            .closure => |*c| {
-                var it = c.upvalues.iterator();
-                while (it.next()) |entry| {
-                    entry.value_ptr.*.mark();
+            .closure => |c| {
+                for (c.upvalues.items) |i| {
+                    i.mark();
                 }
             },
         }

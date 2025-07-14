@@ -399,8 +399,8 @@ fn evalCall(ctx: *Context, call: ast.Call) !Result {
         return try evalFunctionCall(ctx, func.*, call);
     } else if (gc.getEntry(name)) |entry| {
         switch (entry.value_ptr.*.as) {
-            .closure => |c| {
-                return try evalClosureCall(ctx, c, call);
+            .closure => {
+                return try evalClosureCall(ctx, entry.value_ptr.*, call);
             },
             else => unreachable,
         }
@@ -485,9 +485,11 @@ fn evalFunctionCall(ctx: *Context, func: ast.Func, call: ast.Call) !Result {
     return nothing;
 }
 
-fn evalClosureCall(ctx: *Context, closure: values.Closure, call: ast.Call) !Result {
+fn evalClosureCall(ctx: *Context, closure_value: *Value, call: ast.Call) !Result {
     try gc.pushFrame();
     defer gc.popFrame();
+    try gc.appendRoot(closure_value);
+    const closure = &closure_value.as.closure;
 
     var args = try evalArgs(ctx, call.arguments);
     defer args.deinit();
@@ -495,6 +497,7 @@ fn evalClosureCall(ctx: *Context, closure: values.Closure, call: ast.Call) !Resu
     assert(closure.ast.arguments.len == args.items.len);
 
     for (closure.ast.arguments, args.items) |par, arg| {
+        try closure.upvalues.append(arg);
         try gc.insertSymbol(par.token.value, arg);
     }
 
