@@ -1,0 +1,12 @@
+for ; hi ; {
+    say this should never happen
+}
+
+#{ TODO: this passes
+fn bad x: int {
+    for ; $x ; {
+    }
+}
+
+bad 5
+#}

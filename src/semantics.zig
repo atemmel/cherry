@@ -220,6 +220,19 @@ fn analyzeRoot(ctx: *Context) !void {
 fn analyzeModule(ctx: *Context, module: ast.Module) !void {
     try ctx.addScope();
     defer ctx.dropScope();
+
+    const str: TypeInfo = .string;
+    const scope = &ctx.scopes.items[0];
+    try scope.put("argv", TypeInfo{ .list = .{ .of = &str } });
+
+    {
+        var it = module.imports.iterator();
+    }
+
+    var it = module.functions.valueIterator();
+    while (it.next()) |func| {
+        try analyzeFunc(ctx, func);
+    }
     for (module.statements) |stmnt| {
         try analyzeStatement(ctx, stmnt);
     }
@@ -236,7 +249,7 @@ fn analyzeStatement(ctx: *Context, stmnt: ast.Statement) !void {
         .ret => |ret| try analyzeReturn(ctx, ret),
         .loop => |loop| try analyzeLoop(ctx, loop),
         .brk => |brk| try analyzeBreak(ctx, brk),
-        .cont => unreachable,
+        .cont => |cont| try analyzeContinue(ctx, cont),
     }
 }
 
@@ -396,28 +409,45 @@ fn analyzeAssignment(ctx: *Context, assign: ast.Assignment) !void {
     }
 }
 
-fn analyzeBranches(ctx: *Context, call: ast.Branches) !void {
-    _ = ctx;
-    _ = call;
+fn analyzeBranches(ctx: *Context, branches: ast.Branches) !void {
+    try ctx.addScope();
+    defer ctx.dropScope();
+    for (branches) |branch| {
+        if (branch.condition) |cond| {
+            const type_info = try analyzeExpression(ctx, cond);
+            switch (type_info) {
+                .boolean => {},
+                else => {
+                    try ctx.errFmt(
+                        .{ .offending_token = ast.tokenFromExpr(cond) },
+                        "Condition must be of type bool, was {s} instead.",
+                        .{try type_info.str(ctx.arena, Table.init(ctx.arena))},
+                    );
+                },
+            }
+        }
+
+        try analyzeScope(ctx, branch.scope);
+    }
 }
 
 fn analyzeScope(ctx: *Context, scope: ast.Scope) SemanticsError!void {
     try ctx.addScope();
-    ctx.dropScope();
+    defer ctx.dropScope();
 
     for (scope) |stmnt| {
         try analyzeStatement(ctx, stmnt);
     }
 }
 
-fn analyzeFunc(ctx: *Context, call: ast.Func) !void {
+fn analyzeFunc(ctx: *Context, func: *ast.Func) !void {
     _ = ctx;
-    _ = call;
+    _ = func;
 }
 
-fn analyzeReturn(ctx: *Context, call: ast.Return) !void {
+fn analyzeReturn(ctx: *Context, ret: ast.Return) !void {
     _ = ctx;
-    _ = call;
+    _ = ret;
 }
 
 fn analyzeLoop(ctx: *Context, loop: ast.Loop) !void {
@@ -426,7 +456,7 @@ fn analyzeLoop(ctx: *Context, loop: ast.Loop) !void {
 
     switch (loop.kind) {
         .classic_loop => |l| try analyzeClassicLoop(ctx, l),
-        .range_loop => unreachable,
+        .range_loop => |r| try analyzeRangeLoop(ctx, r),
     }
 
     try analyzeScope(ctx, loop.scope);
@@ -447,6 +477,26 @@ fn analyzeClassicLoop(ctx: *Context, loop: ast.ClassicLoop) !void {
             .call => |call| _ = try analyzeCall(ctx, call),
         }
     }
+
+    if (loop.expr) |expr| {
+        const type_info = try analyzeExpression(ctx, expr);
+        switch (type_info) {
+            .boolean => {},
+            else => {
+                try ctx.errFmt(
+                    .{ .offending_token = ast.tokenFromExpr(expr) },
+                    "Loop expression must be of type bool, was {s} instead.",
+                    .{try type_info.str(ctx.arena, Table.init(ctx.arena))},
+                );
+            },
+        }
+    }
+}
+
+fn analyzeRangeLoop(ctx: *Context, loop: ast.RangeLoop) !void {
+    _ = ctx;
+    _ = loop;
+    unreachable;
 }
 
 fn analyzeBreak(ctx: *Context, brk: ast.Break) !void {

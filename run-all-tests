@@ -6,7 +6,7 @@ function die {
 }
 
 for filename in ./tests/cli/*.chy; do
-    ./zig-out/bin/cherry "$filename" > /dev/null \
+    ./zig-out/bin/cherry --types "$filename" > /dev/null \
         || die "Failed test $filename"
 done
 

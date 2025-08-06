@@ -1,0 +1,8 @@
+fn concat l r {
+    return (+ $l $r)
+}
+
+x := (concat hi hello | concat to you)
+
+say x is $x
+assert $x == "hihellotoyou" # TODO: this fails

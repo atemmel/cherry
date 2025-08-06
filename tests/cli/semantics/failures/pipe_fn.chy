@@ -1,0 +1,6 @@
+fn concat s: string r: string | string {
+    return (+ $s $r)
+}
+
+concat hi hello | concat to false
+say (concat hi hello | concat to false)
