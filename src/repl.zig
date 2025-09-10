@@ -625,6 +625,7 @@ fn appendHistory(state: *State) !void {
 
     if (state.history.getLastOrNull()) |prev| {
         if (std.mem.eql(u8, prev, state.lineAsBytes())) {
+            state.history_scroll_idx = state.history.items.len;
             return;
         }
     }
