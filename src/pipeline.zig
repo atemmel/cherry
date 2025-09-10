@@ -483,8 +483,9 @@ pub fn testState() void {
         .verboseInterpretation = false,
         .verboseGc = false,
         .useSemanticAnalysis = false,
-        .env_map = std.process.EnvMap.init(std.testing.allocator),
+        .env_map = undefined,
         .modules = undefined,
         .remaining_args = &.{},
     };
+    state.env_map = std.process.EnvMap.init(state.scratch_arena.allocator());
 }

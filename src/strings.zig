@@ -82,10 +82,30 @@ pub fn interpolate(arena: std.mem.Allocator, str: []const u8) ![]u8 {
 
 pub fn dealias(pipeline_state: *pipeline.State, arena: std.mem.Allocator, str: []const u8) ![]u8 {
     const home = pipeline_state.readEnv("HOME") orelse "";
+    const space_home = try std.fmt.allocPrint(arena, " {s}", .{home});
 
-    const buf_size = std.mem.replacementSize(u8, str, "~", home);
-    const buffer = try arena.alloc(u8, buf_size);
-    _ = std.mem.replace(u8, str, "~", home, buffer);
+    var buf_len: usize = 0;
+
+    const first_tilde = str.len > 0 and str[0] == '~';
+
+    if (first_tilde) {
+        buf_len = str.len + home.len;
+        if (buf_len > 0) {
+            buf_len -= 1;
+        }
+    } else {
+        buf_len = std.mem.replacementSize(u8, str, " ~", space_home);
+    }
+
+    const buffer = try arena.alloc(u8, buf_len);
+
+    if (first_tilde) {
+        _ = try std.fmt.bufPrint(buffer, "{s}{s}", .{ home, str[1..] });
+        // retry solving all other cases
+        return dealias(pipeline_state, arena, buffer);
+    }
+
+    _ = std.mem.replace(u8, str, " ~", space_home, buffer);
     return buffer;
 }
 
@@ -441,6 +461,63 @@ test "match with '*'" {
 fn mkfile(dir: std.fs.Dir, path: []const u8) !void {
     var file = try dir.createFile(path, .{});
     file.close();
+}
+
+test "dealias" {
+    const state = &pipeline.state;
+    pipeline.testState();
+    defer state.deinit();
+
+    const alloc = state.scratch_arena.allocator();
+    try state.env_map.put("HOME", "/home");
+    const home = state.readEnv("HOME").?;
+
+    {
+        const expected = try std.fmt.allocPrint(alloc, "{s}", .{home});
+        const d = try dealias(state, alloc, "~");
+        try std.testing.expectEqualStrings(expected, d);
+    }
+
+    {
+        const expected = try std.fmt.allocPrint(alloc, "{s}x", .{home});
+        const d = try dealias(state, alloc, "~x");
+        try std.testing.expectEqualStrings(expected, d);
+    }
+
+    {
+        const d = try dealias(state, alloc, "x~");
+        try std.testing.expectEqualStrings("x~", d);
+    }
+
+    {
+        const expected = try std.fmt.allocPrint(alloc, "x {s}", .{home});
+        const d = try dealias(state, alloc, "x ~");
+        try std.testing.expectEqualStrings(expected, d);
+    }
+
+    {
+        const expected = try std.fmt.allocPrint(alloc, "x {s}y", .{home});
+        const d = try dealias(state, alloc, "x ~y");
+        try std.testing.expectEqualStrings(expected, d);
+    }
+
+    {
+        const expected = try std.fmt.allocPrint(alloc, "x {s} y", .{home});
+        const d = try dealias(state, alloc, "x ~ y");
+        try std.testing.expectEqualStrings(expected, d);
+    }
+
+    {
+        const expected = try std.fmt.allocPrint(alloc, "x {s} {s} y", .{ home, home });
+        const d = try dealias(state, alloc, "x ~ ~ y");
+        try std.testing.expectEqualStrings(expected, d);
+    }
+
+    {
+        const expected = try std.fmt.allocPrint(alloc, "{s} {s} {s} {s}", .{ home, home, home, home });
+        const d = try dealias(state, alloc, "~ ~ ~ ~");
+        try std.testing.expectEqualStrings(expected, d);
+    }
 }
 
 test "globbing" {
