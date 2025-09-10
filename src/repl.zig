@@ -454,9 +454,21 @@ pub fn repl(persistent_allocator: std.mem.Allocator) !void {
                     },
                     .home => {
                         state.cursor = 0;
+                        switch (state.mode) {
+                            .prompt, .multi_line_prompt => {},
+                            .search => {
+                                state.mode = .prompt;
+                            },
+                        }
                     },
                     .end => {
                         state.cursor = state.length;
+                        switch (state.mode) {
+                            .prompt, .multi_line_prompt => {},
+                            .search => {
+                                state.mode = .prompt;
+                            },
+                        }
                     },
                     .tab => switch (state.mode) {
                         .prompt, .multi_line_prompt => {
