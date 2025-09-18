@@ -16,7 +16,7 @@ const BoldHi = terminal.BoldHi;
 const Underline = terminal.Underline;
 const startsWith = std.mem.startsWith;
 
-const History = std.ArrayList([]const u8);
+const History = std.array_list.Managed([]const u8);
 
 const Mode = enum {
     prompt,
@@ -869,7 +869,7 @@ fn tryAutocompletePathImpl(ctx: *CompletionContext) !CompletionResult {
     defer dir.close();
     var dir_it = dir.iterate();
 
-    var result_list = std.ArrayList([]const u8).init(ctx.arena);
+    var result_list = std.array_list.Managed([]const u8).init(ctx.arena);
 
     while (try dir_it.next()) |entry| {
         if (startsWith(u8, entry.name, dir_path.stem)) {
@@ -894,7 +894,7 @@ fn tryAutocompleteCmdImpl(ctx: *CompletionContext) !CompletionResult {
         return .none;
     };
 
-    var result_list = std.ArrayList([]const u8).init(ctx.arena);
+    var result_list = std.array_list.Managed([]const u8).init(ctx.arena);
     var it = std.mem.tokenizeScalar(u8, path, ':');
 
     while (it.next()) |p| {
@@ -938,7 +938,7 @@ fn tryAutocompleteCmdImpl(ctx: *CompletionContext) !CompletionResult {
     return listToResult(result_list);
 }
 
-fn listToResult(list: std.ArrayList([]const u8)) CompletionResult {
+fn listToResult(list: std.array_list.Managed([]const u8)) CompletionResult {
     return switch (list.items.len) {
         0 => .none,
         1 => .{ .single_match = list.items[0] },

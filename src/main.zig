@@ -85,6 +85,10 @@ pub fn main() !u8 {
         .Debug => &cl_diagnostics,
         else => null,
     };
+    var buffer: [1024]u8 = undefined;
+    var stderr_writer = std.fs.File.stderr().writer(&buffer);
+    const stderr = &stderr_writer.interface;
+    defer stderr.flush() catch {};
 
     var res = clap.parse(clap.Help, &params, parsers, .{
         .diagnostic = diagnostic,
@@ -92,20 +96,18 @@ pub fn main() !u8 {
     }) catch |err| {
         // Report useful error and exit.
         if (builtin.mode == .Debug) {
-            const writer = std.fs.File.stderr();
-            diagnostic.report(writer, err) catch {};
+            diagnostic.report(stderr, err) catch {};
         }
         return 0;
     };
     defer res.deinit();
 
     if (res.args.help != 0) {
-        const writer = std.io.getStdErr().writer();
-        writer.print(
+        stderr.print(
             "\n +--------+\n | cherry |    version {s} (built {s})\n +--------+\n\n",
             .{ git_latest_commit_hash, build_options.build_date },
         ) catch {};
-        clap.help(writer, clap.Help, &params, .{
+        clap.help(stderr, clap.Help, &params, .{
             .description_on_new_line = false,
             .spacing_between_parameters = 0,
         }) catch {};
@@ -116,7 +118,9 @@ pub fn main() !u8 {
         verboseLexer = true;
         verboseParser = true;
         verboseInterpretation = true;
-        std.debug.print("args: {s}\n", .{args});
+        //TODO:
+        //std.debug.print("args: {s}\n", .{args});
+        _ = args;
     }
 
     if (res.args.@"verbose-ast" != 0) {
@@ -155,7 +159,7 @@ pub fn main() !u8 {
         .verboseInterpretation = verboseInterpretation,
         .verboseGc = verboseGc,
         .useSemanticAnalysis = useSemanticAnalysis,
-        .color = std.io.tty.detectConfig(std.io.getStdOut()),
+        .color = std.io.tty.detectConfig(std.fs.File.stdout()),
         .env_map = try std.process.getEnvMap(ally),
         .remaining_args = remaining_args,
     });

@@ -11,10 +11,10 @@ const InterpreterError = interpreter.InterpreterError;
 
 const indexOfPos = std.mem.indexOfPos;
 
-pub const List = std.ArrayList(*Value);
+pub const List = std.array_list.Managed(*Value);
 pub const Record = std.StringArrayHashMap(*Value);
 pub const Closure = struct {
-    pub const Upvalues = std.ArrayList(*Value);
+    pub const Upvalues = std.array_list.Managed(*Value);
 
     ast: ast.Closure,
     upvalues: Upvalues,
@@ -154,7 +154,7 @@ pub const Value = struct {
                     return try ally.dupe(u8, "[=]");
                 }
                 std.debug.print("here\n", .{});
-                var string = try std.ArrayList(u8).initCapacity(ally, 16);
+                var string = try std.array_list.Managed(u8).initCapacity(ally, 16);
                 const writer = string.writer();
                 try write(writer, "[ ", .{});
                 var it = r.iterator();

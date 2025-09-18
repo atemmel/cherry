@@ -161,9 +161,13 @@ pub const State = struct {
 
     pub fn dumpSourceAtToken(self: *const State, token: *const Token, module_name: []const u8) void {
         const source_info = errorInfoPtr(self, token, module_name);
-        const writer = std.io.getStdErr().writer();
+        var buffer: [1024]u8 = undefined;
+        var stderr = std.fs.File.stdout().writer(&buffer);
+        const writer = &stderr.interface;
+
         writer.print("{s}\n", .{source_info.row_str}) catch {};
         writeErrorSource(source_info, writer) catch {};
+        writer.flush() catch {};
     }
 };
 
