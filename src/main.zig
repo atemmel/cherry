@@ -92,7 +92,8 @@ pub fn main() !u8 {
     }) catch |err| {
         // Report useful error and exit.
         if (builtin.mode == .Debug) {
-            diagnostic.report(std.io.getStdErr().writer(), err) catch {};
+            const writer = std.fs.File.stderr();
+            diagnostic.report(writer, err) catch {};
         }
         return 0;
     };

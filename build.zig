@@ -32,11 +32,15 @@ pub fn build(b: *std.Build) void {
     // set a preferred release mode, allowing the user to decide how to optimize.
     const optimize = b.standardOptimizeOption(.{});
 
-    const exe = b.addExecutable(.{
-        .name = "cherry",
+    const main_mod = b.createModule(.{
         .root_source_file = b.path("src/main.zig"),
         .target = target,
         .optimize = optimize,
+    });
+
+    const exe = b.addExecutable(.{
+        .name = "cherry",
+        .root_module = main_mod,
         .use_llvm = optimize != .Debug,
         .use_lld = optimize != .Debug,
     });
@@ -72,9 +76,7 @@ pub fn build(b: *std.Build) void {
 
     const exe_check = b.addExecutable(.{
         .name = "cherry",
-        .root_source_file = b.path("src/main.zig"),
-        .target = target,
-        .optimize = optimize,
+        .root_module = main_mod,
     });
 
     const check = b.step("check", "Check if cherry compiles");
@@ -99,9 +101,7 @@ pub fn build(b: *std.Build) void {
     run_step.dependOn(&run_cmd.step);
 
     const exe_unit_tests = b.addTest(.{
-        .root_source_file = b.path("src/main.zig"),
-        .target = target,
-        .optimize = .Debug,
+        .root_module = main_mod,
         .use_llvm = false,
         .use_lld = false,
     });
