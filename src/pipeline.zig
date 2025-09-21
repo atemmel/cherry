@@ -199,18 +199,19 @@ fn logTime(comptime prefix: []const u8, start_us: i64, stop_us: i64) void {
 }
 
 pub fn writeError(err: PipelineError) !void {
-    const writer = std.io.getStdErr().writer();
+    var buffer: [1024]u8 = undefined;
+    var writer = std.fs.File.stderr().writer(&buffer);
     switch (err) {
         error.UnterminatedStringLiteral,
         error.UnterminatedBlockComment,
         => {
-            try writeLexerError(writer);
+            try writeLexerError(&writer.interface);
         },
         error.ParseFailed => {
-            try writeAstError(writer);
+            try writeAstError(&writer.interface);
         },
         error.SemanticError => {
-            try writeSemanticsError(writer);
+            try writeSemanticsError(&writer.interface);
         },
         error.ArgsCountMismatch,
         error.AssertionFailed,
@@ -229,7 +230,7 @@ pub fn writeError(err: PipelineError) !void {
         error.VariableAlreadyDeclared,
         error.NotImplemented,
         => {
-            try writeRuntimeError(writer);
+            try writeRuntimeError(&writer.interface);
         },
         error.OutOfMemory,
         error.FileNotFound,
@@ -286,11 +287,15 @@ pub fn writeError(err: PipelineError) !void {
         error.Canceled,
         error.ProcessAlreadyExec,
         error.InvalidProcessGroupId,
+        error.WriteFailed,
+        error.ReadFailed,
+        error.EndOfStream,
+        error.MessageTooBig,
         => return err,
     }
 }
 
-pub fn writeLexerError(writer: anytype) !void {
+pub fn writeLexerError(writer: *std.Io.Writer) !void {
     //TODO: handle error information better when there are no tokens
     //const info = state.errorInfo();
     //const file = state.filename;
@@ -299,14 +304,14 @@ pub fn writeLexerError(writer: anytype) !void {
     try writer.print("<{s}>: lexer error\n", .{state.current_module_in_process});
 }
 
-pub fn writeAstError(writer: anytype) !void {
+pub fn writeAstError(writer: *std.Io.Writer) !void {
     const info = state.errorInfo();
     const file = state.current_module_in_process;
     try writer.print("<{s}>:{}:{}: syntax error: {s}\n{s}\n", .{ file, info.row, info.col, info.msg, info.row_str });
     try writeErrorSource(info, writer);
 }
 
-pub fn writeSemanticsError(writer: anytype) !void {
+pub fn writeSemanticsError(writer: *std.Io.Writer) !void {
     assert(state.analysis.errors.len > 0);
     for (state.analysis.errors) |error_report| {
         state.error_report = error_report;
@@ -317,14 +322,14 @@ pub fn writeSemanticsError(writer: anytype) !void {
     }
 }
 
-pub fn writeRuntimeError(writer: anytype) !void {
+pub fn writeRuntimeError(writer: *std.Io.Writer) !void {
     const info = state.errorInfo();
     const file = state.current_module_in_process;
     try writer.print("<{s}>:{}:{}: runtime error: {s}\n{s}\n", .{ file, info.row, info.col, info.msg, info.row_str });
     try writeErrorSource(info, writer);
 }
 
-fn writeErrorSource(info: State.ErrorInfo, writer: anytype) !void {
+fn writeErrorSource(info: State.ErrorInfo, writer: *std.Io.Writer) !void {
     for (info.row_str[0..info.row_error_token_idx]) |_| {
         try writer.print(" ", .{});
     }

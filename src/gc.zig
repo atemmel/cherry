@@ -315,9 +315,9 @@ fn topFrame() *Frame {
 }
 
 pub fn pushFrame() !void {
-    try program_stack.append(.{
+    try program_stack.append(persistent_allocator, .{
         .symtable = Symtable.init(persistent_allocator),
-        .root_values = Roots.init(persistent_allocator),
+        .root_values = Roots{},
     });
 }
 
@@ -387,12 +387,12 @@ pub fn varDump(dump_root_values: bool) void {
         std.debug.print("| frame {}:\n", .{idx});
         if (dump_root_values) {
             for (frame.root_values.items) |v| {
-                std.debug.print("root value {s} ({*})\n", .{ v, v });
+                std.debug.print("root value {f} ({*})\n", .{ v, v });
             }
         }
         var it = frame.symtable.iterator();
         while (it.next()) |entry| {
-            std.debug.print("variable: {s}, is: {s} ({*})\n", .{ entry.key_ptr.*, entry.value_ptr.*, entry.value_ptr.* });
+            std.debug.print("variable: {s}, is: {f} ({*})\n", .{ entry.key_ptr.*, entry.value_ptr.*, entry.value_ptr.* });
         }
     }
     std.debug.print("+--------------+\n| end var dump |\n+--------------+\n", .{});

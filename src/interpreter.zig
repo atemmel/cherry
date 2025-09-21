@@ -8,6 +8,7 @@ const values = @import("value.zig");
 const tokens = @import("tokens.zig");
 const strings = @import("strings.zig");
 const modules = @import("modules.zig");
+const algo = @import("algo.zig");
 
 const assert = std.debug.assert;
 
@@ -40,7 +41,7 @@ pub const InterpreterError = error{
     NotImplemented,
 };
 
-pub const EvalError = builtins.BuiltinError || std.process.Child.RunError;
+pub const EvalError = builtins.BuiltinError || std.process.Child.RunError || std.Io.Writer.Error || std.Io.Reader.Error;
 
 const Context = struct {
     state: *PipelineState,
@@ -80,7 +81,7 @@ pub fn interpret(state: *PipelineState, opt: InterpreterOptions) EvalError!void 
 
     if (!opt.root_scope_already_exists) {
         // make argv
-        var list = try std.ArrayList(*Value).initCapacity(gc.allocator(), state.remaining_args.len);
+        var list = try values.List.initCapacity(gc.allocator(), state.remaining_args.len);
         for (state.remaining_args) |arg| {
             list.appendAssumeCapacity(try gc.string(arg, .{ .origin = undefined, .origin_module = opt.root_module_name }));
         }
@@ -438,7 +439,7 @@ fn isLocalScript(ctx: *Context, call: ast.Call) !bool {
 
 fn evalBuiltin(ctx: *Context, call: ast.Call, builtin: *const builtins.BuiltinFn) !Result {
     var args = try evalArgs(ctx, call.arguments);
-    defer args.deinit();
+    defer args.deinit(ctx.stmnt_scratch);
     return builtin(ctx.state, args.items, call) catch |e| {
         switch (e) {
             error.TypeMismatch, error.ArgsCountMismatch => {
@@ -460,7 +461,7 @@ fn evalFunctionCall(ctx: *Context, func: ast.Func, call: ast.Call) !Result {
     defer gc.popFrame();
 
     var args = try evalArgs(ctx, call.arguments);
-    defer args.deinit();
+    defer args.deinit(ctx.stmnt_scratch);
 
     assert(func.signature.parameters.len == args.items.len);
 
@@ -492,7 +493,7 @@ fn evalClosureCall(ctx: *Context, closure_value: *Value, call: ast.Call) !Result
     const closure = &closure_value.as.closure;
 
     var args = try evalArgs(ctx, call.arguments);
-    defer args.deinit();
+    defer args.deinit(ctx.stmnt_scratch);
 
     assert(closure.ast.arguments.len == args.items.len);
 
@@ -537,7 +538,7 @@ fn evalProc(ctx: *Context, call: ast.Call) !Result {
         var new_proc = try proc(ctx, call_ptr);
         new_proc.env_map = &ctx.state.env_map;
 
-        try procs.append(new_proc);
+        try procs.append(ctx.stmnt_scratch, new_proc);
 
         if (call_ptr.redirect_out) |out| {
             redirect_output_to_file = out.token;
@@ -608,10 +609,11 @@ fn evalProc(ctx: *Context, call: ast.Call) !Result {
         defer file.close();
 
         const first_proc = &procs.items[0];
-        const reader = file.reader();
-        const writer = first_proc.stdin.?.writer();
-        var fifo = std.fifo.LinearFifo(u8, .{ .Static = 4096 }).init();
-        try fifo.pump(reader, writer);
+        var reader_buffer: [1024]u8 = undefined;
+        var writer_buffer: [1024]u8 = undefined;
+        var reader = file.reader(&reader_buffer);
+        var writer = first_proc.stdin.?.writer(&writer_buffer);
+        try algo.pump(&reader.interface, &writer.interface);
         first_proc.stdin.?.close();
         first_proc.stdin = null;
     }
@@ -622,8 +624,11 @@ fn evalProc(ctx: *Context, call: ast.Call) !Result {
             if (idx > 0) {
                 var prev = &procs.items[idx - 1];
                 var this = &procs.items[idx];
-                var fifo = std.fifo.LinearFifo(u8, .{ .Static = 4096 }).init();
-                try fifo.pump(prev.stdout.?.reader(), this.stdin.?.writer());
+                var reader_buffer: [1024]u8 = undefined;
+                var writer_buffer: [1024]u8 = undefined;
+                var reader = prev.stdout.?.reader(&reader_buffer);
+                var writer = prev.stdin.?.writer(&writer_buffer);
+                try algo.pump(&reader.interface, &writer.interface);
                 if (this.stdin) |in| {
                     in.close();
                     this.stdin = null;
@@ -645,10 +650,11 @@ fn evalProc(ctx: *Context, call: ast.Call) !Result {
             return InterpreterError.UnableToOpenFileDuringRedirect;
         };
         defer file.close();
-        const reader = procs.getLast().stdout.?.reader();
-        const writer = file.writer();
-        var fifo = std.fifo.LinearFifo(u8, .{ .Static = 4096 }).init();
-        try fifo.pump(reader, writer);
+        var reader_buffer: [1024]u8 = undefined;
+        var writer_buffer: [1024]u8 = undefined;
+        var reader = procs.getLast().stdout.?.reader(&reader_buffer);
+        var writer = file.writer(&writer_buffer);
+        try algo.pump(&reader.interface, &writer.interface);
     }
 
     var last_code: u8 = 0;
@@ -702,17 +708,17 @@ fn proc(ctx: *Context, call: *const ast.Call) !std.process.Child {
     const name = call.token.value;
     var args = try std.ArrayList([]const u8).initCapacity(ctx.stmnt_scratch, call.arguments.len);
 
-    try args.append(name);
+    try args.append(ctx.stmnt_scratch, name);
     for (call.arguments) |arg| {
         switch (try evalExpression(ctx, arg)) {
             .value => |value| {
                 switch (value.as) {
                     .list => |l| {
                         for (l.items) |e| {
-                            try args.append(try e.asStr(ctx.stmnt_scratch));
+                            try args.append(ctx.stmnt_scratch, try e.asStr(ctx.stmnt_scratch));
                         }
                     },
-                    else => try args.append(try value.asStr(ctx.stmnt_scratch)),
+                    else => try args.append(ctx.stmnt_scratch, try value.asStr(ctx.stmnt_scratch)),
                 }
             },
             .nothing => unreachable, // this construct expects only values
@@ -727,14 +733,14 @@ fn evalArgs(ctx: *Context, arguments: []const ast.Expression) !std.ArrayList(*Va
     var args = try std.ArrayList(*Value).initCapacity(ctx.stmnt_scratch, arguments.len);
     for (arguments) |arg| {
         switch (try evalExpression(ctx, arg)) {
-            .value => |value| try args.append(value),
+            .value => |value| try args.append(ctx.stmnt_scratch, value),
             .nothing => unreachable, // this construct expects only values
             .values => |vals| {
                 //TODO: this is like this to allow for external processes to be
                 // piped, but it perhaps shouldn't be like this for user-defined
                 // functions, at least not if we are allowing people to return
                 // multiple values (which we probably should)
-                try args.append(vals[0]);
+                try args.append(ctx.stmnt_scratch, vals[0]);
             },
         }
     }

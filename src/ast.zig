@@ -328,8 +328,8 @@ pub fn parse(state: *PipelineState, tokens: []Token, name: []const u8) !Module {
 }
 
 fn parseModule(ctx: *Context, name: []const u8) !Module {
-    var statements = std.ArrayList(Statement).init(ctx.ally);
-    defer statements.deinit();
+    var statements = std.ArrayList(Statement){};
+    defer statements.deinit(ctx.ally);
     var functions = std.StringHashMap(Func).init(ctx.ally);
     defer functions.deinit();
     var imports = std.StringHashMap(Import).init(ctx.ally);
@@ -339,7 +339,7 @@ fn parseModule(ctx: *Context, name: []const u8) !Module {
         switch (stmnt) {
             .func => |f| try functions.put(f.token.value, f),
             .import => |i| try imports.put(i.name, i),
-            else => try statements.append(stmnt),
+            else => try statements.append(ctx.ally, stmnt),
         }
     }
 
@@ -350,7 +350,7 @@ fn parseModule(ctx: *Context, name: []const u8) !Module {
 
     return Module{
         .name = name,
-        .statements = try statements.toOwnedSlice(),
+        .statements = try statements.toOwnedSlice(ctx.ally),
         .functions = functions.move(),
         .imports = imports.move(),
     };
@@ -407,11 +407,11 @@ fn parseStatement(ctx: *Context) errors!?Statement {
 fn parseVarDeclaration(ctx: *Context, opt: struct { needs_newline: bool = true }) !?VarDecl {
     const checkpoint = ctx.idx;
 
-    var decls = std.ArrayList(*const Token).init(ctx.ally);
-    defer decls.deinit();
+    var decls = std.ArrayList(*const Token){};
+    defer decls.deinit(ctx.ally);
 
     while (ctx.getIf(.Bareword)) |tok| {
-        try decls.append(tok);
+        try decls.append(ctx.ally, tok);
     }
 
     if (decls.items.len == 0) {
@@ -441,7 +441,7 @@ fn parseVarDeclaration(ctx: *Context, opt: struct { needs_newline: bool = true }
     }
 
     return VarDecl{
-        .tokens = try decls.toOwnedSlice(),
+        .tokens = try decls.toOwnedSlice(ctx.ally),
         .expression = expr,
     };
 }
@@ -496,8 +496,8 @@ fn parseBranches(ctx: *Context) !?Branches {
         return null;
     }
 
-    var branches = std.ArrayList(Branch).init(ctx.ally);
-    defer branches.deinit();
+    var branches = std.ArrayList(Branch){};
+    defer branches.deinit(ctx.ally);
 
     const first_expr = try parseExpression(ctx, std.math.minInt(i64)) orelse {
         return ctx.err(.{
@@ -510,7 +510,7 @@ fn parseBranches(ctx: *Context) !?Branches {
         });
     };
 
-    try branches.append(.{
+    try branches.append(ctx.ally, .{
         .scope = first_scope,
         .condition = first_expr,
     });
@@ -518,7 +518,7 @@ fn parseBranches(ctx: *Context) !?Branches {
     var checkpoint = ctx.idx;
 
     if (ctx.getIf(.Newline) != null) {
-        return try branches.toOwnedSlice();
+        return try branches.toOwnedSlice(ctx.ally);
     }
 
     while (ctx.getIf(.Else) != null and ctx.getIf(.If) != null) {
@@ -533,7 +533,7 @@ fn parseBranches(ctx: *Context) !?Branches {
             });
         };
 
-        try branches.append(.{
+        try branches.append(ctx.ally, .{
             .scope = scope,
             .condition = expr,
         });
@@ -547,13 +547,13 @@ fn parseBranches(ctx: *Context) !?Branches {
                 .msg = "expected '{'",
             });
         };
-        try branches.append(.{
+        try branches.append(ctx.ally, .{
             .scope = last_scope,
             .condition = null,
         });
     }
 
-    return try branches.toOwnedSlice();
+    return try branches.toOwnedSlice(ctx.ally);
 }
 
 fn parseScope(ctx: *Context, needsNewline: bool) !?Scope {
@@ -563,11 +563,11 @@ fn parseScope(ctx: *Context, needsNewline: bool) !?Scope {
     }
     _ = ctx.getNewlineOrComma();
 
-    var statements = std.ArrayList(Statement).init(ctx.ally);
-    defer statements.deinit();
+    var statements = std.ArrayList(Statement){};
+    defer statements.deinit(ctx.ally);
 
     while (try parseStatement(ctx)) |stmnt| {
-        try statements.append(stmnt);
+        try statements.append(ctx.ally, stmnt);
     }
 
     _ = ctx.getIf(.RBrace) orelse {
@@ -581,7 +581,7 @@ fn parseScope(ctx: *Context, needsNewline: bool) !?Scope {
             .msg = "expected newline (\\n)",
         });
     }
-    return try statements.toOwnedSlice();
+    return try statements.toOwnedSlice(ctx.ally);
 }
 
 fn parseFunc(ctx: *Context) !?Func {
@@ -605,11 +605,11 @@ fn parseFunc(ctx: *Context) !?Func {
     }
 
     var produces: semantics.TypeInfo = .nothing;
-    var parameters = std.ArrayList(Parameter).init(ctx.ally);
-    defer parameters.deinit();
+    var parameters = std.ArrayList(Parameter){};
+    defer parameters.deinit(ctx.ally);
 
     while (try parseParam(ctx)) |param| {
-        try parameters.append(param);
+        try parameters.append(ctx.ally, param);
     }
 
     if (try parseProducingType(ctx)) |type_info| {
@@ -630,7 +630,7 @@ fn parseFunc(ctx: *Context) !?Func {
         .signature = .{
             .generics = generics,
             .produces = produces,
-            .parameters = try parameters.toOwnedSlice(),
+            .parameters = try parameters.toOwnedSlice(ctx.ally),
             .last_parameter_is_variadic = false,
         },
     };
@@ -681,11 +681,11 @@ fn parseParamWithoutType(ctx: *Context) !?Parameter {
 
 fn parseGenerics(ctx: *Context) ![][]const u8 {
     _ = ctx.getIf(.LBracket) orelse return &.{};
-    var generics = std.ArrayList([]const u8).init(ctx.ally);
-    defer generics.deinit();
+    var generics = std.ArrayList([]const u8){};
+    defer generics.deinit(ctx.ally);
 
     while (ctx.getIf(.Bareword)) |bw| {
-        try generics.append(bw.value);
+        try generics.append(ctx.ally, bw.value);
     }
 
     _ = ctx.getIf(.RBracket) orelse {
@@ -699,7 +699,7 @@ fn parseGenerics(ctx: *Context) ![][]const u8 {
         return ctx.err(.{ .msg = "Unecessary empty declaration of generics, remove it" });
     }
 
-    return try generics.toOwnedSlice();
+    return try generics.toOwnedSlice(ctx.ally);
 }
 
 //TODO: expand on this to handle, lists, records, etc
@@ -939,9 +939,9 @@ fn parseReturn(ctx: *Context) !?Return {
 fn parseClosure(ctx: *Context) !?Closure {
     const checkpoint = ctx.idx;
 
-    var args = std.ArrayList(Bareword).init(ctx.ally);
+    var args = std.ArrayList(Bareword){};
     while (parseBareword(ctx)) |bw| {
-        try args.append(bw);
+        try args.append(ctx.ally, bw);
     }
 
     const token = ctx.getIf(.RightArrow) orelse {
@@ -951,7 +951,7 @@ fn parseClosure(ctx: *Context) !?Closure {
 
     if (try parseScope(ctx, false)) |scope| {
         return Closure{
-            .arguments = try args.toOwnedSlice(),
+            .arguments = try args.toOwnedSlice(ctx.ally),
             .as = .{
                 .body = scope,
             },
@@ -961,7 +961,7 @@ fn parseClosure(ctx: *Context) !?Closure {
         const ptr = try ctx.ally.create(Expression);
         ptr.* = expr;
         return Closure{
-            .arguments = try args.toOwnedSlice(),
+            .arguments = try args.toOwnedSlice(ctx.ally),
             .as = .{
                 .expression = ptr,
             },
@@ -1040,10 +1040,10 @@ fn parseIndividualCall(ctx: *Context, opt: CallParseOpts) !?Call {
 
     const accessor = try parseAccessorChain(ctx);
 
-    var args = std.ArrayList(Expression).init(ctx.ally);
-    defer args.deinit();
+    var args = std.ArrayList(Expression){};
+    defer args.deinit(ctx.ally);
     while (try parseExpression(ctx, std.math.minInt(i64))) |expr| {
-        try args.append(expr);
+        try args.append(ctx.ally, expr);
     }
 
     var redirect_in: ?RedirectIn = null;
@@ -1053,7 +1053,7 @@ fn parseIndividualCall(ctx: *Context, opt: CallParseOpts) !?Call {
 
     return Call{
         .token = token,
-        .arguments = try args.toOwnedSlice(),
+        .arguments = try args.toOwnedSlice(ctx.ally),
         .pipe = null,
         .capturing_external_cmd = opt.capturing,
         .accessor = accessor,
@@ -1295,11 +1295,11 @@ fn parseListLiteral(ctx: *Context) !?ListLiteral {
     const token = ctx.getIf(.LBracket) orelse return null;
 
     var exprs = try std.ArrayList(Expression).initCapacity(ctx.ally, 5);
-    defer exprs.deinit();
+    defer exprs.deinit(ctx.ally);
 
     // must have expressions
     while (try parseExpression(ctx, std.math.minInt(i64))) |expr| {
-        try exprs.append(expr);
+        try exprs.append(ctx.ally, expr);
     }
 
     // must find closing bracket
@@ -1312,7 +1312,9 @@ fn parseListLiteral(ctx: *Context) !?ListLiteral {
 
     return ListLiteral{
         .token = token,
-        .items = try exprs.toOwnedSlice(),
+        .items = try exprs.toOwnedSlice(
+            ctx.ally,
+        ),
     };
 }
 
@@ -1338,10 +1340,10 @@ fn parseRecordLiteral(ctx: *Context) !?RecordLiteral {
         });
     };
 
-    var pairs = std.ArrayList(RecordLiteral.Pair).init(ctx.ally);
-    defer pairs.deinit();
+    var pairs = std.ArrayList(RecordLiteral.Pair){};
+    defer pairs.deinit(ctx.ally);
 
-    try pairs.append(.{
+    try pairs.append(ctx.ally, .{
         .key = bw_assign.first,
         .value = expr,
     });
@@ -1367,7 +1369,7 @@ fn parseRecordLiteral(ctx: *Context) !?RecordLiteral {
             });
         };
 
-        try pairs.append(.{
+        try pairs.append(ctx.ally, .{
             .key = key,
             .value = value,
         });
@@ -1381,7 +1383,7 @@ fn parseRecordLiteral(ctx: *Context) !?RecordLiteral {
 
     return RecordLiteral{
         .token = lb_newline.first,
-        .items = try pairs.toOwnedSlice(),
+        .items = try pairs.toOwnedSlice(ctx.ally),
     };
 }
 

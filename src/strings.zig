@@ -45,12 +45,12 @@ pub fn processBareword(pipeline_state: *pipeline.State, arena: std.mem.Allocator
 
 pub fn interpolate(arena: std.mem.Allocator, str: []const u8) ![]u8 {
     var result = try std.ArrayList(u8).initCapacity(arena, str.len * 2);
-    defer result.deinit();
+    defer result.deinit(arena);
 
     var idx: usize = 0;
     while (idx < str.len) {
         const lbrace = indexOfPos(u8, str, idx, "{") orelse {
-            try result.appendSlice(str[idx..]);
+            try result.appendSlice(arena, str[idx..]);
             break;
         };
 
@@ -59,9 +59,9 @@ pub fn interpolate(arena: std.mem.Allocator, str: []const u8) ![]u8 {
             const escape_begin = lbrace + 2;
             const escape_end = indexOfPos(u8, str, lbrace + 1, "}}") orelse return InterpreterError.MismatchedBraces;
             // include the last lbrace
-            try result.appendSlice(str[idx .. lbrace + 1]);
+            try result.appendSlice(arena, str[idx .. lbrace + 1]);
             // include the first rbrace
-            try result.appendSlice(str[escape_begin .. escape_end + 1]);
+            try result.appendSlice(arena, str[escape_begin .. escape_end + 1]);
             idx = escape_end + 2;
             continue;
         }
@@ -73,11 +73,11 @@ pub fn interpolate(arena: std.mem.Allocator, str: []const u8) ![]u8 {
 
         const variable_string = try variable_value.asStr(arena);
 
-        try result.appendSlice(str[idx..lbrace]);
-        try result.appendSlice(variable_string);
+        try result.appendSlice(arena, str[idx..lbrace]);
+        try result.appendSlice(arena, variable_string);
         idx = rbrace + 1;
     }
-    return try result.toOwnedSlice();
+    return try result.toOwnedSlice(arena);
 }
 
 pub fn dealias(pipeline_state: *pipeline.State, arena: std.mem.Allocator, str: []const u8) ![]u8 {
@@ -111,7 +111,7 @@ pub fn dealias(pipeline_state: *pipeline.State, arena: std.mem.Allocator, str: [
 
 pub fn escape(arena: std.mem.Allocator, str: []const u8, enclosing_char: ?u8) ![]u8 {
     var result = try std.ArrayList(u8).initCapacity(arena, str.len);
-    defer result.deinit();
+    defer result.deinit(arena);
 
     //TODO:
     _ = enclosing_char;
@@ -119,7 +119,7 @@ pub fn escape(arena: std.mem.Allocator, str: []const u8, enclosing_char: ?u8) ![
     var idx: usize = 0;
     while (idx < str.len) {
         const escapee = indexOfPos(u8, str, idx, "\\") orelse {
-            try result.appendSlice(str[idx..]);
+            try result.appendSlice(arena, str[idx..]);
             break;
         };
 
@@ -134,13 +134,13 @@ pub fn escape(arena: std.mem.Allocator, str: []const u8, enclosing_char: ?u8) ![
             else => unreachable,
         };
 
-        try result.appendSlice(str[idx..escapee]);
-        try result.append(escapes_into);
+        try result.appendSlice(arena, str[idx..escapee]);
+        try result.append(arena, escapes_into);
 
         idx = escapee + 2;
     }
 
-    return try result.toOwnedSlice();
+    return try result.toOwnedSlice(arena);
 }
 
 const GlobChunk = struct {
@@ -283,11 +283,11 @@ fn globWithLimit(arena: std.mem.Allocator, pattern: []const u8, depth: usize) ![
     const split = algo.splitPathIntoDirAndFile(pattern);
     const dir = cleanGlobPath(split.dir);
 
-    var matches = std.ArrayList([]const u8).init(arena);
+    var matches = std.ArrayList([]const u8).empty;
 
     if (!hasMeta(dir)) {
-        try globImpl(dir, split.file, &matches);
-        return try matches.toOwnedSlice();
+        try globImpl(arena, dir, split.file, &matches);
+        return try matches.toOwnedSlice(arena);
     }
 
     if (std.mem.eql(u8, dir, pattern)) {
@@ -296,22 +296,21 @@ fn globWithLimit(arena: std.mem.Allocator, pattern: []const u8, depth: usize) ![
 
     const child_matches = try globWithLimit(arena, dir, depth + 1);
     for (child_matches) |child_match| {
-        globImpl(child_match, pattern, &matches) catch {
-            return try matches.toOwnedSlice();
+        globImpl(arena, child_match, pattern, &matches) catch {
+            return try matches.toOwnedSlice(arena);
         };
     }
-    return try matches.toOwnedSlice();
+    return try matches.toOwnedSlice(arena);
 }
 
-fn globImpl(dir: []const u8, pattern: []const u8, matches: *std.ArrayList([]const u8)) !void {
-    const alloc = matches.allocator;
+fn globImpl(alloc: std.mem.Allocator, dir: []const u8, pattern: []const u8, matches: *std.ArrayList([]const u8)) !void {
     var d = std.fs.cwd().openDir(dir, .{ .iterate = true }) catch return;
     defer d.close();
     var it = d.iterate();
     while (try it.next()) |ent| {
         const path = try std.fs.path.join(alloc, &.{ dir, ent.name });
         if (match(pattern, ent.name)) {
-            try matches.append(path);
+            try matches.append(alloc, path);
         }
     }
     //TODO: maybe place sort elsewhere, idk

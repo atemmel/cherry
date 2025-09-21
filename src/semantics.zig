@@ -144,7 +144,7 @@ const Context = struct {
         comptime fmt: []const u8,
         args: anytype,
     ) !void {
-        try ctx.errors.append(.{
+        try ctx.errors.append(ctx.arena, .{
             .msg = try std.fmt.allocPrint(ctx.arena, fmt, args),
             .offending_expr_idx = opt.offending_expr_idx,
             .offending_token = opt.offending_token,
@@ -153,11 +153,11 @@ const Context = struct {
     }
 
     pub fn typeMismatch(ctx: *Context, wants: []const u8, got: []const u8, offending_token: *const Token) !void {
-        try ctx.errors.append(try typeMismatchReport(ctx.arena, wants, got, offending_token));
+        try ctx.errors.append(ctx.arena, try typeMismatchReport(ctx.arena, wants, got, offending_token));
     }
 
     pub fn addScope(ctx: *Context) !void {
-        try ctx.scopes.append(Scope.init(ctx.arena));
+        try ctx.scopes.append(ctx.arena, Scope.init(ctx.arena));
     }
 
     pub fn dropScope(ctx: *Context) void {
@@ -195,14 +195,14 @@ pub fn analyze(state: *PipelineState) SemanticsError!void {
     const arena = state.scratch_arena.allocator();
     var ctx: Context = .{
         .arena = arena,
-        .errors = std.ArrayList(ErrorReport).init(arena),
-        .scopes = std.ArrayList(Context.Scope).init(arena),
+        .errors = std.ArrayList(ErrorReport).empty,
+        .scopes = std.ArrayList(Context.Scope).empty,
         .state = state,
         .current_module = state.modules.getPtr(state.current_module_in_process) orelse unreachable,
     };
     try analyzeRoot(&ctx);
     state.analysis = .{
-        .errors = try ctx.errors.toOwnedSlice(),
+        .errors = try ctx.errors.toOwnedSlice(ctx.arena),
     };
 
     if (state.analysis.errors.len > 0) {

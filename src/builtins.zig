@@ -29,7 +29,7 @@ pub const Utf8Error = error{
 
 pub const BuiltinError = error{
     AssertionFailed,
-} || std.mem.Allocator.Error || std.fs.File.WriteError || InterpreterError || Utf8Error;
+} || std.mem.Allocator.Error || std.fs.File.WriteError || InterpreterError || Utf8Error || std.Io.Writer.Error || std.Io.Reader.Error;
 
 pub const BuiltinFn = fn (ctx: *State, args: []const *Value, call: ast.Call) BuiltinError!Result;
 
@@ -122,15 +122,17 @@ const say_info: BuiltinInfo = .{
 };
 
 fn say(_: *State, args: []const *Value, _: ast.Call) !Result {
-    const stdout = std.io.getStdOut().writer();
+    var buffer: [1024]u8 = undefined;
+    var stdout = std.fs.File.stdout().writer(&buffer);
+    const writer = &stdout.interface;
 
     var trailing_newline = false;
     var i: usize = 0;
     while (i < args.len) : (i += 1) {
         const arg = args[i];
-        try stdout.print("{s}", .{arg});
+        try writer.print("{f}", .{arg});
         if (i + 1 < args.len) {
-            try stdout.print(" ", .{});
+            try writer.print(" ", .{});
         } else {
             trailing_newline = switch (arg.as) {
                 .string => |s| s.len > 0 and s[s.len - 1] == '\n',
@@ -140,7 +142,7 @@ fn say(_: *State, args: []const *Value, _: ast.Call) !Result {
     }
 
     if (!trailing_newline) {
-        try stdout.print("\n", .{});
+        try writer.print("\n", .{});
     }
     return nothing;
 }
@@ -181,7 +183,7 @@ fn assert(state: *State, args: []const *Value, call: ast.Call) !Result {
                 const expr = call.arguments[idx];
                 const token = ast.tokenFromExpr(expr);
                 state.error_report = .{
-                    .msg = try std.fmt.allocPrint(state.scratch_arena.allocator(), "Non boolean value given to 'assert': {}", .{arg}),
+                    .msg = try std.fmt.allocPrint(state.scratch_arena.allocator(), "Non boolean value given to 'assert': {f}", .{arg}),
                     .offending_token = token,
                     .trailing = false,
                 };
@@ -226,7 +228,7 @@ fn alias(state: *State, args: []const *Value, _: ast.Call) !Result {
         else => unreachable,
     };
 
-    try gc.aliases.append(.{
+    try gc.aliases.append(gc.allocator(), .{
         .from = alias_from,
         .to = alias_to,
     });
@@ -303,11 +305,11 @@ fn addIntegers(state: *State, args: []const *Value, call: ast.Call) !*Value {
 }
 
 fn concatenateStrings(state: *State, args: []const *Value, call: ast.Call) !*Value {
-    var result = std.ArrayList(u8).init(gc.allocator());
+    var result = std.ArrayList(u8).empty;
     for (args) |arg| {
         switch (arg.as) {
             .string => |s| {
-                try result.appendSlice(s);
+                try result.appendSlice(gc.allocator(), s);
             },
             else => unreachable,
         }
@@ -316,7 +318,7 @@ fn concatenateStrings(state: *State, args: []const *Value, call: ast.Call) !*Val
         .origin = call.token,
         .origin_module = state.current_module_in_process,
     };
-    return try gc.allocedString(try result.toOwnedSlice(), opt);
+    return try gc.allocedString(try result.toOwnedSlice(gc.allocator()), opt);
 }
 
 fn sub(state: *State, args: []const *Value, call: ast.Call) !Result {
@@ -695,7 +697,7 @@ fn del(state: *State, args: []const *Value, call: ast.Call) !Result {
     return nothing;
 }
 
-fn delList(list: *std.ArrayList(*Value), idx: *Value) void {
+fn delList(list: *values.List, idx: *Value) void {
     const index = switch (idx.as) {
         .integer => |i| i,
         .float, .boolean, .list, .string, .record, .closure => unreachable,
@@ -732,7 +734,7 @@ fn sliceList(state: *State, args: []const *Value, list: values.List, call: ast.C
         unreachable; //TODO: error message
     }
 
-    var new_list = try std.ArrayList(*Value).initCapacity(gc.allocator(), to_idx - from_idx);
+    var new_list = try values.List.initCapacity(gc.allocator(), to_idx - from_idx);
     for (list.items[from_idx..to_idx]) |val| {
         try new_list.append(try gc.cloneOrReference(val));
     }
@@ -867,8 +869,7 @@ fn gcAlwaysCollect(_: *State, _: []const *Value, _: ast.Call) !Result {
     return nothing;
 }
 
-fn exit(state: *State, args: []const *Value, call: ast.Call) !Result {
-    _ = call; // autofix
+fn exit(state: *State, args: []const *Value, _: ast.Call) !Result {
     validateArgsCount(state, &.{1}, args.len);
 
     const code = switch (args[0].as) {

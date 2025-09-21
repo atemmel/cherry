@@ -103,13 +103,8 @@ pub const Value = struct {
 
     pub fn format(
         self: *const Value,
-        comptime fmt: []const u8,
-        options: std.fmt.FormatOptions,
-        writer: anytype,
+        writer: *std.Io.Writer,
     ) !void {
-        _ = fmt;
-        _ = options;
-
         switch (self.as) {
             .string => |s| try writer.print("{s}", .{s}),
             .integer => |i| try writer.print("{}", .{i}),
