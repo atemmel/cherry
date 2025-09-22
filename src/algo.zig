@@ -92,7 +92,7 @@ pub fn allocU8SliceFromU21Slice(from: []const u21, arena: std.mem.Allocator) []u
 }
 
 pub fn pump(reader: *std.Io.Reader, writer: *std.Io.Writer) !void {
-    _ = try reader.stream(writer, .unlimited);
+    _ = try reader.streamRemaining(writer);
     try writer.flush();
 }
 
