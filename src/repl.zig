@@ -665,7 +665,10 @@ fn readHistory(state: *State) !void {
     var reader = file.reader(&buffer);
     var writer = std.io.Writer.Allocating.init(ally);
     while (true) {
-        _ = try reader.interface.streamDelimiter(&writer.writer, '\n');
+        const n = try reader.interface.streamDelimiter(&writer.writer, '\n');
+        if (n == 0) {
+            break;
+        }
         const line = try writer.toOwnedSlice();
         try state.history.append(line);
     }
