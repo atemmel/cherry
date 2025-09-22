@@ -144,6 +144,7 @@ fn say(_: *State, args: []const *Value, _: ast.Call) !Result {
     if (!trailing_newline) {
         try writer.print("\n", .{});
     }
+    try writer.flush();
     return nothing;
 }
 

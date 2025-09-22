@@ -302,6 +302,7 @@ pub fn writeLexerError(writer: *std.Io.Writer) !void {
     //try writer.print("<{s}>:{}:{}: lexer error: {s}\n{s}\n", .{ file, info.row, info.col, info.msg, info.row_str });
     //try writeErrorSource(info, writer);
     try writer.print("<{s}>: lexer error\n", .{state.current_module_in_process});
+    try writer.flush();
 }
 
 pub fn writeAstError(writer: *std.Io.Writer) !void {
@@ -309,6 +310,7 @@ pub fn writeAstError(writer: *std.Io.Writer) !void {
     const file = state.current_module_in_process;
     try writer.print("<{s}>:{}:{}: syntax error: {s}\n{s}\n", .{ file, info.row, info.col, info.msg, info.row_str });
     try writeErrorSource(info, writer);
+    try writer.flush();
 }
 
 pub fn writeSemanticsError(writer: *std.Io.Writer) !void {
@@ -319,6 +321,7 @@ pub fn writeSemanticsError(writer: *std.Io.Writer) !void {
         const file = state.current_module_in_process;
         try writer.print("<{s}>:{}:{}: semantic error: {s}\n{s}\n", .{ file, info.row, info.col, info.msg, info.row_str });
         try writeErrorSource(info, writer);
+        try writer.flush();
     }
 }
 
@@ -327,6 +330,7 @@ pub fn writeRuntimeError(writer: *std.Io.Writer) !void {
     const file = state.current_module_in_process;
     try writer.print("<{s}>:{}:{}: runtime error: {s}\n{s}\n", .{ file, info.row, info.col, info.msg, info.row_str });
     try writeErrorSource(info, writer);
+    try writer.flush();
 }
 
 fn writeErrorSource(info: State.ErrorInfo, writer: *std.Io.Writer) !void {
@@ -340,6 +344,7 @@ fn writeErrorSource(info: State.ErrorInfo, writer: *std.Io.Writer) !void {
         }
     }
     try writer.print("\n", .{});
+    try writer.flush();
 }
 
 pub const RunOptions = struct {

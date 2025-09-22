@@ -426,7 +426,7 @@ fn evalInternalModuleCall(ctx: *Context, call: ast.Call, module: *const modules.
 }
 
 //TODO: this
-fn isLocalScript(ctx: *Context, call: ast.Call) !bool {
+fn isLocalScript(_: *Context, call: ast.Call) !bool {
     // local must be prefixed with './'
     if (std.mem.startsWith(u8, call.token.value, "./")) {
         return false;
@@ -434,7 +434,6 @@ fn isLocalScript(ctx: *Context, call: ast.Call) !bool {
     //TODO: check what kind of local file it is, if it contains cherry script, then read the script and execute
     const file = try std.fs.cwd().openFile(call.token.value, .{});
     defer file.close();
-    _ = ctx; // autofix
 }
 
 fn evalBuiltin(ctx: *Context, call: ast.Call, builtin: *const builtins.BuiltinFn) !Result {
@@ -627,7 +626,7 @@ fn evalProc(ctx: *Context, call: ast.Call) !Result {
                 var reader_buffer: [1024]u8 = undefined;
                 var writer_buffer: [1024]u8 = undefined;
                 var reader = prev.stdout.?.reader(&reader_buffer);
-                var writer = prev.stdin.?.writer(&writer_buffer);
+                var writer = this.stdin.?.writer(&writer_buffer);
                 try algo.pump(&reader.interface, &writer.interface);
                 if (this.stdin) |in| {
                     in.close();
