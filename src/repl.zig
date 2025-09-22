@@ -1121,7 +1121,7 @@ test "Single alias lookup" {
 
     const cmd = "ls";
 
-    try gc.aliases.append(.{
+    try gc.aliases.append(std.testing.allocator, .{
         .from = "ls",
         .to = "ls \"--color=auto\"",
     });
@@ -1138,7 +1138,7 @@ test "Single alias lookup failure" {
 
     const cmd = "lsblk";
 
-    try gc.aliases.append(.{
+    try gc.aliases.append(std.testing.allocator, .{
         .from = "ls",
         .to = "ls \"--color=auto\"",
     });
@@ -1155,7 +1155,7 @@ test "Single alias lookup success but keeps arg" {
 
     const cmd = "ls /tmp";
 
-    try gc.aliases.append(.{
+    try gc.aliases.append(std.testing.allocator, .{
         .from = "ls",
         .to = "ls \"--color=auto\"",
     });
@@ -1172,7 +1172,7 @@ test "Nested alias lookup success" {
 
     const cmd = "ll";
 
-    try gc.aliases.appendSlice(&.{
+    try gc.aliases.appendSlice(std.testing.allocator, &.{
         .{ .from = "ls", .to = "ls \"--color=auto\"" },
         .{ .from = "ll", .to = "ls -l" },
     });
