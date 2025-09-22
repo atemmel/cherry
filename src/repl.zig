@@ -492,12 +492,16 @@ pub fn repl(persistent_allocator: std.mem.Allocator) !void {
                         state.mode = .prompt;
                     },
                     'h' => {
-                        const last_space = std.mem.lastIndexOfScalar(u21, state.line(), ' ');
+                        var slice = state.line()[0..state.cursor];
+                        if (slice.len > 0 and slice[slice.len - 1] == ' ') {
+                            slice = slice[0 .. slice.len - 2];
+                        }
+                        const delete_n = slice.len - (std.mem.lastIndexOfScalar(u21, slice, ' ') orelse 0);
                         terminal.clearLine(out, state.length + state.prefixLen());
-                        state.length = last_space orelse 0;
-                        state.cursor = last_space orelse 0;
+                        @memmove(state.buffer[state.cursor - delete_n .. state.length - delete_n], state.buffer[state.cursor..state.length]);
+                        state.length = state.length - delete_n;
+                        state.cursor = state.cursor - delete_n;
                     },
-
                     'u' => {
                         terminal.clearLine(out, state.length + state.prefixLen());
                         state.clearLine();
