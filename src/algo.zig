@@ -91,6 +91,11 @@ pub fn allocU8SliceFromU21Slice(from: []const u21, arena: std.mem.Allocator) []u
     return buffer;
 }
 
+pub fn pump(reader: *std.Io.Reader, writer: *std.Io.Writer) !void {
+    _ = try reader.streamRemaining(writer);
+    try writer.flush();
+}
+
 const expectEqual = std.testing.expectEqual;
 const expectEqualStrings = std.testing.expectEqualStrings;
 

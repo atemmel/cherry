@@ -121,6 +121,7 @@ const string_keyword_map = std.StaticStringMap(Token.Kind).initComptime(&.{
 });
 
 const LexState = struct {
+    ally: std.mem.Allocator,
     source: []const u8,
     idx: usize = 0,
     list: std.ArrayList(Token),
@@ -166,9 +167,11 @@ const LexState = struct {
 };
 
 pub fn lex(state: *PipelineState, source: []const u8) LexerError![]Token {
+    const ally = state.scratch_arena.allocator();
     var lstate = LexState{
         .source = source,
-        .list = std.ArrayList(Token).init(state.scratch_arena.allocator()),
+        .list = std.ArrayList(Token){},
+        .ally = ally,
     };
 
     while (!lstate.eof()) : (lstate.next()) {
@@ -178,21 +181,21 @@ pub fn lex(state: *PipelineState, source: []const u8) LexerError![]Token {
         }
 
         if (lexSymbol(&lstate)) |symbol| {
-            try lstate.list.append(symbol);
+            try lstate.list.append(ally, symbol);
         } else if (lexVariable(&lstate)) |variable| {
-            try lstate.list.append(variable);
+            try lstate.list.append(ally, variable);
         } else if (lexKeyword(&lstate)) |keyword| {
-            try lstate.list.append(keyword);
+            try lstate.list.append(ally, keyword);
         } else if (try lexStringLiteral(&lstate)) |string_literal| {
-            try lstate.list.append(string_literal);
+            try lstate.list.append(ally, string_literal);
         } else if (lexIntegerLiteral(&lstate)) |integer_literal| {
-            try lstate.list.append(integer_literal);
+            try lstate.list.append(ally, integer_literal);
         } else if (lexBareword(&lstate)) |bareword| {
-            try lstate.list.append(bareword);
+            try lstate.list.append(ally, bareword);
         }
     }
 
-    return lstate.list.toOwnedSlice();
+    return lstate.list.toOwnedSlice(ally);
 }
 
 fn lexSymbol(state: *LexState) ?Token {
@@ -447,7 +450,7 @@ fn skipChars(state: *LexState) LexerError!void {
                     continue;
                 }
 
-                try state.list.append(.{
+                try state.list.append(state.ally, .{
                     .kind = .Newline,
                     .value = state.slice(state.idx, state.idx + 1),
                 });

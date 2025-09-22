@@ -90,9 +90,9 @@ pub fn init(ally: std.mem.Allocator) !void {
 
 pub fn deinit() void {
     pipeline.state.env_map.deinit();
-    defer aliases.deinit();
-    defer gc_list.deinit();
-    defer program_stack.deinit();
+    defer aliases.deinit(persistent_allocator);
+    defer gc_list.deinit(persistent_allocator);
+    defer program_stack.deinit(persistent_allocator);
     for (program_stack.items) |*frame| {
         deinitFrame(frame);
     }
@@ -113,7 +113,7 @@ fn deinitFrame(frame: *Frame) void {
         persistent_allocator.free(key.*);
     }
     frame.symtable.deinit();
-    frame.root_values.deinit();
+    frame.root_values.deinit(persistent_allocator);
 }
 
 pub fn allocator() std.mem.Allocator {
@@ -180,7 +180,7 @@ fn push(value: values.Value) !*values.Value {
     maybeCollect();
     const ptr = try persistent_allocator.create(values.Value);
 
-    try gc_list.append(ptr);
+    try gc_list.append(persistent_allocator, ptr);
     ptr.* = value;
     return ptr;
 }
@@ -315,9 +315,9 @@ fn topFrame() *Frame {
 }
 
 pub fn pushFrame() !void {
-    try program_stack.append(.{
+    try program_stack.append(persistent_allocator, .{
         .symtable = Symtable.init(persistent_allocator),
-        .root_values = Roots.init(persistent_allocator),
+        .root_values = Roots{},
     });
 }
 
@@ -362,7 +362,7 @@ pub fn getEntry(key: []const u8) ?Symtable.Entry {
 }
 
 pub fn appendRoot(value: *Value) !void {
-    try topFrame().root_values.append(value);
+    try topFrame().root_values.append(persistent_allocator, value);
 }
 
 pub fn appendRootV(value: *Value) !*Value {
@@ -373,12 +373,12 @@ pub fn appendRootV(value: *Value) !*Value {
 pub fn appendParentRoot(value: *Value) !void {
     std.debug.assert(stackDepth() > 1); // must have parent
     const parent_idx = stackDepth() - 2;
-    try program_stack.items[parent_idx].root_values.append(value);
+    try program_stack.items[parent_idx].root_values.append(persistent_allocator, value);
 }
 
 pub fn appendToFrameRoot(root_idx: usize, value: *Value) !void {
     std.debug.assert(program_stack.items.len > root_idx);
-    try program_stack.items[root_idx].root_values.append(value);
+    try program_stack.items[root_idx].root_values.append(persistent_allocator, value);
 }
 
 pub fn varDump(dump_root_values: bool) void {
@@ -387,12 +387,12 @@ pub fn varDump(dump_root_values: bool) void {
         std.debug.print("| frame {}:\n", .{idx});
         if (dump_root_values) {
             for (frame.root_values.items) |v| {
-                std.debug.print("root value {s} ({*})\n", .{ v, v });
+                std.debug.print("root value {f} ({*})\n", .{ v, v });
             }
         }
         var it = frame.symtable.iterator();
         while (it.next()) |entry| {
-            std.debug.print("variable: {s}, is: {s} ({*})\n", .{ entry.key_ptr.*, entry.value_ptr.*, entry.value_ptr.* });
+            std.debug.print("variable: {s}, is: {f} ({*})\n", .{ entry.key_ptr.*, entry.value_ptr.*, entry.value_ptr.* });
         }
     }
     std.debug.print("+--------------+\n| end var dump |\n+--------------+\n", .{});

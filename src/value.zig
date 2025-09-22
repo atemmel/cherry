@@ -11,10 +11,10 @@ const InterpreterError = interpreter.InterpreterError;
 
 const indexOfPos = std.mem.indexOfPos;
 
-pub const List = std.ArrayList(*Value);
+pub const List = std.array_list.Managed(*Value);
 pub const Record = std.StringArrayHashMap(*Value);
 pub const Closure = struct {
-    pub const Upvalues = std.ArrayList(*Value);
+    pub const Upvalues = std.array_list.Managed(*Value);
 
     ast: ast.Closure,
     upvalues: Upvalues,
@@ -103,13 +103,8 @@ pub const Value = struct {
 
     pub fn format(
         self: *const Value,
-        comptime fmt: []const u8,
-        options: std.fmt.FormatOptions,
-        writer: anytype,
+        writer: *std.Io.Writer,
     ) !void {
-        _ = fmt;
-        _ = options;
-
         switch (self.as) {
             .string => |s| try writer.print("{s}", .{s}),
             .integer => |i| try writer.print("{}", .{i}),
@@ -154,7 +149,7 @@ pub const Value = struct {
                     return try ally.dupe(u8, "[=]");
                 }
                 std.debug.print("here\n", .{});
-                var string = try std.ArrayList(u8).initCapacity(ally, 16);
+                var string = try std.array_list.Managed(u8).initCapacity(ally, 16);
                 const writer = string.writer();
                 try write(writer, "[ ", .{});
                 var it = r.iterator();

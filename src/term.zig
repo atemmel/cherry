@@ -199,8 +199,10 @@ pub const Term = struct {
 
     pub fn getCursor(self: Term) !Vec2 {
         try self.tty.?.writeAll("\x1b[6n");
-        var buf: ["\x1b[256;256R".len]u8 = undefined;
-        const output = try self.tty.?.reader().readUntilDelimiter(&buf, 'R');
+        const max_match = "\x1b[256;256R".len;
+        var buf: [max_match]u8 = undefined;
+        var reader = self.tty.?.reader(&buf);
+        const output = try reader.interface.takeDelimiterExclusive('R');
         var splitter = std.mem.splitAny(u8, output, ";[");
         _ = splitter.next().?;
         const row_half = splitter.next() orelse return error.UnexpectedEnd;
@@ -409,7 +411,7 @@ const escape_key_codes = blk: {
     );
 };
 
-pub fn clearLine(writer: anytype, len: usize) void {
+pub fn clearLine(writer: *std.Io.Writer, len: usize) void {
     _ = writer.print("\r", .{}) catch unreachable;
     for (0..len) |_| {
         _ = writer.print(" ", .{}) catch unreachable;
@@ -417,31 +419,31 @@ pub fn clearLine(writer: anytype, len: usize) void {
     _ = writer.print("\r", .{}) catch unreachable;
 }
 
-pub fn moveCursor(writer: anytype, row: usize, col: usize) void {
+pub fn moveCursor(writer: *std.Io.Writer, row: usize, col: usize) void {
     _ = writer.print("\x1B[{};{}H", .{ row + 1, col + 1 }) catch unreachable;
 }
 
-pub fn moveUp(writer: anytype, steps: usize) void {
+pub fn moveUp(writer: *std.Io.Writer, steps: usize) void {
     _ = writer.print("\x1B[{}A", .{steps}) catch unreachable;
 }
 
-pub fn moveDown(writer: anytype, steps: usize) void {
+pub fn moveDown(writer: *std.Io.Writer, steps: usize) void {
     _ = writer.print("\x1B[{}B", .{steps}) catch unreachable;
 }
 
-pub fn moveRight(writer: anytype, steps: usize) void {
+pub fn moveRight(writer: *std.Io.Writer, steps: usize) void {
     _ = writer.print("\x1B[{}C", .{steps}) catch unreachable;
 }
 
-pub fn moveLeft(writer: anytype, steps: usize) void {
+pub fn moveLeft(writer: *std.Io.Writer, steps: usize) void {
     _ = writer.print("\x1B[{}D", .{steps}) catch unreachable;
 }
 
-pub fn clear(writer: anytype) void {
+pub fn clear(writer: *std.Io.Writer) void {
     _ = writer.print("\x1B[3J\x1B[2J", .{}) catch unreachable;
 }
 
-pub fn clearRect(writer: anytype, pos: Vec2, rect: Vec2) void {
+pub fn clearRect(writer: *std.Io.Writer, pos: Vec2, rect: Vec2) void {
     for (0..rect.y) |y| {
         moveCursor(writer, pos.x, pos.y + y);
         for (0..rect.x) |_| {

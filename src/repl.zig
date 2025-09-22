@@ -16,7 +16,7 @@ const BoldHi = terminal.BoldHi;
 const Underline = terminal.Underline;
 const startsWith = std.mem.startsWith;
 
-const History = std.ArrayList([]const u8);
+const History = std.array_list.Managed([]const u8);
 
 const Mode = enum {
     prompt,
@@ -25,7 +25,7 @@ const Mode = enum {
 };
 
 const State = struct {
-    out_writer: std.io.BufferedWriter(4096, std.fs.File.Writer),
+    writer: *std.Io.Writer,
     history: History,
     cwd_buffer: [std.fs.max_path_bytes]u8 = undefined,
     cwd: []const u8 = "",
@@ -53,16 +53,12 @@ const State = struct {
         self.term.restore();
     }
 
-    pub fn writer(self: *State) @TypeOf(self.out_writer.writer()) {
-        return self.out_writer.writer();
-    }
-
     pub fn print(self: *State, comptime str: []const u8, args: anytype) void {
-        self.out_writer.writer().print(str, args) catch {};
+        self.writer.print(str, args) catch {};
     }
 
     pub fn flush(self: *State) void {
-        self.out_writer.flush() catch {};
+        self.writer.flush() catch {};
     }
 
     pub fn editIndex(self: *State) usize {
@@ -136,7 +132,7 @@ const State = struct {
     }
 
     pub fn writePrefix(self: *State) !void {
-        const out = self.writer();
+        const out = self.writer;
         const size = self.term.size();
         terminal.clearLine(out, size.x);
         switch (self.mode) {
@@ -163,7 +159,7 @@ const State = struct {
     }
 
     pub fn writePromptAndLine(self: *State) !void {
-        const out = self.writer();
+        const out = self.writer;
         try self.writePrompt();
         const src = self.lineAsBytes();
 
@@ -255,7 +251,7 @@ const State = struct {
     }
 
     pub fn writePromptAndMultiline(self: *State) !void {
-        const out = self.writer();
+        const out = self.writer;
         const src = self.lineAsBytes();
         const n = std.mem.lastIndexOfScalar(u8, src, '\n') orelse 0;
         fmt(out, "{s}->{s} {s}\r", .{ Hi.black, Color.white, src[n + 1 ..] });
@@ -263,7 +259,7 @@ const State = struct {
 
     pub fn writePrompt(self: *State) !void {
         const home = pipeline.state.homeOrEmpty();
-        const out = self.writer();
+        const out = self.writer;
         const cwd = try self.calcCwd();
         if (startsWith(u8, cwd, home)) {
             const cwd_after_home = cwd[home.len..];
@@ -293,12 +289,12 @@ const State = struct {
 };
 
 /// fmt wrapper that doesn't care if it fails
-fn fmt(writer: anytype, comptime str: []const u8, args: anytype) void {
-    std.fmt.format(writer, str, args) catch {};
+fn fmt(writer: *std.Io.Writer, comptime str: []const u8, args: anytype) void {
+    writer.print(str, args) catch {};
 }
 
 /// fmt wrapper for writing comptime strings
-fn fmts(writer: anytype, comptime str: []const u8) void {
+fn fmts(writer: *std.Io.Writer, comptime str: []const u8) void {
     fmt(writer, str, .{});
 }
 
@@ -306,10 +302,12 @@ fn fmts(writer: anytype, comptime str: []const u8) void {
 // - display commands in a nice way (colors, etc)
 
 pub fn repl(persistent_allocator: std.mem.Allocator) !void {
+    var stdout_buffer: [1024]u8 = undefined;
+    var stdout = std.fs.File.stdout().writer(&stdout_buffer);
     var persistent_arena = std.heap.ArenaAllocator.init(persistent_allocator);
     var state = State{
         .history = try History.initCapacity(persistent_arena.allocator(), 512),
-        .out_writer = std.io.bufferedWriter(std.io.getStdOut().writer()),
+        .writer = &stdout.interface,
         .term = try Term.init(),
         .history_scroll_idx = 0,
         .persistent_arena = &persistent_arena,
@@ -341,11 +339,11 @@ pub fn repl(persistent_allocator: std.mem.Allocator) !void {
 
     try readRc(&state);
 
-    const out = state.writer();
+    const out = state.writer;
 
     var sa = std.os.linux.Sigaction{
         .handler = .{ .handler = pipeline.sigintHandler },
-        .mask = std.os.linux.empty_sigset,
+        .mask = [_]c_ulong{0},
         .flags = std.os.linux.SA.RESTART | std.os.linux.SA.ONSTACK,
     };
 
@@ -506,7 +504,7 @@ pub fn repl(persistent_allocator: std.mem.Allocator) !void {
                         state.cursor = 0;
                     },
                     'l' => {
-                        terminal.moveCursor(state.term.tty.?.writer(), 0, 0);
+                        terminal.moveCursor(out, 0, 0);
                         terminal.clear(out);
                     },
                     'r' => {
@@ -558,7 +556,7 @@ fn eval(state: *State) !EvalResult {
         state.flush();
     };
     state.print("\r\n", .{});
-    terminal.clearLine(state.writer(), state.prefixLen());
+    terminal.clearLine(state.writer, state.prefixLen());
     state.term.restore();
     state.flush();
 
@@ -651,7 +649,7 @@ fn readHistory(state: *State) !void {
         error.FileNotFound => return,
         else => {
             fmt(
-                state.writer(),
+                state.writer,
                 "Could not open histfile at {s}, error: {}\r\n",
                 .{ state.histfile_path, e },
             );
@@ -663,11 +661,15 @@ fn readHistory(state: *State) !void {
 
     const ally = state.persistent_arena.allocator();
 
-    const underlying_reader = file.reader();
-    var buffered_reader = std.io.bufferedReader(underlying_reader);
-    const reader = buffered_reader.reader();
+    var buffer: [1024]u8 = undefined;
+    var reader = file.reader(&buffer);
+    var writer = std.io.Writer.Allocating.init(ally);
     while (true) {
-        const line = reader.readUntilDelimiterAlloc(ally, '\n', state.buffer.len) catch return;
+        const n = try reader.interface.streamDelimiter(&writer.writer, '\n');
+        if (n == 0) {
+            break;
+        }
+        const line = try writer.toOwnedSlice();
         try state.history.append(line);
     }
 }
@@ -691,7 +693,7 @@ fn nextCommand(state: *State) void {
 }
 
 fn replaceCommand(state: *State, cmd: []const u8) void {
-    terminal.clearLine(state.writer(), state.prefixLen() + 7 + state.length);
+    terminal.clearLine(state.writer, state.prefixLen() + 7 + state.length);
     const len = algo.writeU8SliceToU21Slice(cmd, &state.buffer);
     state.cursor = len;
     state.length = len;
@@ -770,7 +772,7 @@ fn displayCompletionResults(state: *State, result: CompletionResult) !void {
         last_cmd_begin += 1;
     }
     const last_cmd = line[last_cmd_begin..];
-    const out = state.writer();
+    const out = state.writer;
     switch (result) {
         .none => {},
         .single_match => |str| {
@@ -869,7 +871,7 @@ fn tryAutocompletePathImpl(ctx: *CompletionContext) !CompletionResult {
     defer dir.close();
     var dir_it = dir.iterate();
 
-    var result_list = std.ArrayList([]const u8).init(ctx.arena);
+    var result_list = std.array_list.Managed([]const u8).init(ctx.arena);
 
     while (try dir_it.next()) |entry| {
         if (startsWith(u8, entry.name, dir_path.stem)) {
@@ -894,7 +896,7 @@ fn tryAutocompleteCmdImpl(ctx: *CompletionContext) !CompletionResult {
         return .none;
     };
 
-    var result_list = std.ArrayList([]const u8).init(ctx.arena);
+    var result_list = std.array_list.Managed([]const u8).init(ctx.arena);
     var it = std.mem.tokenizeScalar(u8, path, ':');
 
     while (it.next()) |p| {
@@ -938,7 +940,7 @@ fn tryAutocompleteCmdImpl(ctx: *CompletionContext) !CompletionResult {
     return listToResult(result_list);
 }
 
-fn listToResult(list: std.ArrayList([]const u8)) CompletionResult {
+fn listToResult(list: std.array_list.Managed([]const u8)) CompletionResult {
     return switch (list.items.len) {
         0 => .none,
         1 => .{ .single_match = list.items[0] },
@@ -994,7 +996,7 @@ fn reverseSearch(state: *State, reset: enum { reset, forward }) !void {
         return;
     }
 
-    terminal.clearLine(state.writer(), state.prefixLen() + 7 + state.length);
+    terminal.clearLine(state.writer, state.prefixLen() + 7 + state.length);
 
     if (state.line().len == 0) {
         state.search_idx = null;
@@ -1033,7 +1035,7 @@ fn readRc(state: *State) !void {
         error.FileNotFound => return,
         else => {
             fmt(
-                state.writer(),
+                state.writer,
                 "Could not open histfile at {s}, error: {}\r\n",
                 .{ state.rc_path, e },
             );
@@ -1096,7 +1098,7 @@ fn testReplState() State {
     var state = State{
         .persistent_arena = undefined,
         .repl_loop_arena = std.heap.ArenaAllocator.init(std.testing.allocator),
-        .out_writer = undefined,
+        .writer = undefined,
         .history = undefined,
         .term = Term{
             .tty = null,
@@ -1119,7 +1121,7 @@ test "Single alias lookup" {
 
     const cmd = "ls";
 
-    try gc.aliases.append(.{
+    try gc.aliases.append(std.testing.allocator, .{
         .from = "ls",
         .to = "ls \"--color=auto\"",
     });
@@ -1136,7 +1138,7 @@ test "Single alias lookup failure" {
 
     const cmd = "lsblk";
 
-    try gc.aliases.append(.{
+    try gc.aliases.append(std.testing.allocator, .{
         .from = "ls",
         .to = "ls \"--color=auto\"",
     });
@@ -1153,7 +1155,7 @@ test "Single alias lookup success but keeps arg" {
 
     const cmd = "ls /tmp";
 
-    try gc.aliases.append(.{
+    try gc.aliases.append(std.testing.allocator, .{
         .from = "ls",
         .to = "ls \"--color=auto\"",
     });
@@ -1170,7 +1172,7 @@ test "Nested alias lookup success" {
 
     const cmd = "ll";
 
-    try gc.aliases.appendSlice(&.{
+    try gc.aliases.appendSlice(std.testing.allocator, &.{
         .{ .from = "ls", .to = "ls \"--color=auto\"" },
         .{ .from = "ll", .to = "ls -l" },
     });
