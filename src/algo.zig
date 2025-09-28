@@ -96,6 +96,33 @@ pub fn pump(reader: *std.Io.Reader, writer: *std.Io.Writer) !void {
     try writer.flush();
 }
 
+pub fn hasProgram(env_map: std.process.EnvMap, prog: []const u8) bool {
+    const paths = env_map.get("PATH") orelse {
+        return false;
+    };
+
+    const max_path_bytes = std.fs.max_path_bytes;
+    const static = struct {
+        var buffer: [max_path_bytes]u8 = undefined;
+    };
+
+    var it = std.mem.tokenizeScalar(u8, paths, ':');
+    while (it.next()) |path| {
+        const full_path = std.fmt.bufPrint(&static.buffer, "{s}/{s}", .{ path, prog }) catch unreachable;
+        const stat_info = std.fs.cwd().statFile(full_path) catch {
+            continue;
+        };
+
+        const ok_kind = stat_info.kind == .file or stat_info.kind == .sym_link;
+        const ok_mode = stat_info.mode & 0o111 != 0;
+
+        if (ok_kind and ok_mode) {
+            return true;
+        }
+    }
+    return false;
+}
+
 const expectEqual = std.testing.expectEqual;
 const expectEqualStrings = std.testing.expectEqualStrings;
 

@@ -5,6 +5,7 @@ const builtins = @import("builtins.zig");
 const pipeline = @import("pipeline.zig");
 const gc = @import("gc.zig");
 const values = @import("value.zig");
+const algo = @import("algo.zig");
 
 const Value = values.Value;
 const Result = values.Result;
@@ -73,32 +74,12 @@ fn fsHasProgram(state: *State, args: []const *Value, call: ast.Call) !Result {
         .origin_module = state.current_module_in_process,
     };
 
-    const arena = state.scratch_arena.allocator();
-
-    const paths = state.env_map.get("PATH") orelse {
-        return something(try gc.boolean(false, opt));
-    };
-
     const program = switch (args[0].as) {
         .string => |s| s,
         else => return builtins.typeMismatchError(state, "string", args[0].kindName(), 0),
     };
 
-    var it = std.mem.tokenizeScalar(u8, paths, ':');
-    while (it.next()) |path| {
-        const full_path = try std.fmt.allocPrint(arena, "{s}/{s}", .{ path, program });
-        const stat_info = std.fs.cwd().statFile(full_path) catch {
-            continue;
-        };
-
-        const ok_kind = stat_info.kind == .file or stat_info.kind == .sym_link;
-        const ok_mode = stat_info.mode & 0o111 != 0;
-
-        if (ok_kind and ok_mode) {
-            return something(try gc.boolean(true, opt));
-        }
-    }
-    return something(try gc.boolean(false, opt));
+    return something(try gc.boolean(algo.hasProgram(state.env_map, program), opt));
 }
 
 const fs_exists = builtins.BuiltinInfo{
