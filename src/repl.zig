@@ -42,6 +42,7 @@ const State = struct {
     rc_path: []const u8 = "",
     persistent_arena: *std.heap.ArenaAllocator,
     repl_loop_arena: std.heap.ArenaAllocator,
+    has_carapace: bool = false,
 
     mode: Mode = .prompt,
 
@@ -348,6 +349,8 @@ pub fn repl(persistent_allocator: std.mem.Allocator) !void {
     };
 
     _ = std.os.linux.sigaction(std.os.linux.SIG.INT, &sa, null);
+
+    state.has_carapace = algo.hasProgram(pipeline.state.env_map, "carapace");
 
     while (true) {
         state.bytes_buffer_end_idx = null;
@@ -708,7 +711,10 @@ fn tryAutocomplete(state: *State) !void {
     const has_spaces = std.mem.indexOfScalar(u21, state.line(), ' ') != null;
 
     if (has_spaces) {
-        tryAutocompletePath2(state) catch {};
+        tryAutocompleteArgs(state) catch {
+            tryAutocompletePath2(state) catch {};
+            return;
+        };
     } else {
         tryAutocompleteCmd2(state) catch {};
     }
@@ -765,6 +771,78 @@ fn tryAutocompletePath2(state: *State) !void {
     };
     const result = try tryAutocompletePathImpl(&cmp_ctx);
     try displayCompletionResults(state, result);
+}
+
+fn tryAutocompleteArgs(state: *State) !void {
+    if (!state.has_carapace) {
+        tryAutocompletePath2(state) catch {};
+        return;
+    }
+
+    const arena = state.repl_loop_arena.allocator();
+
+    const line = state.lineAsBytes();
+
+    var args = std.ArrayList([]const u8).empty;
+    var it = std.mem.splitScalar(u8, line, ' ');
+
+    try args.append(arena, "carapace");
+    if (it.next()) |arg| {
+        try args.append(arena, arg);
+    }
+    try args.append(arena, "nushell");
+
+    while (it.next()) |arg| {
+        try args.append(arena, arg);
+    }
+
+    const result = std.process.Child.run(.{
+        .allocator = arena,
+        .argv = args.items,
+    }) catch {
+        tryAutocompletePath2(state) catch {};
+        return;
+    };
+    if (result.term.Exited != 0) {
+        tryAutocompletePath2(state) catch {};
+        return;
+    }
+
+    const CarapaceParse = struct {
+        value: []const u8,
+        display: []const u8,
+        description: []const u8,
+        // style {}
+    };
+
+    const carapace_results: []CarapaceParse = std.json.parseFromSliceLeaky([]CarapaceParse, arena, result.stdout, .{ .ignore_unknown_fields = true }) catch {
+        tryAutocompletePath2(state) catch {};
+        return;
+    };
+
+    if (carapace_results.len == 0) {
+        tryAutocompletePath2(state) catch {};
+        return;
+    }
+
+    if (carapace_results.len == 1) {
+        try displayCompletionResults(state, .{ .single_match = carapace_results[0].value });
+        return;
+    }
+
+    var longest_shared_suggestion: []const u8 = carapace_results[0].value;
+    var suggestions = try std.ArrayList([]const u8).initCapacity(arena, carapace_results.len);
+
+    for (carapace_results) |suggestion| {
+        const shared_until = std.mem.indexOfDiff(u8, longest_shared_suggestion, suggestion.value) orelse longest_shared_suggestion.len;
+        longest_shared_suggestion = longest_shared_suggestion[0..shared_until];
+        suggestions.appendAssumeCapacity(suggestion.value);
+    }
+
+    try displayCompletionResults(state, .{ .multiple_match = .{
+        .shared_match = longest_shared_suggestion,
+        .potential_matches = suggestions.items,
+    } });
 }
 
 fn displayCompletionResults(state: *State, result: CompletionResult) !void {
