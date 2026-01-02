@@ -113,7 +113,8 @@ pub const Value = struct {
             .list => |l| {
                 try writer.print("[ ", .{});
                 for (l.items) |item| {
-                    try writer.print("{any} ", .{item});
+                    try item.format(writer);
+                    try writer.writeByte(' ');
                 }
                 try writer.print("]", .{});
             },
@@ -142,13 +143,28 @@ pub const Value = struct {
             .integer => |i| try std.fmt.allocPrint(ally, "{}", .{i}),
             .float => |f| try std.fmt.allocPrint(ally, "{}", .{f}),
             .boolean => |b| try ally.dupe(u8, if (b) "true" else "false"),
-            .list => |l| try std.fmt.allocPrint(ally, "[ {any} ]", .{l.items}),
+            .list => |l| blk: {
+                const write = std.fmt.format;
+                if (l.items.len == 0) {
+                    return try ally.dupe(u8, "[]");
+                }
+                var string = try std.array_list.Managed(u8).initCapacity(ally, 16);
+                const writer = string.writer();
+                try write(writer, "[ ", .{});
+
+                for (l.items) |item| {
+                    const value_str = try item.asStr(ally);
+                    defer ally.free(value_str);
+                    try write(writer, "{s} ", .{value_str});
+                }
+                try write(writer, "]", .{});
+                break :blk try string.toOwnedSlice();
+            },
             .record => |r| blk: {
                 const write = std.fmt.format;
                 if (r.count() == 0) {
                     return try ally.dupe(u8, "[=]");
                 }
-                std.debug.print("here\n", .{});
                 var string = try std.array_list.Managed(u8).initCapacity(ally, 16);
                 const writer = string.writer();
                 try write(writer, "[ ", .{});

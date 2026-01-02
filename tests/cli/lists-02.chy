@@ -1,0 +1,6 @@
+l := ["hi" "hello" "yo"]
+
+say "{l} end"
+say "[ hi hello yo ] end"
+
+assert "{l} end" == "[ hi hello yo ] end"
