@@ -996,9 +996,9 @@ fn parsePipeline(ctx: *Context) !?Call {
 
 fn parseRedirectOut(ctx: *Context) !?RedirectOut {
     _ = ctx.getIf(.RedirectOut) orelse return null;
-    const token = ctx.getIf(.Bareword) orelse {
+    const token = ctx.getIf(.Bareword) orelse ctx.getIf(.StringLiteral) orelse {
         return ctx.err(.{
-            .msg = "expected bareword",
+            .msg = "expected bareword or string literal",
         });
     };
     return RedirectOut{

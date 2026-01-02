@@ -529,7 +529,8 @@ fn evalClosureCall(ctx: *Context, closure_value: *Value, call: ast.Call) !Result
 fn evalProc(ctx: *Context, call: ast.Call) !Result {
     const capturing = call.capturing_external_cmd;
     var procs = try std.ArrayList(std.process.Child).initCapacity(ctx.stmnt_scratch, 4);
-    var redirect_output_to_file: ?*const tokens.Token = null;
+    var redirect_output_to_file: ?[]const u8 = null;
+    var redirect_output_to_file_token: ?*const tokens.Token = null;
     const redirect_stdin_from_file = call.redirect_in;
 
     var ptr: ?*const ast.Call = &call;
@@ -540,7 +541,8 @@ fn evalProc(ctx: *Context, call: ast.Call) !Result {
         try procs.append(ctx.stmnt_scratch, new_proc);
 
         if (call_ptr.redirect_out) |out| {
-            redirect_output_to_file = out.token;
+            redirect_output_to_file_token = out.token;
+            redirect_output_to_file = (try contextualizeToken(ctx, out.token)).as.string;
         }
 
         ptr = call_ptr.pipe;
@@ -640,11 +642,11 @@ fn evalProc(ctx: *Context, call: ast.Call) !Result {
         assert(procs.getLast().stdout != null);
         capture = try procs.getLast().stdout.?.readToEndAlloc(gc.allocator(), std.math.maxInt(u64));
     } else if (redirect_output_to_file) |output_file| {
-        var file = std.fs.cwd().createFile(output_file.value, .{}) catch {
+        var file = std.fs.cwd().createFile(output_file, .{}) catch {
             ctx.state.reportError(.{
                 .trailing = false,
-                .offending_token = output_file,
-                .msg = try std.fmt.allocPrint(ctx.ally, "Could not open file '{s}' for redirection", .{output_file.value}),
+                .offending_token = redirect_output_to_file_token.?,
+                .msg = try std.fmt.allocPrint(ctx.ally, "Could not open file '{s}' for redirection", .{output_file}),
             });
             return InterpreterError.UnableToOpenFileDuringRedirect;
         };
@@ -892,14 +894,7 @@ fn evalBareword(ctx: *Context, bw: ast.Bareword) !*Value {
 }
 
 fn evalStringLiteral(ctx: *Context, str: ast.StringLiteral) !*Value {
-    const opt = gc.ValueOptions{
-        .origin = str.token,
-        .origin_module = ctx.root_module.filename,
-    };
-    const contextualized = try strings.processStrLiteral(ctx.state, ctx.stmnt_scratch, str.token.value);
-    const value = try gc.string(contextualized, opt);
-    try gc.appendRoot(value);
-    return value;
+    return contextualizeToken(ctx, str.token);
 }
 
 fn evalIntegerLiteral(ctx: *Context, int: ast.IntegerLiteral) !*Value {
@@ -984,6 +979,17 @@ fn appendParentRootIfReturnedValue(result: Result) !void {
         .nothing => {},
         .values => unreachable, //TODO: consider
     }
+}
+
+fn contextualizeToken(ctx: *Context, token: *const tokens.Token) !*Value {
+    const opt = gc.ValueOptions{
+        .origin = token,
+        .origin_module = ctx.root_module.filename,
+    };
+    const contextualized = try strings.processStrLiteral(ctx.state, ctx.stmnt_scratch, token.value);
+    const value = try gc.string(contextualized, opt);
+    try gc.appendRoot(value);
+    return value;
 }
 
 fn errNeverDeclared(ctx: *Context, token: *const tokens.Token) InterpreterError {

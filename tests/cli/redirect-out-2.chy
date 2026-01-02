@@ -1,0 +1,9 @@
+import fs
+
+filename := "/tmp/myfile"
+
+echo hi |> "{filename}.txt"
+
+assert (fs'exists "{filename}.txt")
+
+rm "{filename}.txt"
