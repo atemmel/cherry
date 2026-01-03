@@ -332,8 +332,8 @@ fn interpretRangeLoop(ctx: *Context, loop: ast.Loop) !Returns {
     const range = loop.kind.range_loop;
     const iterable = switch (try evalExpression(ctx, range.iterable_expression)) {
         .value => |v| v,
-        .values => unreachable,
-        .nothing => unreachable,
+        .values => return errRequiresSingleValue(ctx, ast.tokenFromExpr(range.iterable_expression)),
+        .nothing => return errRequiresValue(ctx, ast.tokenFromExpr(range.iterable_expression)),
     };
     var idx: usize = 0;
 
