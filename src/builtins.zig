@@ -70,8 +70,8 @@ const builtins_table = BuiltinsTable.initComptime(
         .{ "append", append_info },
         .{ "get", get_info },
         .{ "len", len_info },
-        .{ "put", unchecked(put) },
-        .{ "del", unchecked(del) },
+        .{ "put", put_info },
+        .{ "del", del_info },
         .{ "slice", unchecked(slice) },
         // operations
         .{ "add", unchecked(add) },
@@ -550,6 +550,7 @@ const len_info: BuiltinInfo = .{
         // takes one iterable of generic content
         .generics = &.{"T"},
         .last_parameter_is_variadic = false,
+        .produces = .integer,
         .parameters = &.{
             .{
                 .name = "iterable",
@@ -712,6 +713,44 @@ fn put(state: *State, args: []const *Value, _: ast.Call) !Result {
     return something(args[0]);
 }
 
+const put_info_list_of: TypeInfo = .{
+    .generic = "T",
+};
+
+const put_info: BuiltinInfo = .{
+    .func = put,
+    .signature = .{
+        .generics = &.{"T"},
+        .last_parameter_is_variadic = false,
+        .parameters = &.{
+            .{
+                .name = "list",
+                .param_type = .{
+                    .type_info = .{
+                        .list = .{
+                            .of = &put_info_list_of,
+                        },
+                    },
+                },
+            },
+            .{
+                .name = "index",
+                .param_type = .{
+                    .type_info = .integer,
+                },
+            },
+            .{
+                .name = "value",
+                .param_type = .{
+                    .type_info = .{
+                        .generic = "T",
+                    },
+                },
+            },
+        },
+    },
+};
+
 fn del(state: *State, args: []const *Value, call: ast.Call) !Result {
     _ = call;
     try validateArgsCount(state, &.{2}, args.len);
@@ -735,6 +774,36 @@ fn delList(list: *values.List, idx: *Value) void {
     //TODO: handle negative values properly
     _ = list.orderedRemove(@intCast(index));
 }
+
+const del_info_list_of: TypeInfo = .{
+    .generic = "T",
+};
+
+const del_info: BuiltinInfo = .{
+    .func = del,
+    .signature = .{
+        .generics = &.{"T"},
+        .last_parameter_is_variadic = false,
+        .parameters = &.{
+            .{
+                .name = "list",
+                .param_type = .{
+                    .type_info = .{
+                        .list = .{
+                            .of = &del_info_list_of,
+                        },
+                    },
+                },
+            },
+            .{
+                .name = "index",
+                .param_type = .{
+                    .type_info = .integer,
+                },
+            },
+        },
+    },
+};
 
 fn slice(state: *State, args: []const *Value, call: ast.Call) !Result {
     try validateArgsCount(state, &.{ 1, 2, 3 }, args.len);

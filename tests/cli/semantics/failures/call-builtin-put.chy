@@ -1,0 +1,5 @@
+x := [0]
+put $x 0 1337
+put $x 0 leet
+put $x 0 1336
+put $x 0 other
