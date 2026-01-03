@@ -193,8 +193,8 @@ pub const Value = struct {
         };
     }
 
-    const Order = union(enum) {
-        less,
+    pub const Order = union(enum) {
+        lesser,
         greater,
         equal,
         failure: struct {
@@ -203,7 +203,7 @@ pub const Value = struct {
         },
     };
 
-    pub fn compare(self: *const Value, other: *const Value) !Order {
+    pub fn compare(self: *const Value, other: *const Value) Order {
         switch (other.as) {
             .float => {
                 std.debug.print("other ({*}) was float: {any}", .{ other, other });
@@ -216,7 +216,7 @@ pub const Value = struct {
                 .string => |rhs| {
                     const order = std.mem.order(u8, lhs, rhs);
                     return switch (order) {
-                        .lt => .less,
+                        .lt => .lesser,
                         .gt => .greater,
                         .eq => .equal,
                     };
@@ -226,7 +226,7 @@ pub const Value = struct {
             .integer => |lhs| switch (other.as) {
                 .integer => |rhs| {
                     if (lhs < rhs) {
-                        return .less;
+                        return .lesser;
                     } else if (lhs > rhs) {
                         return .greater;
                     }
@@ -244,7 +244,7 @@ pub const Value = struct {
                     if (lhs and rhs) {
                         return .equal;
                     } else if (!lhs and rhs) {
-                        return .less;
+                        return .lesser;
                     } else if (lhs and !rhs) {
                         return .greater;
                     } else if (!lhs and !rhs) {
@@ -259,12 +259,12 @@ pub const Value = struct {
                     const r = rhs.items;
                     for (0..@max(l.len, r.len)) |i| {
                         if (l.len + 1 < i) { // lhs ends early
-                            return .less;
+                            return .lesser;
                         } else if (r.len + 1 < i) { // rhs ends early
-                            return .less;
-                        } else if (try l[i].compare(l[i]) == .less) { // lhs is lesser
-                            return .less;
-                        } else if (try l[i].compare(r[i]) == .greater) { // rhs is lesser
+                            return .lesser;
+                        } else if (l[i].compare(l[i]) == .lesser) { // lhs is lesser
+                            return .lesser;
+                        } else if (l[i].compare(r[i]) == .greater) { // rhs is lesser
                             return .greater;
                         }
                     }
@@ -277,7 +277,7 @@ pub const Value = struct {
                     const lhs_count = lhs.count();
                     const rhs_count = rhs.count();
                     if (lhs_count < rhs_count) {
-                        return .less;
+                        return .lesser;
                     }
                     if (lhs_count > rhs_count) {
                         return .greater;
@@ -290,14 +290,14 @@ pub const Value = struct {
                         const b = rhs_it.next().?;
                         const key_order = std.mem.order(u8, a.key_ptr.*, b.key_ptr.*);
                         switch (key_order) {
-                            .lt => return .less,
+                            .lt => return .lesser,
                             .gt => return .greater,
                             .eq => {},
                         }
 
-                        const value_order = try a.value_ptr.*.compare(b.value_ptr.*);
+                        const value_order = a.value_ptr.*.compare(b.value_ptr.*);
                         switch (value_order) {
-                            .less => return .less,
+                            .lesser => return .lesser,
                             .greater => return .greater,
                             .failure => return value_order,
                             .equal => {},
@@ -336,7 +336,7 @@ pub const Value = struct {
     }
 };
 
-fn typeMismatch(lhs_type: Type, rhs_type: []const u8) !Value.Order {
+fn typeMismatch(lhs_type: Type, rhs_type: []const u8) Value.Order {
     return Value.Order{
         .failure = .{
             .wants = @tagName(lhs_type),

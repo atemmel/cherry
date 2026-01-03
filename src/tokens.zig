@@ -30,6 +30,10 @@ pub const Token = struct {
         RBrace,
         LBracket,
         RBracket,
+        Lesser, // <
+        Greater, // >
+        LesserEquals, // <=
+        GreaterEquals, // >=
         RedirectOut, // |>
         RedirectIn, // <|
         SingleQuote, // '
@@ -58,7 +62,7 @@ pub const Token = struct {
 
     pub fn isBinaryOperator(token: *const Token) bool {
         return switch (token.kind) {
-            .Equals, .NotEquals => true,
+            .Equals, .NotEquals, .Greater, .Lesser, .LesserEquals, .GreaterEquals => true,
             else => false,
         };
     }
@@ -66,6 +70,7 @@ pub const Token = struct {
     pub fn precedence(token: *const Token) i64 {
         return switch (token.kind) {
             .Equals, .NotEquals => 10,
+            .Greater, .Lesser, .GreaterEquals, .LesserEquals => 5,
             else => unreachable, // this should never happen
         };
     }
@@ -140,7 +145,7 @@ const LexState = struct {
 
     pub fn isSymbolChar(self: LexState) bool {
         return switch (self.get()) {
-            '!', ':', ';', '=', '|', '(', ')', '{', '}', '[', ']', '\'' => true,
+            '!', ':', ';', '=', '|', '(', ')', '{', '}', '[', ']', '\'', '<', '>' => true,
             else => false,
         };
     }
@@ -152,7 +157,7 @@ const LexState = struct {
     pub fn isUnallowedBarewordChar(self: LexState) bool {
         // chars that are never allowed to appear in the middle of a bareword
         return switch (self.get()) {
-            '!', ':', ';', '|', '(', ')', '{', '}', '[', ']', ' ', '\n', '\t', '\r', '#', '"', '`', '\'' => true,
+            '!', ':', ';', '|', '(', ')', '{', '}', '[', ']', ' ', '\n', '\t', '\r', '#', '"', '`', '\'', '<', '>' => true,
             else => false,
         };
     }
@@ -217,14 +222,8 @@ fn lexSymbol(state: *LexState) ?Token {
         '|' => peekMustAssign(state, .PipeAssign) orelse peekMust(state, '>', .RedirectOut) orelse .Pipe,
         ':' => .Colon,
         ';' => .Semicolon,
-        '<' => blk: {
-            state.next();
-            if (state.eof() or state.get() != '|') {
-                state.idx -= 1;
-                return null;
-            }
-            break :blk .RedirectIn;
-        },
+        '<' => peekMustAssign(state, .LesserEquals) orelse peekMust(state, '|', .RedirectIn) orelse .Lesser,
+        '>' => peekAssign(state, .Greater, .GreaterEquals),
         '(' => .LParens,
         ')' => .RParens,
         '{' => .LBrace,
@@ -774,7 +773,7 @@ test "lex pipe greater than" {
 
     try expectEqual(2, tokens.len);
     try expectEqual(.Pipe, tokens[0].kind);
-    try expectEqual(.Bareword, tokens[1].kind);
+    try expectEqual(.Greater, tokens[1].kind);
 }
 
 test "lex redirect in" {
@@ -798,7 +797,7 @@ test "lex less than pipe" {
     );
 
     try expectEqual(2, tokens.len);
-    try expectEqual(.Bareword, tokens[0].kind);
+    try expectEqual(.Lesser, tokens[0].kind);
     try expectEqual(.Pipe, tokens[1].kind);
 }
 

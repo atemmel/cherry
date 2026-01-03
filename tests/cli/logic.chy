@@ -1,6 +1,5 @@
 # regular operators
 assert 1 == 1
-say true != false
 assert true != false
 assert "hi" == "hi"
 assert 3 != 2 == true
@@ -14,12 +13,14 @@ assert (eq ha ha ha)
 assert (eq)
 
 # lt, for lists, queries rising order
-assert (< 1 2 3)
-assert (< a b c)
+assert 1 < 2
+assert (lt 1 2 3)
+assert (lt a b c)
 
 # gt, for lists, queries falling order
-assert (> 3 2 1)
-assert (> c b a)
+assert 3 > 2
+assert (gt 3 2 1)
+assert (gt c b a)
 
 # ne, for lists, queries uniqueness on all elements
 assert (ne 3 1 2)

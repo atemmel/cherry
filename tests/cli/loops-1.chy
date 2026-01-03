@@ -1,11 +1,11 @@
 strings := [hi yo hello]
 
-for i := 0; (< $i (len $strings)); $i = (+ $i 1) {
+for i := 0; $i < (len $strings); $i = (+ $i 1) {
     say (get $strings $i)
 }
 
 i := 0
-for ; (< $i (len $strings)); $i = (+ $i 1) {
+for ; $i < (len $strings); $i = (+ $i 1) {
 }
 
 assert 3 == $i

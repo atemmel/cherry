@@ -1121,7 +1121,7 @@ fn parseUnaryPrefixOperator(ctx: *Context) !?UnaryOperator {
 
 fn isBinaryOperator(token: *const Token) bool {
     return switch (token.kind) {
-        .Equals, .NotEquals => true,
+        .Equals, .NotEquals, .Greater, .Lesser => true,
         else => false,
     };
 }

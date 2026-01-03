@@ -90,8 +90,6 @@ const builtins_table = BuiltinsTable.initComptime(
         .{ "-", unchecked(sub) },
         .{ "*", unchecked(mul) },
         .{ "/", unchecked(div) },
-        .{ "<", unchecked(less) },
-        .{ ">", unchecked(greater) },
         // types
         .{ "int", unchecked(int) },
         // dev
@@ -401,8 +399,7 @@ fn equals(state: *State, args: []const *Value, call: ast.Call) !Result {
 
     const first = args[0];
     for (args[1..], 1..) |arg, idx| {
-        //TODO: handle type error
-        const order = first.compare(arg) catch unreachable;
+        const order = first.compare(arg);
         switch (order) {
             .equal => {},
             .failure => |fail| return typeMismatchError(state, fail.wants, fail.got, idx),
@@ -423,10 +420,9 @@ fn less(state: *State, args: []const *Value, call: ast.Call) !Result {
 
     const first = args[0];
     for (args[1..], 1..) |arg, idx| {
-        //TODO: handle type error
-        const order = first.compare(arg) catch unreachable;
+        const order = first.compare(arg);
         switch (order) {
-            .less => {},
+            .lesser => {},
             .failure => |fail| return typeMismatchError(state, fail.wants, fail.got, idx),
             else => return something(try gc.boolean(false, opt)),
         }
@@ -445,8 +441,7 @@ fn greater(state: *State, args: []const *Value, call: ast.Call) !Result {
 
     const first = args[0];
     for (args[1..], 1..) |arg, idx| {
-        //TODO: handle type error
-        const order = first.compare(arg) catch unreachable;
+        const order = first.compare(arg);
         switch (order) {
             .greater => {},
             .failure => |fail| return typeMismatchError(state, fail.wants, fail.got, idx),
@@ -467,8 +462,7 @@ fn notEqual(state: *State, args: []const *Value, call: ast.Call) !Result {
 
     const first = args[0];
     for (args[1..], 1..) |arg, idx| {
-        //TODO: handle type error
-        const order = first.compare(arg) catch unreachable;
+        const order = first.compare(arg);
         switch (order) {
             .equal => return something(try gc.boolean(false, opt)),
             .failure => |fail| return typeMismatchError(state, fail.wants, fail.got, idx),

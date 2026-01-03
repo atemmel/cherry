@@ -788,38 +788,77 @@ fn evalNot(ctx: *Context, op: ast.UnaryOperator) EvalError!*Value {
 fn evalBinaryOperator(ctx: *Context, op: ast.BinaryOperator) EvalError!*Value {
     return switch (op.token.kind) {
         .Equals => try evalEq(ctx, op),
-        .NotEquals => try evalNE(ctx, op),
+        .NotEquals => try evalNe(ctx, op),
+        .Lesser => try evalLt(ctx, op),
+        .Greater => try evalGt(ctx, op),
+        .LesserEquals => try evalLe(ctx, op),
+        .GreaterEquals => try evalGe(ctx, op),
         else => unreachable, // programmer error
     };
 }
 
 fn evalEq(ctx: *Context, op: ast.BinaryOperator) EvalError!*Value {
-    const opt = gc.ValueOptions{
-        .origin = op.token,
-        .origin_module = ctx.state.current_module_in_process,
-    };
-    return try gc.boolean(try evalEqImpl(ctx, op), opt);
+    return try promoteBoolToValue(ctx, op, try evalEqImpl(ctx, op));
 }
 
-fn evalNE(ctx: *Context, op: ast.BinaryOperator) EvalError!*Value {
-    const opt = gc.ValueOptions{
-        .origin = op.token,
-        .origin_module = ctx.state.current_module_in_process,
-    };
-    return try gc.boolean(!try evalEqImpl(ctx, op), opt);
+fn evalNe(ctx: *Context, op: ast.BinaryOperator) EvalError!*Value {
+    return try promoteBoolToValue(ctx, op, !try evalEqImpl(ctx, op));
+}
+
+fn evalLt(ctx: *Context, op: ast.BinaryOperator) EvalError!*Value {
+    return promoteBoolToValue(ctx, op, switch (try evalComparison(ctx, op)) {
+        .lesser => true,
+        .failure => |fail| return builtins.typeMismatchError(ctx.state, fail.wants, fail.got, 1),
+        else => false,
+    });
+}
+
+fn evalGt(ctx: *Context, op: ast.BinaryOperator) EvalError!*Value {
+    return promoteBoolToValue(ctx, op, switch (try evalComparison(ctx, op)) {
+        .greater => true,
+        .failure => |fail| return builtins.typeMismatchError(ctx.state, fail.wants, fail.got, 1),
+        else => false,
+    });
+}
+
+fn evalLe(ctx: *Context, op: ast.BinaryOperator) EvalError!*Value {
+    return promoteBoolToValue(ctx, op, switch (try evalComparison(ctx, op)) {
+        .lesser => true,
+        .equal => true,
+        .failure => |fail| return builtins.typeMismatchError(ctx.state, fail.wants, fail.got, 1),
+        else => false,
+    });
+}
+
+fn evalGe(ctx: *Context, op: ast.BinaryOperator) EvalError!*Value {
+    return promoteBoolToValue(ctx, op, switch (try evalComparison(ctx, op)) {
+        .greater => true,
+        .equal => true,
+        .failure => |fail| return builtins.typeMismatchError(ctx.state, fail.wants, fail.got, 1),
+        else => false,
+    });
 }
 
 fn evalEqImpl(ctx: *Context, op: ast.BinaryOperator) EvalError!bool {
-    const lhs = try evalExpression(ctx, op.lhs.*);
-    const rhs = try evalExpression(ctx, op.rhs.*);
-
-    //TODO: handle type error
-    const order = lhs.value.compare(rhs.value) catch unreachable;
-    return switch (order) {
+    return switch (try evalComparison(ctx, op)) {
         .equal => true,
         .failure => |fail| return builtins.typeMismatchError(ctx.state, fail.wants, fail.got, 1),
         else => false,
     };
+}
+
+fn promoteBoolToValue(ctx: *Context, op: ast.BinaryOperator, value: bool) EvalError!*Value {
+    const opt = gc.ValueOptions{
+        .origin = op.token,
+        .origin_module = ctx.state.current_module_in_process,
+    };
+    return try gc.boolean(value, opt);
+}
+
+fn evalComparison(ctx: *Context, op: ast.BinaryOperator) !Value.Order {
+    const lhs = try evalExpression(ctx, op.lhs.*);
+    const rhs = try evalExpression(ctx, op.rhs.*);
+    return lhs.value.compare(rhs.value);
 }
 
 fn evalExpression(ctx: *Context, expr: ast.Expression) EvalError!Result {

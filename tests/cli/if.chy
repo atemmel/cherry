@@ -32,6 +32,6 @@ if false {
 	assert false
 }
 
-if (< 3 2) {
+if 3 < 2 {
 	assert false
 }
