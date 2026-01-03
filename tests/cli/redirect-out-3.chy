@@ -1,0 +1,13 @@
+import fs
+
+cat tests/data/file.txt |> /tmp/file.txt
+cat tests/data/file.txt |> /tmp/file2.txt
+
+assert (fs'exists /tmp/file.txt)
+assert (fs'exists /tmp/file2.txt)
+
+diff tests/data/file.txt /tmp/file.txt 
+diff tests/data/file.txt /tmp/file2.txt 
+
+rm /tmp/file.txt
+rm /tmp/file2.txt
