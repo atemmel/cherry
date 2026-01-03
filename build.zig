@@ -14,7 +14,7 @@ fn dateStr(b: *std.Build) []const u8 {
     const hour = day_seconds.getHoursIntoDay();
     const minute = day_seconds.getMinutesIntoHour();
 
-    return std.fmt.allocPrint(b.allocator, "{}-{}-{} {:0>2}:{:0>2}", .{ year, month, day, hour, minute }) catch unreachable;
+    return std.fmt.allocPrint(b.allocator, "{}-{:0>2}-{:0>2} {:0>2}:{:0>2}", .{ year, month, day, hour, minute }) catch unreachable;
 }
 
 // Although this function looks imperative, note that its job is to

@@ -104,7 +104,7 @@ pub fn main() !u8 {
 
     if (res.args.help != 0) {
         stderr.print(
-            "\n +--------+\n | cherry |    version {s} (built {s})\n +--------+\n\n",
+            "\n +--------+\n | cherry |    version {s}\n +--------+    built {s}\n\n",
             .{ git_latest_commit_hash, build_options.build_date },
         ) catch {};
         clap.help(stderr, clap.Help, &params, .{
