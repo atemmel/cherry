@@ -10,6 +10,14 @@ const ErrorReport = pipeline.ErrorReport;
 
 const Table = std.StringHashMap(TypeInfo);
 
+fn dump(table: Table) void {
+    std.debug.print("Table size: {}\n", .{table.count()});
+    var it = table.iterator();
+    while (it.next()) |kv| {
+        std.debug.print("{s} -> {any}\n", .{ kv.key_ptr.*, kv.value_ptr.* });
+    }
+}
+
 const Collection = struct {
     of: *const TypeInfo,
 };
@@ -39,8 +47,23 @@ pub const TypeInfo = union(enum) {
             .record => |r| try std.fmt.allocPrint(arena, "[=]{s}", .{try r.of.str(arena, table)}),
             .user_defined => unreachable,
             .nothing => "nothing",
-            .generic => |gen| try std.fmt.allocPrint(arena, "{s} ({s})", .{ gen, try table.get(gen).?.str(arena, table) }),
-            .either => unreachable,
+            .generic => |gen| blk: {
+                if (table.get(gen)) |t| {
+                    break :blk try std.fmt.allocPrint(arena, "{s} ({s})", .{ gen, try t.str(arena, table) });
+                } else {
+                    break :blk try std.fmt.allocPrint(arena, "{s}", .{gen});
+                }
+            },
+            .either => |either| blk: {
+                var type_str = std.ArrayList(u8){};
+                for (either, 0..) |solution, idx| {
+                    try type_str.appendSlice(arena, try solution.str(arena, table));
+                    if (idx + 1 != either.len) {
+                        try type_str.appendSlice(arena, " | ");
+                    }
+                }
+                break :blk try type_str.toOwnedSlice(arena);
+            },
         };
     }
 
@@ -112,7 +135,14 @@ pub const TypeInfo = union(enum) {
                 const lookup = table.get(gen).?;
                 break :blk lookup.eql(rhs, table);
             },
-            .either => unreachable,
+            .either => |either| blk: {
+                for (either) |solution| {
+                    if (solution.eql(rhs, table)) {
+                        break :blk true;
+                    }
+                }
+                break :blk false;
+            },
         };
     }
 };
@@ -288,16 +318,18 @@ fn analyzeBuiltinCall(ctx: *Context, call: ast.Call, builtin_info: builtins.Buil
             .generic => |gen| {
                 try lookupAndInsertGeneric(ctx, &generic_lookup_table, gen, encountered_type, .{ .analyzed_token = arg_token });
             },
-            .list => |list| {
-                try collectGenericsWithinList(ctx, list, encountered_type, &generic_lookup_table, .{ .analyzed_token = arg_token });
+            .record, .list => |collection| {
+                try collectGenericsWithinCollection(ctx, collection, encountered_type, &generic_lookup_table, .{ .analyzed_token = arg_token });
             },
-            .record => unreachable,
+            .either => |either| {
+                try collectGenericsWithinEither(ctx, either, encountered_type, &generic_lookup_table, .{ .analyzed_token = arg_token });
+            },
             else => {},
         }
         try analyzeSingleExpression(ctx, param.param_type.type_info, encountered_type, arg_token, generic_lookup_table);
     }
 
-    // if not variadic, cool, exit
+    // if not variadic: cool, exit
     if (!signature.last_parameter_is_variadic) {
         return signature.produces;
     }
@@ -320,18 +352,28 @@ const ParentTypePair = struct {
     analyzed_token: *const Token,
 };
 
-fn collectGenericsWithinList(ctx: *Context, list: Collection, got: TypeInfo, table: *Table, parent: ParentTypePair) !void {
-    switch (list.of.*) {
+fn collectGenericsWithinCollection(ctx: *Context, collection: Collection, got: TypeInfo, table: *Table, parent: ParentTypePair) !void {
+    switch (collection.of.*) {
         .generic => |gen| {
             switch (got) {
-                .list => |l| {
+                .list, .record => |l| {
                     try lookupAndInsertGeneric(ctx, table, gen, l.of.*, parent);
                 },
                 else => {},
             }
         },
-        .record => unreachable,
+        .list, .record => |inner| try collectGenericsWithinCollection(ctx, inner, got, table, parent),
         else => {},
+    }
+}
+
+fn collectGenericsWithinEither(ctx: *Context, either: []const TypeInfo, got: TypeInfo, table: *Table, parent: ParentTypePair) !void {
+    for (either) |solution| {
+        switch (solution) {
+            .list, .record => |collection| try collectGenericsWithinCollection(ctx, collection, got, table, parent),
+            .generic => unreachable, // Generic Either allowed?
+            else => {},
+        }
     }
 }
 

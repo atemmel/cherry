@@ -69,7 +69,7 @@ const builtins_table = BuiltinsTable.initComptime(
         // collections
         .{ "append", append_info },
         .{ "get", get_info },
-        .{ "len", unchecked(len) },
+        .{ "len", len_info },
         .{ "put", unchecked(put) },
         .{ "del", unchecked(del) },
         .{ "slice", unchecked(slice) },
@@ -539,6 +539,40 @@ pub fn genericLen(value: *const Value) !usize {
         .record => |r| r.count(),
     };
 }
+
+const len_info_iterable_of: TypeInfo = .{
+    .generic = "T",
+};
+
+const len_info: BuiltinInfo = .{
+    .func = len,
+    .signature = .{
+        // takes one iterable of generic content
+        .generics = &.{"T"},
+        .last_parameter_is_variadic = false,
+        .parameters = &.{
+            .{
+                .name = "iterable",
+                .param_type = .{
+                    .type_info = .{
+                        .either = &.{
+                            .{
+                                .list = .{
+                                    .of = &len_info_iterable_of,
+                                },
+                            },
+                            .{
+                                .record = .{
+                                    .of = &len_info_iterable_of,
+                                },
+                            },
+                        },
+                    },
+                },
+            },
+        },
+    },
+};
 
 const append_info_list_of: TypeInfo = .{
     .generic = "T",
