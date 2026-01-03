@@ -190,7 +190,7 @@ pub const ClassicLoop = struct {
 
 pub const RangeLoop = struct {
     name_of_temporary: *const Token,
-    name_of_iterable: Variable,
+    iterable_expression: Expression,
 };
 
 pub const Break = struct {
@@ -863,13 +863,13 @@ fn parseRangeLoopHeader(ctx: *Context) !?RangeLoop {
         ctx.idx = checkpoint;
         return null;
     };
-    const name_of_iterable = try parseVariable(ctx) orelse {
+    const iterable_expression = try parseExpression(ctx, std.math.minInt(i64)) orelse {
         return ctx.err(.{
             .msg = "expected name of variable to iterate over",
         });
     };
     return RangeLoop{
-        .name_of_iterable = name_of_iterable,
+        .iterable_expression = iterable_expression,
         .name_of_temporary = name_of_temporary,
     };
 }

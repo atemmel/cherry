@@ -330,7 +330,11 @@ fn interpretClassicLoop(ctx: *Context, loop: ast.Loop) !Returns {
 
 fn interpretRangeLoop(ctx: *Context, loop: ast.Loop) !Returns {
     const range = loop.kind.range_loop;
-    const iterable = try evalVariable(ctx, range.name_of_iterable);
+    const iterable = switch (try evalExpression(ctx, range.iterable_expression)) {
+        .value => |v| v,
+        .values => unreachable,
+        .nothing => unreachable,
+    };
     var idx: usize = 0;
 
     try gc.insertSymbol(range.name_of_temporary.value, undefined);

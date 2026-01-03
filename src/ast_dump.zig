@@ -185,7 +185,8 @@ fn dumpRangeLoop(loop: ast.RangeLoop) void {
     down();
     defer up();
     print("temporary: {s}", .{loop.name_of_temporary.value});
-    print("iterable: {s}", .{loop.name_of_iterable.token.value});
+    print("iterable:\n", .{});
+    dumpExpression(loop.iterable_expression);
 }
 
 fn dumpBreak(_: ast.Break) void {
