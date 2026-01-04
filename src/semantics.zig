@@ -438,9 +438,19 @@ fn analyzeAssignment(ctx: *Context, assign: ast.Assignment) !void {
     }
 }
 
-fn analyzeBranches(ctx: *Context, call: ast.Branches) !void {
-    _ = ctx;
-    _ = call;
+fn analyzeBranches(ctx: *Context, branches: ast.Branches) !void {
+    for (branches) |branch| {
+        if (branch.condition) |condition| {
+            const type_info = try analyzeExpression(ctx, condition);
+            if (type_info != .boolean) {
+                try ctx.errFmt(.{ .offending_token = ast.tokenFromExpr(condition) }, "condition in if-statement must be boolean, but was {s}", .{
+                    try type_info.str(ctx.arena, Table.init(ctx.arena)),
+                });
+            }
+        }
+
+        try analyzeScope(ctx, branch.scope);
+    }
 }
 
 fn analyzeScope(ctx: *Context, scope: ast.Scope) SemanticsError!void {

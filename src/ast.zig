@@ -553,6 +553,8 @@ fn parseBranches(ctx: *Context) !?Branches {
         });
     }
 
+    if (ctx.getIf(.Newline)) |_| {}
+
     return try branches.toOwnedSlice(ctx.ally);
 }
 
@@ -569,6 +571,8 @@ fn parseScope(ctx: *Context, needsNewline: bool) !?Scope {
     while (try parseStatement(ctx)) |stmnt| {
         try statements.append(ctx.ally, stmnt);
     }
+
+    while (ctx.getIf(.Newline)) |_| {}
 
     _ = ctx.getIf(.RBrace) orelse {
         return ctx.err(.{
