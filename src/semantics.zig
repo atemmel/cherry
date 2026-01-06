@@ -161,6 +161,7 @@ const Context = struct {
     scopes: std.ArrayList(Scope),
     state: *PipelineState,
     current_module: *pipeline.Module,
+    current_function: ?*ast.Func = null,
 
     current_loop_depth: usize = 0,
 
@@ -253,6 +254,10 @@ fn analyzeModule(ctx: *Context, module: ast.Module) !void {
     for (module.statements) |stmnt| {
         try analyzeStatement(ctx, stmnt);
     }
+    var it = module.functions.iterator();
+    while (it.next()) |function| {
+        try analyzeFunc(ctx, function.value_ptr.*);
+    }
 }
 
 fn analyzeStatement(ctx: *Context, stmnt: ast.Statement) !void {
@@ -276,8 +281,8 @@ fn analyzeCall(ctx: *Context, call: ast.Call) !TypeInfo {
     if (builtin_info) |bi| {
         return analyzeBuiltinCall(ctx, call, bi);
     } else if (ctx.current_module.ast.functions.getPtr(name)) |func| {
-        return func.signature.produces;
-    }
+        return analyzeFunctionCall(ctx, call, func);
+    } else unreachable; //TODO: fix things here
 
     //TODO: call.pipe
     return .string;
@@ -286,7 +291,6 @@ fn analyzeCall(ctx: *Context, call: ast.Call) !TypeInfo {
 fn analyzeBuiltinCall(ctx: *Context, call: ast.Call, builtin_info: builtins.BuiltinInfo) !TypeInfo {
     var generic_lookup_table = std.StringHashMap(TypeInfo).init(ctx.arena);
     const name = call.token.value;
-    //const args = try analyzeArguments(ctx, call.arguments);
     const signature = builtin_info.signature;
     const required_len = signature.parameters.len;
     const provided_len = call.arguments.len;
@@ -316,13 +320,13 @@ fn analyzeBuiltinCall(ctx: *Context, call: ast.Call, builtin_info: builtins.Buil
         const encountered_type = try analyzeExpression(ctx, arg);
         switch (param.param_type.type_info) {
             .generic => |gen| {
-                try lookupAndInsertGeneric(ctx, &generic_lookup_table, gen, encountered_type, .{ .analyzed_token = arg_token });
+                try lookupAndInsertGeneric(ctx, &generic_lookup_table, gen, encountered_type);
             },
             .record, .list => |collection| {
-                try collectGenericsWithinCollection(ctx, collection, encountered_type, &generic_lookup_table, .{ .analyzed_token = arg_token });
+                try collectGenericsWithinCollection(ctx, collection, encountered_type, &generic_lookup_table);
             },
             .either => |either| {
-                try collectGenericsWithinEither(ctx, either, encountered_type, &generic_lookup_table, .{ .analyzed_token = arg_token });
+                try collectGenericsWithinEither(ctx, either, encountered_type, &generic_lookup_table);
             },
             else => {},
         }
@@ -346,40 +350,40 @@ fn analyzeBuiltinCall(ctx: *Context, call: ast.Call, builtin_info: builtins.Buil
     return signature.produces;
 }
 
-const ParentTypePair = struct {
-    wants: ?TypeInfo = null,
-    got: ?TypeInfo = null,
-    analyzed_token: *const Token,
-};
+fn analyzeFunctionCall(ctx: *Context, call: ast.Call, func: *const ast.Func) TypeInfo {
+    _ = ctx;
+    _ = call;
+    _ = func;
+    return .string;
+}
 
-fn collectGenericsWithinCollection(ctx: *Context, collection: Collection, got: TypeInfo, table: *Table, parent: ParentTypePair) !void {
+fn collectGenericsWithinCollection(ctx: *Context, collection: Collection, got: TypeInfo, table: *Table) !void {
     switch (collection.of.*) {
         .generic => |gen| {
             switch (got) {
                 .list, .record => |l| {
-                    try lookupAndInsertGeneric(ctx, table, gen, l.of.*, parent);
+                    try lookupAndInsertGeneric(ctx, table, gen, l.of.*);
                 },
                 else => {},
             }
         },
-        .list, .record => |inner| try collectGenericsWithinCollection(ctx, inner, got, table, parent),
+        .list, .record => |inner| try collectGenericsWithinCollection(ctx, inner, got, table),
         else => {},
     }
 }
 
-fn collectGenericsWithinEither(ctx: *Context, either: []const TypeInfo, got: TypeInfo, table: *Table, parent: ParentTypePair) !void {
+fn collectGenericsWithinEither(ctx: *Context, either: []const TypeInfo, got: TypeInfo, table: *Table) !void {
     for (either) |solution| {
         switch (solution) {
-            .list, .record => |collection| try collectGenericsWithinCollection(ctx, collection, got, table, parent),
+            .list, .record => |collection| try collectGenericsWithinCollection(ctx, collection, got, table),
             .generic => unreachable, // Generic Either allowed?
             else => {},
         }
     }
 }
 
-fn lookupAndInsertGeneric(ctx: *Context, table: *Table, generic_name: []const u8, generic_alias: TypeInfo, parent: ParentTypePair) !void {
+fn lookupAndInsertGeneric(ctx: *Context, table: *Table, generic_name: []const u8, generic_alias: TypeInfo) !void {
     _ = ctx;
-    _ = parent;
     _ = table.get(generic_name) orelse {
         try table.put(generic_name, generic_alias);
         return;
@@ -462,9 +466,13 @@ fn analyzeScope(ctx: *Context, scope: ast.Scope) SemanticsError!void {
     }
 }
 
-fn analyzeFunc(ctx: *Context, call: ast.Func) !void {
-    _ = ctx;
-    _ = call;
+fn analyzeFunc(ctx: *Context, func: ast.Func) !void {
+    try ctx.addScope();
+    defer ctx.dropScope();
+    for (func.signature.parameters) |param| {
+        try ctx.insertVariable(param.name, param.param_type.type_info);
+    }
+    try analyzeScope(ctx, func.scope);
 }
 
 fn analyzeReturn(ctx: *Context, call: ast.Return) !void {

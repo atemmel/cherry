@@ -1,0 +1,6 @@
+fn l x: int | string {
+    return (len x)
+}
+
+say (l hello)
+#say (+ 5 (l hello))
