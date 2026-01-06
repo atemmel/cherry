@@ -161,7 +161,7 @@ const Context = struct {
     scopes: std.ArrayList(Scope),
     state: *PipelineState,
     current_module: *pipeline.Module,
-    current_function: ?*ast.Func = null,
+    current_function: ?*const ast.Func = null,
 
     current_loop_depth: usize = 0,
 
@@ -289,55 +289,16 @@ fn analyzeCall(ctx: *Context, call: ast.Call) !TypeInfo {
 }
 
 fn analyzeBuiltinCall(ctx: *Context, call: ast.Call, builtin_info: builtins.BuiltinInfo) !TypeInfo {
-    var generic_lookup_table = std.StringHashMap(TypeInfo).init(ctx.arena);
-    const signature = builtin_info.signature;
-    const required_len = signature.parameters.len;
-    const provided_len = call.arguments.len;
-
-    try assertCallLength(ctx, required_len, provided_len, builtin_info.signature.last_parameter_is_variadic, call.token);
-
-    var idx: usize = 0;
-    while (idx < required_len and idx < provided_len) : (idx += 1) {
-        const param = signature.parameters[idx];
-        const arg = call.arguments[idx];
-        const arg_token = ast.tokenFromExpr(arg);
-        const encountered_type = try analyzeExpression(ctx, arg);
-        switch (param.param_type.type_info) {
-            .generic => |gen| {
-                try lookupAndInsertGeneric(ctx, &generic_lookup_table, gen, encountered_type);
-            },
-            .record, .list => |collection| {
-                try collectGenericsWithinCollection(ctx, collection, encountered_type, &generic_lookup_table);
-            },
-            .either => |either| {
-                try collectGenericsWithinEither(ctx, either, encountered_type, &generic_lookup_table);
-            },
-            else => {},
-        }
-        try analyzeSingleExpression(ctx, param.param_type.type_info, encountered_type, arg_token, generic_lookup_table);
-    }
-
-    // if not variadic: cool, exit
-    if (!signature.last_parameter_is_variadic) {
-        return signature.produces;
-    }
-
-    // otherwise, more work
-    const variadic_param = signature.parameters[signature.parameters.len - 1];
-
-    while (idx < provided_len) : (idx += 1) {
-        const arg = try analyzeExpression(ctx, call.arguments[idx]);
-        const arg_token = ast.tokenFromExpr(call.arguments[idx]);
-        try analyzeSingleExpression(ctx, variadic_param.param_type.type_info, arg, arg_token, generic_lookup_table);
-    }
-
-    return signature.produces;
+    return assertFunctionCallSatisfiesFunctionSignature(ctx, call, .{
+        .signature = builtin_info.signature,
+        .token = call.token,
+    });
 }
 
 fn analyzeFunctionCall(ctx: *Context, call: ast.Call, func: *const ast.Func) !TypeInfo {
     return assertFunctionCallSatisfiesFunctionSignature(ctx, call, .{
         .signature = func.signature,
-        .token = func.token,
+        .token = call.token,
     });
 }
 
@@ -529,15 +490,55 @@ fn analyzeScope(ctx: *Context, scope: ast.Scope) SemanticsError!void {
 fn analyzeFunc(ctx: *Context, func: ast.Func) !void {
     try ctx.addScope();
     defer ctx.dropScope();
+    ctx.current_function = &func;
+    defer ctx.current_function = null;
+
     for (func.signature.parameters) |param| {
         try ctx.insertVariable(param.name, param.param_type.type_info);
     }
     try analyzeScope(ctx, func.scope);
 }
 
-fn analyzeReturn(ctx: *Context, call: ast.Return) !void {
-    _ = ctx;
-    _ = call;
+fn analyzeReturn(ctx: *Context, ret: ast.Return) !void {
+    const func = ctx.current_function orelse {
+        try ctx.errFmt(.{ .offending_token = ret.token }, "can not return outside a function definition", .{});
+        return;
+    };
+
+    const produces = func.signature.produces;
+
+    const expr = ret.expression orelse {
+        if (produces != .nothing) {
+            try ctx.errFmt(
+                .{ .offending_token = ret.token },
+                "function declared to return value of type {s} but does not return anything",
+                .{try produces.str(ctx.arena, Table.init(ctx.arena))},
+            );
+        }
+        return;
+    };
+
+    if (produces == .nothing) {
+        try ctx.errFmt(
+            .{ .offending_token = ret.token },
+            "unable to return value of type {s} from a function declared as unable to return a value",
+            .{try produces.str(ctx.arena, Table.init(ctx.arena))},
+        );
+        return;
+    }
+
+    const produced_expr = try analyzeExpression(ctx, expr);
+
+    //TODO: not keeping the table alive may make this fall apart with generics
+    const TODO = Table.init(ctx.arena);
+    if (!produces.eql(produced_expr, TODO)) {
+        try ctx.errFmt(
+            .{ .offending_token = ret.token },
+            "unable to return value of type {s} from a function declared to return a value of type {s}",
+            .{ try produced_expr.str(ctx.arena, TODO), try produces.str(ctx.arena, TODO) },
+        );
+        return;
+    }
 }
 
 fn analyzeLoop(ctx: *Context, loop: ast.Loop) !void {

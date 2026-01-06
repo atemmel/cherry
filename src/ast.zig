@@ -158,6 +158,7 @@ pub const Func = struct {
 };
 
 pub const Return = struct {
+    token: *const Token,
     expression: ?Expression,
 };
 
@@ -923,9 +924,9 @@ fn parseContinue(ctx: *Context) ?Continue {
 }
 
 fn parseReturn(ctx: *Context) !?Return {
-    if (ctx.getIf(.Return) == null) {
+    const token = ctx.getIf(.Return) orelse {
         return null;
-    }
+    };
 
     const maybe_expr = try parseExpression(ctx, std.math.minInt(i64));
 
@@ -936,6 +937,7 @@ fn parseReturn(ctx: *Context) !?Return {
     }
 
     return Return{
+        .token = token,
         .expression = maybe_expr,
     };
 }

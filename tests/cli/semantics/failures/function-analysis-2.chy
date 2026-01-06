@@ -1,0 +1,6 @@
+fn l x: int | int {
+    say (len $x)
+    return (len $x)
+}
+
+say (l 0)
