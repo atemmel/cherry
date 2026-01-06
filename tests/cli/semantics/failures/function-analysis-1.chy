@@ -1,6 +1,5 @@
 fn l x: int | string {
-    return (len x)
+    return (str $x)
 }
 
 say (l hello)
-#say (+ 5 (l hello))

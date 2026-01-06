@@ -290,27 +290,11 @@ fn analyzeCall(ctx: *Context, call: ast.Call) !TypeInfo {
 
 fn analyzeBuiltinCall(ctx: *Context, call: ast.Call, builtin_info: builtins.BuiltinInfo) !TypeInfo {
     var generic_lookup_table = std.StringHashMap(TypeInfo).init(ctx.arena);
-    const name = call.token.value;
     const signature = builtin_info.signature;
     const required_len = signature.parameters.len;
     const provided_len = call.arguments.len;
 
-    if (builtin_info.signature.last_parameter_is_variadic) {
-        const n_non_variadic_parameters = required_len - 1;
-        if (n_non_variadic_parameters > provided_len) {
-            try ctx.errFmt(
-                .{ .offending_token = call.token },
-                "Call to '{s}' requires at least {} arguments, {} provided.",
-                .{ name, required_len, provided_len },
-            );
-        }
-    } else if (call.arguments.len != signature.parameters.len) {
-        try ctx.errFmt(
-            .{ .offending_token = call.token },
-            "Call to '{s}' requires {} arguments, {} provided.",
-            .{ name, required_len, provided_len },
-        );
-    }
+    try assertCallLength(ctx, required_len, provided_len, builtin_info.signature.last_parameter_is_variadic, call.token);
 
     var idx: usize = 0;
     while (idx < required_len and idx < provided_len) : (idx += 1) {
@@ -350,11 +334,87 @@ fn analyzeBuiltinCall(ctx: *Context, call: ast.Call, builtin_info: builtins.Buil
     return signature.produces;
 }
 
-fn analyzeFunctionCall(ctx: *Context, call: ast.Call, func: *const ast.Func) TypeInfo {
-    _ = ctx;
-    _ = call;
-    _ = func;
-    return .string;
+fn analyzeFunctionCall(ctx: *Context, call: ast.Call, func: *const ast.Func) !TypeInfo {
+    return assertFunctionCallSatisfiesFunctionSignature(ctx, call, .{
+        .signature = func.signature,
+        .token = func.token,
+    });
+}
+
+const SignatureInfo = struct {
+    signature: ast.Signature,
+    token: *const Token,
+};
+
+fn assertFunctionCallSatisfiesFunctionSignature(ctx: *Context, call: ast.Call, info: SignatureInfo) !TypeInfo {
+    var generic_lookup_table = std.StringHashMap(TypeInfo).init(ctx.arena);
+    const signature = info.signature;
+    const required_len = signature.parameters.len;
+    const provided_len = call.arguments.len;
+
+    try assertCallLength(
+        ctx,
+        signature.parameters.len,
+        call.arguments.len,
+        signature.last_parameter_is_variadic,
+        info.token,
+    );
+
+    var idx: usize = 0;
+    while (idx < required_len and idx < provided_len) : (idx += 1) {
+        const param = signature.parameters[idx];
+        const arg = call.arguments[idx];
+        const arg_token = ast.tokenFromExpr(arg);
+        const encountered_type = try analyzeExpression(ctx, arg);
+        switch (param.param_type.type_info) {
+            .generic => |gen| {
+                try lookupAndInsertGeneric(ctx, &generic_lookup_table, gen, encountered_type);
+            },
+            .record, .list => |collection| {
+                try collectGenericsWithinCollection(ctx, collection, encountered_type, &generic_lookup_table);
+            },
+            .either => |either| {
+                try collectGenericsWithinEither(ctx, either, encountered_type, &generic_lookup_table);
+            },
+            else => {},
+        }
+        try analyzeSingleExpression(ctx, param.param_type.type_info, encountered_type, arg_token, generic_lookup_table);
+    }
+
+    // if not variadic: cool, exit
+    if (!signature.last_parameter_is_variadic) {
+        return signature.produces;
+    }
+
+    // otherwise, more work
+    const variadic_param = signature.parameters[signature.parameters.len - 1];
+
+    while (idx < provided_len) : (idx += 1) {
+        const arg = try analyzeExpression(ctx, call.arguments[idx]);
+        const arg_token = ast.tokenFromExpr(call.arguments[idx]);
+        try analyzeSingleExpression(ctx, variadic_param.param_type.type_info, arg, arg_token, generic_lookup_table);
+    }
+
+    return signature.produces;
+}
+
+fn assertCallLength(ctx: *Context, wants: usize, got: usize, is_variadic: bool, token: *const Token) !void {
+    if (is_variadic) {
+        const n_non_variadic_parameters = wants - 1;
+        if (n_non_variadic_parameters > got) {
+            try ctx.errFmt(
+                .{ .offending_token = token },
+                "Call to '{s}' requires at least {} arguments, {} provided.",
+                .{ token.value, wants, got },
+            );
+        }
+    } else if (wants != got) {
+        try ctx.errFmt(
+            .{ .offending_token = token },
+            "Call to '{s}' requires {} arguments, {} provided.",
+            .{ token.value, wants, got },
+        );
+    }
 }
 
 fn collectGenericsWithinCollection(ctx: *Context, collection: Collection, got: TypeInfo, table: *Table) !void {
