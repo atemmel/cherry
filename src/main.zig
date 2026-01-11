@@ -7,13 +7,14 @@ const clap = @import("clap");
 const gc = @import("gc.zig");
 const pipeline = @import("pipeline.zig");
 const repl = @import("repl.zig").repl;
+const lsp = @import("lsp.zig");
 const tokens = @import("tokens.zig");
 const terminal = @import("term.zig");
 const modules = @import("modules.zig");
 
 const Value = @import("value.zig").Value;
 
-const git_latest_commit_hash = std.mem.trim(u8, @embedFile("git_latest_commit_hash"), " \n\r\t");
+pub const git_latest_commit_hash = std.mem.trim(u8, @embedFile("git_latest_commit_hash"), " \n\r\t");
 
 const assert = std.debug.assert;
 
@@ -54,6 +55,7 @@ pub fn main() !u8 {
     var verboseInterpretation = false;
     var verboseGc = false;
     var useSemanticAnalysis = false;
+    var wants_lsp = false;
 
     var file: ?[]const u8 = null;
     var remaining_args: []const []const u8 = &.{};
@@ -61,7 +63,8 @@ pub fn main() !u8 {
     const params = comptime clap.parseParamsComptime(
         \\
         \\-h, --help             Display this help and exit.
-        \\<FILE>                  Script to run.
+        \\<FILE>                 Script to run.
+        \\-l, --lsp              Start language server.
         \\
         \\ Dev flags
         \\    --types               (dev) Enables experimental type-checking.
@@ -143,6 +146,10 @@ pub fn main() !u8 {
         useSemanticAnalysis = true;
     }
 
+    if (res.args.lsp != 0) {
+        wants_lsp = true;
+    }
+
     if (res.positionals.len > 0) {
         file = res.positionals[0];
         if (res.positionals.len > 1) {
@@ -171,8 +178,11 @@ pub fn main() !u8 {
     try modules.init();
     // no cleanup, this is garbage collected
 
-    if (file == null) {
+    if (file == null and !wants_lsp) {
         try repl(ally);
+        return 0;
+    } else if (wants_lsp) {
+        try lsp.run(ally);
         return 0;
     }
 
