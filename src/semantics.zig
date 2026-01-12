@@ -3,6 +3,7 @@ const ast = @import("ast.zig");
 const builtins = @import("builtins.zig");
 const pipeline = @import("pipeline.zig");
 const values = @import("value.zig");
+const algo = @import("algo.zig");
 
 const Token = @import("tokens.zig").Token;
 const PipelineState = pipeline.State;
@@ -151,6 +152,7 @@ pub const SemanticsError = error{SemanticError} || std.mem.Allocator.Error;
 
 pub const Analysis = struct {
     errors: []const ErrorReport = &.{},
+    warngings: []const ErrorReport = &.{},
 };
 
 const Context = struct {
@@ -158,6 +160,7 @@ const Context = struct {
 
     arena: std.mem.Allocator,
     errors: std.ArrayList(ErrorReport),
+    warnings: std.ArrayList(ErrorReport),
     scopes: std.ArrayList(Scope),
     state: *PipelineState,
     current_module: *pipeline.Module,
@@ -176,6 +179,24 @@ const Context = struct {
         args: anytype,
     ) !void {
         try ctx.errors.append(ctx.arena, .{
+            .msg = try std.fmt.allocPrint(ctx.arena, fmt, args),
+            .offending_expr_idx = opt.offending_expr_idx,
+            .offending_token = opt.offending_token,
+            .trailing = opt.trailing,
+        });
+    }
+
+    pub fn warnFmt(
+        ctx: *Context,
+        opt: struct {
+            offending_expr_idx: ?usize = null,
+            offending_token: *const Token,
+            trailing: bool = false,
+        },
+        comptime fmt: []const u8,
+        args: anytype,
+    ) !void {
+        try ctx.warnings.append(ctx.arena, .{
             .msg = try std.fmt.allocPrint(ctx.arena, fmt, args),
             .offending_expr_idx = opt.offending_expr_idx,
             .offending_token = opt.offending_token,
@@ -227,6 +248,7 @@ pub fn analyze(state: *PipelineState) SemanticsError!void {
     var ctx: Context = .{
         .arena = arena,
         .errors = std.ArrayList(ErrorReport).empty,
+        .warnings = std.ArrayList(ErrorReport).empty,
         .scopes = std.ArrayList(Context.Scope).empty,
         .state = state,
         .current_module = state.modules.getPtr(state.current_module_in_process) orelse unreachable,
@@ -262,7 +284,7 @@ fn analyzeModule(ctx: *Context, module: ast.Module) !void {
 
 fn analyzeStatement(ctx: *Context, stmnt: ast.Statement) !void {
     switch (stmnt) {
-        .call => |call| _ = try analyzeCall(ctx, call),
+        .call => |call| _ = try analyzeCall(ctx, call, .{}),
         .var_decl => |var_decl| try analyzeVarDecl(ctx, var_decl),
         .assignment => |assign| try analyzeAssignment(ctx, assign),
         .branches => |br| try analyzeBranches(ctx, br),
@@ -275,43 +297,59 @@ fn analyzeStatement(ctx: *Context, stmnt: ast.Statement) !void {
     }
 }
 
-fn analyzeCall(ctx: *Context, call: ast.Call) !TypeInfo {
+const CallArgs = struct {
+    piped_value: ?*TypeInfo = null,
+};
+
+fn analyzeCall(ctx: *Context, call: ast.Call, args: CallArgs) !TypeInfo {
     const name = call.token.value;
     const builtin_info = builtins.lookup(name);
-    if (builtin_info) |bi| {
-        return analyzeBuiltinCall(ctx, call, bi);
-    } else if (ctx.current_module.ast.functions.getPtr(name)) |func| {
-        return analyzeFunctionCall(ctx, call, func);
-    } else unreachable; //TODO: fix things here
+    var produced_expression = blk: {
+        if (builtin_info) |bi| {
+            break :blk try analyzeBuiltinCall(ctx, call, bi, args);
+        } else if (ctx.current_module.ast.functions.getPtr(name)) |func| {
+            break :blk try analyzeFunctionCall(ctx, call, func, args);
+        } else {
+            try analyzeExternalCall(ctx, call);
+            break :blk .string;
+        }
+    };
 
-    //TODO: call.pipe
-    return .string;
+    var pipe = call.pipe;
+    while (pipe) |next| : (pipe = next) {
+        produced_expression = try analyzeCall(ctx, next.*, .{ .piped_value = &produced_expression });
+    }
+
+    return produced_expression;
 }
 
-fn analyzeBuiltinCall(ctx: *Context, call: ast.Call, builtin_info: builtins.BuiltinInfo) !TypeInfo {
+fn analyzeBuiltinCall(ctx: *Context, call: ast.Call, builtin_info: builtins.BuiltinInfo, args: CallArgs) !TypeInfo {
     return assertFunctionCallSatisfiesFunctionSignature(ctx, call, .{
         .signature = builtin_info.signature,
         .token = call.token,
+        .piped_arg = args.piped_value,
     });
 }
 
-fn analyzeFunctionCall(ctx: *Context, call: ast.Call, func: *const ast.Func) !TypeInfo {
+fn analyzeFunctionCall(ctx: *Context, call: ast.Call, func: *const ast.Func, args: CallArgs) !TypeInfo {
     return assertFunctionCallSatisfiesFunctionSignature(ctx, call, .{
         .signature = func.signature,
         .token = call.token,
+        .piped_arg = args.piped_value,
     });
 }
 
 const SignatureInfo = struct {
     signature: ast.Signature,
     token: *const Token,
+    piped_arg: ?*TypeInfo,
 };
 
 fn assertFunctionCallSatisfiesFunctionSignature(ctx: *Context, call: ast.Call, info: SignatureInfo) !TypeInfo {
     var generic_lookup_table = std.StringHashMap(TypeInfo).init(ctx.arena);
     const signature = info.signature;
     const required_len = signature.parameters.len;
-    const provided_len = call.arguments.len;
+    const provided_len = if (info.piped_arg != null) call.arguments.len + 1 else call.arguments.len;
 
     try assertCallLength(
         ctx,
@@ -375,6 +413,13 @@ fn assertCallLength(ctx: *Context, wants: usize, got: usize, is_variadic: bool, 
             "Call to '{s}' requires {} arguments, {} provided.",
             .{ token.value, wants, got },
         );
+    }
+}
+
+fn analyzeExternalCall(ctx: *Context, call: ast.Call) !void {
+    // as of now all arguments to external functions are forcibly converted to strings
+    if (!algo.hasProgram(ctx.state.env_map, call.token.value)) {
+        try ctx.warnFmt(.{ .offending_token = call.token }, "{s} is not found in path", .{call.token.value});
     }
 }
 
@@ -565,7 +610,7 @@ fn analyzeClassicLoop(ctx: *Context, loop: ast.ClassicLoop) !void {
         switch (post_op) {
             .assignment => |assgn| try analyzeAssignment(ctx, assgn),
             // probably safe to discard
-            .call => |call| _ = try analyzeCall(ctx, call),
+            .call => |call| _ = try analyzeCall(ctx, call, .{}),
         }
     }
 }
@@ -592,7 +637,7 @@ fn analyzeExpression(ctx: *Context, expr: ast.Expression) SemanticsError!TypeInf
     return switch (expr.as) {
         .bareword => .{ .string = {} },
         .bool_literal => .{ .boolean = {} },
-        .capturing_call => |call| try analyzeCall(ctx, call),
+        .capturing_call => |call| try analyzeCall(ctx, call, .{}),
         .integer_literal => .{ .integer = {} },
         .list_literal => |list| try analyzeList(ctx, list),
         .record_literal => |record| try analyzeRecord(ctx, record),
