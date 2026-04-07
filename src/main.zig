@@ -63,7 +63,7 @@ pub fn main() !u8 {
     const params = comptime clap.parseParamsComptime(
         \\
         \\-h, --help             Display this help and exit.
-        \\<FILE>                 Script to run.
+        \\<FILE>...              Script to run, with optional arguments.
         \\-l, --lsp              Start language server.
         \\
         \\ Dev flags
@@ -151,9 +151,9 @@ pub fn main() !u8 {
     }
 
     if (res.positionals.len > 0) {
-        file = res.positionals[0];
-        if (res.positionals.len > 1) {
-            remaining_args = res.positionals[1..];
+        file = res.positionals[0][0];
+        if (res.positionals[0].len > 1) {
+            remaining_args = res.positionals[0][1..];
         }
     }
 
