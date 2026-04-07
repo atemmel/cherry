@@ -45,6 +45,8 @@ pub const Token = struct {
         DivAssign, // /=
         PipeAssign, // |=
         RightArrow, // ->
+        And, // &&
+        Ellipsis, // ...
         // Keywords
         If,
         Else,
@@ -62,7 +64,7 @@ pub const Token = struct {
 
     pub fn isBinaryOperator(token: *const Token) bool {
         return switch (token.kind) {
-            .Equals, .NotEquals, .Greater, .Lesser, .LesserEquals, .GreaterEquals => true,
+            .Equals, .NotEquals, .Greater, .Lesser, .LesserEquals, .GreaterEquals, .And => true,
             else => false,
         };
     }
@@ -71,6 +73,7 @@ pub const Token = struct {
         return switch (token.kind) {
             .Equals, .NotEquals => 10,
             .Greater, .Lesser, .GreaterEquals, .LesserEquals => 5,
+            .And => 4,
             else => unreachable, // this should never happen
         };
     }
@@ -145,7 +148,7 @@ const LexState = struct {
 
     pub fn isSymbolChar(self: LexState) bool {
         return switch (self.get()) {
-            '!', ':', ';', '=', '|', '(', ')', '{', '}', '[', ']', '\'', '<', '>' => true,
+            '!', ':', ';', '=', '|', '(', ')', '{', '}', '[', ']', '\'', '<', '>', '&' => true,
             else => false,
         };
     }
@@ -157,7 +160,7 @@ const LexState = struct {
     pub fn isUnallowedBarewordChar(self: LexState) bool {
         // chars that are never allowed to appear in the middle of a bareword
         return switch (self.get()) {
-            '!', ':', ';', '|', '(', ')', '{', '}', '[', ']', ' ', '\n', '\t', '\r', '#', '"', '`', '\'', '<', '>' => true,
+            '!', ':', ';', '|', '(', ')', '{', '}', '[', ']', ' ', '\n', '\t', '\r', '#', '"', '`', '\'', '<', '>', '&' => true,
             else => false,
         };
     }
@@ -243,6 +246,14 @@ fn lexSymbol(state: *LexState) ?Token {
             break :blk .EmptyRecord;
         },
         ']' => .RBracket,
+        '&' => blk: {
+            state.next();
+            if (state.eof() or state.get() != '&') {
+                state.idx -= 1;
+                return null;
+            }
+            break :blk .And;
+        },
         '\'' => .SingleQuote,
         else => unreachable,
     };

@@ -1,0 +1,10 @@
+list := []
+
+condition := (len $list) != 0 && (get $list 0)
+assert $condition != true
+
+#if (and (len $list) != 0 (get $list 0) == something) {
+    #assert false
+#} else {
+    #assert true
+#}

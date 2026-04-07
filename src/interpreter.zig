@@ -793,6 +793,7 @@ fn evalBinaryOperator(ctx: *Context, op: ast.BinaryOperator) EvalError!*Value {
         .Greater => try evalGt(ctx, op),
         .LesserEquals => try evalLe(ctx, op),
         .GreaterEquals => try evalGe(ctx, op),
+        .And => try evalAnd(ctx, op),
         else => unreachable, // programmer error
     };
 }
@@ -859,6 +860,19 @@ fn evalComparison(ctx: *Context, op: ast.BinaryOperator) !Value.Order {
     const lhs = try evalExpression(ctx, op.lhs.*);
     const rhs = try evalExpression(ctx, op.rhs.*);
     return lhs.value.compare(rhs.value);
+}
+
+fn evalAnd(ctx: *Context, op: ast.BinaryOperator) !*Value {
+    const opt = gc.ValueOptions{
+        .origin = op.token,
+        .origin_module = ctx.state.current_module_in_process,
+    };
+    const lhs = try evalExpression(ctx, op.lhs.*);
+    if (lhs.value.compare(try gc.boolean(false, opt)) == .equal) {
+        return try gc.boolean(false, opt);
+    }
+    const rhs = try evalExpression(ctx, op.rhs.*);
+    return try gc.boolean(rhs.value.compare(try gc.boolean(true, opt)) == .equal, opt);
 }
 
 fn evalExpression(ctx: *Context, expr: ast.Expression) EvalError!Result {
