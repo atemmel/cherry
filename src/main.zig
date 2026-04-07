@@ -150,7 +150,7 @@ pub fn main() !u8 {
         wants_lsp = true;
     }
 
-    if (res.positionals.len > 0) {
+    if (res.positionals[0].len > 0) {
         file = res.positionals[0][0];
         if (res.positionals[0].len > 1) {
             remaining_args = res.positionals[0][1..];
