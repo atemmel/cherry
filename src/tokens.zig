@@ -46,6 +46,7 @@ pub const Token = struct {
         PipeAssign, // |=
         RightArrow, // ->
         And, // &&
+        Or, // ||
         Ellipsis, // ...
         // Keywords
         If,
@@ -64,7 +65,7 @@ pub const Token = struct {
 
     pub fn isBinaryOperator(token: *const Token) bool {
         return switch (token.kind) {
-            .Equals, .NotEquals, .Greater, .Lesser, .LesserEquals, .GreaterEquals, .And => true,
+            .Equals, .NotEquals, .Greater, .Lesser, .LesserEquals, .GreaterEquals, .And, .Or => true,
             else => false,
         };
     }
@@ -74,6 +75,7 @@ pub const Token = struct {
             .Equals, .NotEquals => 10,
             .Greater, .Lesser, .GreaterEquals, .LesserEquals => 5,
             .And => 4,
+            .Or => 3,
             else => unreachable, // this should never happen
         };
     }
@@ -222,7 +224,7 @@ fn lexSymbol(state: *LexState) ?Token {
         '-' => peekMustAssign(state, .SubAssign) orelse peekMust(state, '>', .RightArrow) orelse return null,
         '*' => peekMustAssign(state, .MulAssign) orelse return null,
         '/' => peekMustAssign(state, .DivAssign) orelse return null,
-        '|' => peekMustAssign(state, .PipeAssign) orelse peekMust(state, '>', .RedirectOut) orelse .Pipe,
+        '|' => peekMustAssign(state, .PipeAssign) orelse peekMust(state, '>', .RedirectOut) orelse peekMust(state, '|', .Or) orelse .Pipe,
         ':' => .Colon,
         ';' => .Semicolon,
         '<' => peekMustAssign(state, .LesserEquals) orelse peekMust(state, '|', .RedirectIn) orelse .Lesser,
@@ -246,14 +248,7 @@ fn lexSymbol(state: *LexState) ?Token {
             break :blk .EmptyRecord;
         },
         ']' => .RBracket,
-        '&' => blk: {
-            state.next();
-            if (state.eof() or state.get() != '&') {
-                state.idx -= 1;
-                return null;
-            }
-            break :blk .And;
-        },
+        '&' => peekMust(state, '&', .And) orelse return null,
         '\'' => .SingleQuote,
         else => unreachable,
     };

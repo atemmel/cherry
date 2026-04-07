@@ -237,6 +237,7 @@ const State = struct {
                 .LesserEquals,
                 .GreaterEquals,
                 .And,
+                .Or,
                 .Ellipsis,
                 => Hi.white,
                 .StringLiteral => Color.green,
