@@ -66,6 +66,7 @@ const builtins_table = BuiltinsTable.initComptime(
         .{ "alias", alias_info },
         .{ "cd", cd_info },
         .{ "export", export_info },
+        .{ "exit", exit_info },
         // collections
         .{ "append", append_info },
         .{ "get", get_info },
@@ -967,16 +968,28 @@ fn gcAlwaysCollect(_: *State, _: []const *Value, _: ast.Call) !Result {
     return nothing;
 }
 
-fn exit(state: *State, args: []const *Value, _: ast.Call) !Result {
-    validateArgsCount(state, &.{1}, args.len);
+const exit_info: BuiltinInfo = .{
+    .func = exit,
+    .signature = .{
+        .parameters = &.{ // takes two strings
+            .{
+                .name = "exit-code",
+                .param_type = .{
+                    .type_info = .integer,
+                },
+            },
+        },
+    },
+};
 
+fn exit(state: *State, args: []const *Value, _: ast.Call) !Result {
     const code = switch (args[0].as) {
         .integer => |integer| integer,
         else => {
             return typeMismatchError(state, "int", "other", 0);
         },
     };
-    std.process.exit(code);
+    std.process.exit(@intCast(std.math.clamp(code, 0, 255)));
     return nothing;
 }
 
