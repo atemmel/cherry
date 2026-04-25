@@ -1125,13 +1125,6 @@ fn parseUnaryPrefixOperator(ctx: *Context) !?UnaryOperator {
     };
 }
 
-fn isBinaryOperator(token: *const Token) bool {
-    return switch (token.kind) {
-        .Equals, .NotEquals, .Greater, .Lesser => true,
-        else => false,
-    };
-}
-
 fn parseIncreasingPrecedence(ctx: *Context, left: Expression, min_precedence: i64) !Expression {
     if (ctx.eot()) {
         return left;
@@ -1148,7 +1141,12 @@ fn parseIncreasingPrecedence(ctx: *Context, left: Expression, min_precedence: i6
         return left;
     } else {
         ctx.next();
-        const right = try parseExpression(ctx, next_prec) orelse unreachable;
+        const right = try parseExpression(ctx, next_prec) orelse {
+            return ctx.err(.{
+                .msg = "expected expression",
+                .trailing = true,
+            });
+        };
         const lhs = try ctx.ally.create(Expression);
         const rhs = try ctx.ally.create(Expression);
         lhs.* = left;
