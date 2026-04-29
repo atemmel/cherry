@@ -1,0 +1,11 @@
+cmd := pwd
+
+exec $cmd # should just print
+
+ls-cmd := ls
+path   := tests/data
+
+out status := (exec $ls-cmd $path)
+
+assert 0 == $status    # should succeed
+assert 0 != (len $out) # should contain output

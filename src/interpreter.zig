@@ -9,6 +9,7 @@ const tokens = @import("tokens.zig");
 const strings = @import("strings.zig");
 const modules = @import("modules.zig");
 const algo = @import("algo.zig");
+const jobs = @import("jobs.zig");
 
 const assert = std.debug.assert;
 
@@ -41,14 +42,24 @@ pub const InterpreterError = error{
     NotImplemented,
 };
 
-pub const EvalError = builtins.BuiltinError || std.process.Child.RunError || std.Io.Writer.Error || std.Io.Reader.Error;
+pub const Utf8Error = error{
+    Utf8ExpectedContinuation,
+    Utf8OverlongEncoding,
+    Utf8EncodesSurrogateHalf,
+    Utf8CodepointTooLarge,
+    Utf8InvalidStartByte,
+    TruncatedInput,
+};
+pub const BuiltinError = error{AssertionFailed};
+pub const EvalError = BuiltinError || std.mem.Allocator.Error || std.fs.File.WriteError || InterpreterError || Utf8Error || std.process.Child.RunError || std.Io.Writer.Error || std.Io.Reader.Error;
 
-const Context = struct {
+pub const Context = struct {
     state: *PipelineState,
     ally: std.mem.Allocator,
     stmnt_scratch_arena: std.heap.ArenaAllocator,
     stmnt_scratch: std.mem.Allocator,
     root_module: *const pipeline.Module,
+    root_scope_already_exists: bool,
 };
 
 const Returns = union(enum) {
@@ -63,21 +74,19 @@ pub const InterpreterOptions = struct {
     root_scope_already_exists: bool,
 };
 
-pub fn interpret(state: *PipelineState, opt: InterpreterOptions) EvalError!void {
-    var stmnt_scratch_arena = std.heap.ArenaAllocator.init(state.scratch_arena.allocator());
-    defer stmnt_scratch_arena.deinit();
-    var ctx = Context{
+pub fn createContext(state: *PipelineState, opt: InterpreterOptions) !Context {
+    const ctx = Context{
         .state = state,
         .ally = state.scratch_arena.allocator(),
-        .stmnt_scratch_arena = stmnt_scratch_arena,
-        .stmnt_scratch = stmnt_scratch_arena.allocator(),
         .root_module = state.modules.getPtr(opt.root_module_name).?,
+        .root_scope_already_exists = opt.root_scope_already_exists,
+        .stmnt_scratch = undefined,
+        .stmnt_scratch_arena = undefined,
     };
 
     if (!opt.root_scope_already_exists) {
         try gc.pushFrame();
     }
-    defer if (!opt.root_scope_already_exists) gc.popFrame();
 
     if (!opt.root_scope_already_exists) {
         // make argv
@@ -88,8 +97,17 @@ pub fn interpret(state: *PipelineState, opt: InterpreterOptions) EvalError!void 
         const gc_args = try gc.list(list, .{ .origin = undefined, .origin_module = opt.root_module_name });
         try gc.insertSymbol("argv", gc_args);
     }
+    return ctx;
+}
 
-    try interpretRoot(&ctx);
+pub fn interpret(ctx: *Context) EvalError!void {
+    var stmnt_scratch_arena = std.heap.ArenaAllocator.init(ctx.state.scratch_arena.allocator());
+    defer stmnt_scratch_arena.deinit();
+    defer if (!ctx.root_scope_already_exists) gc.popFrame();
+
+    ctx.stmnt_scratch_arena = stmnt_scratch_arena;
+    ctx.stmnt_scratch = stmnt_scratch_arena.allocator();
+    try interpretRoot(ctx);
 }
 
 fn interpretRoot(ctx: *Context) EvalError!void {
@@ -101,7 +119,7 @@ fn interpretRoot(ctx: *Context) EvalError!void {
 fn interpretStatement(ctx: *Context, stmnt: ast.Statement) EvalError!Returns {
     defer _ = ctx.stmnt_scratch_arena.reset(.retain_capacity);
     switch (stmnt) {
-        .call => |call| _ = try evalCall(ctx, call),
+        .call => |call| _ = try evalCall(ctx, call, .{}),
         .var_decl => |var_decl| try interpretVarDecl(ctx, var_decl),
         .assignment => |assign| try interpretAssign(ctx, assign),
         .branches => |br| return try interpretBranches(ctx, br),
@@ -320,7 +338,7 @@ fn interpretClassicLoop(ctx: *Context, loop: ast.Loop) !Returns {
         if (classic.post_op) |post_op| {
             switch (post_op) {
                 .assignment => |assign| try interpretAssign(ctx, assign),
-                .call => |call| _ = try evalCall(ctx, call),
+                .call => |call| _ = try evalCall(ctx, call, .{}),
             }
         }
     }
@@ -372,13 +390,18 @@ fn evalReturn(ctx: *Context, ret: ast.Return) !Returns {
     return .{ .did_return = nothing };
 }
 
-fn evalCall(ctx: *Context, call: ast.Call) !Result {
+const EvalCallOpts = struct {
+    piped_result: ?[]const *Value = null,
+};
+
+fn evalCall(ctx: *Context, call: ast.Call, opts: EvalCallOpts) !Result {
     const name = call.token.value;
 
     if (call.accessor) |accessor| {
         const owning_module_name = call.token.value;
         if (modules.lookup(owning_module_name)) |internal_module| {
-            return evalInternalModuleCall(ctx, call, internal_module);
+            const args = try joinCurrentAndPriorArgs(ctx, call, opts);
+            return evalInternalModuleCall(ctx, call, internal_module, args);
         }
         const module = ctx.state.modules.get(owning_module_name) orelse {
             return errNeverImported(ctx, call.token, owning_module_name);
@@ -387,34 +410,55 @@ fn evalCall(ctx: *Context, call: ast.Call) !Result {
         const func = module.ast.functions.get(func_name) orelse {
             return errNeverExported(ctx, call.token, owning_module_name, func_name);
         };
-        return try evalFunctionCall(ctx, func, call);
+        const args = try joinCurrentAndPriorArgs(ctx, call, opts);
+        const result = try evalFunctionCall(ctx, func, args);
+        return try evalPipeChain(ctx, call, result);
     }
 
     if (builtins.lookup(name)) |builtin_info| {
-        const result = try evalBuiltin(ctx, call, builtin_info.func);
+        const args = try joinCurrentAndPriorArgs(ctx, call, opts);
+        const result = try evalBuiltin(ctx, call, builtin_info.func, args);
         switch (result) {
             .value => |v| {
                 try gc.appendRoot(v);
             },
             .nothing => {},
-            .values => unreachable, //TODO: consider this
-        }
-        return result;
-    } else if (ctx.root_module.ast.functions.getPtr(name)) |func| {
-        return try evalFunctionCall(ctx, func.*, call);
-    } else if (gc.getEntry(name)) |entry| {
-        switch (entry.value_ptr.*.as) {
-            .closure => {
-                return try evalClosureCall(ctx, entry.value_ptr.*, call);
+            .values => |v| {
+                for (v) |w| {
+                    try gc.appendRoot(w);
+                }
             },
-            else => unreachable,
         }
+        return try evalPipeChain(ctx, call, result);
+    } else if (ctx.root_module.ast.functions.getPtr(name)) |func| {
+        const args = try joinCurrentAndPriorArgs(ctx, call, opts);
+        const result = try evalFunctionCall(ctx, func.*, args);
+        return try evalPipeChain(ctx, call, result);
+    } else if (gc.getEntry(name)) |entry| {
+        const args = try joinCurrentAndPriorArgs(ctx, call, opts);
+        const result = switch (entry.value_ptr.*.as) {
+            .closure => try evalClosureCall(ctx, entry.value_ptr.*, args),
+            else => unreachable, //TODO: handle this error
+        };
+        return try evalPipeChain(ctx, call, result);
     } else {
         return try evalProc(ctx, call);
     }
 }
 
-fn evalInternalModuleCall(ctx: *Context, call: ast.Call, module: *const modules.InternalModule) !Result {
+fn evalPipeChain(ctx: *Context, call: ast.Call, prior_result: Result) EvalError!Result {
+    const pipe = call.pipe orelse return prior_result;
+
+    const extra_args = switch (prior_result) {
+        .nothing => unreachable, //TODO: piping nothing is an error, but it should be handled
+        .value => |v| &.{v},
+        .values => |v| v,
+    };
+
+    return evalCall(ctx, pipe.*, .{ .piped_result = extra_args });
+}
+
+fn evalInternalModuleCall(ctx: *Context, call: ast.Call, module: *const modules.InternalModule, args: []const *Value) !Result {
     const module_name = call.token.value;
     const fn_name = call.accessor.?.member.token.value;
 
@@ -426,7 +470,7 @@ fn evalInternalModuleCall(ctx: *Context, call: ast.Call, module: *const modules.
         return errNeverExported(ctx, call.token, module_name, fn_name);
     };
 
-    return evalBuiltin(ctx, call, builtin.func);
+    return evalBuiltin(ctx, call, builtin.func, args);
 }
 
 //TODO: this
@@ -440,10 +484,8 @@ fn isLocalScript(_: *Context, call: ast.Call) !bool {
     defer file.close();
 }
 
-fn evalBuiltin(ctx: *Context, call: ast.Call, builtin: *const builtins.BuiltinFn) !Result {
-    var args = try evalArgs(ctx, call.arguments);
-    defer args.deinit(ctx.stmnt_scratch);
-    return builtin(ctx.state, args.items, call) catch |e| {
+fn evalBuiltin(ctx: *Context, call: ast.Call, builtin: *const builtins.BuiltinFn, args: []const *Value) !Result {
+    return builtin(ctx.state, args, call) catch |e| {
         switch (e) {
             error.TypeMismatch, error.ArgsCountMismatch => {
                 if (ctx.state.error_report.?.offending_expr_idx) |idx| {
@@ -459,16 +501,13 @@ fn evalBuiltin(ctx: *Context, call: ast.Call, builtin: *const builtins.BuiltinFn
     };
 }
 
-fn evalFunctionCall(ctx: *Context, func: ast.Func, call: ast.Call) !Result {
+fn evalFunctionCall(ctx: *Context, func: ast.Func, args: []const *Value) !Result {
     try gc.pushFrame();
     defer gc.popFrame();
 
-    var args = try evalArgs(ctx, call.arguments);
-    defer args.deinit(ctx.stmnt_scratch);
+    assert(func.signature.parameters.len == args.len);
 
-    assert(func.signature.parameters.len == args.items.len);
-
-    for (func.signature.parameters, args.items) |par, arg| {
+    for (func.signature.parameters, args) |par, arg| {
         try gc.insertSymbol(par.name, arg);
     }
 
@@ -489,18 +528,15 @@ fn evalFunctionCall(ctx: *Context, func: ast.Func, call: ast.Call) !Result {
     return nothing;
 }
 
-fn evalClosureCall(ctx: *Context, closure_value: *Value, call: ast.Call) !Result {
+fn evalClosureCall(ctx: *Context, closure_value: *Value, args: []const *Value) !Result {
     try gc.pushFrame();
     defer gc.popFrame();
     try gc.appendRoot(closure_value);
     const closure = &closure_value.as.closure;
 
-    var args = try evalArgs(ctx, call.arguments);
-    defer args.deinit(ctx.stmnt_scratch);
+    assert(closure.ast.arguments.len == args.len);
 
-    assert(closure.ast.arguments.len == args.items.len);
-
-    for (closure.ast.arguments, args.items) |par, arg| {
+    for (closure.ast.arguments, args) |par, arg| {
         try closure.upvalues.append(arg);
         try gc.insertSymbol(par.token.value, arg);
     }
@@ -531,207 +567,7 @@ fn evalClosureCall(ctx: *Context, closure_value: *Value, call: ast.Call) !Result
 }
 
 fn evalProc(ctx: *Context, call: ast.Call) !Result {
-    const capturing = call.capturing_external_cmd;
-    var procs = try std.ArrayList(std.process.Child).initCapacity(ctx.stmnt_scratch, 4);
-    var redirect_output_to_file: ?[]const u8 = null;
-    var redirect_output_to_file_token: ?*const tokens.Token = null;
-    const redirect_stdin_from_file = call.redirect_in;
-
-    var ptr: ?*const ast.Call = &call;
-    while (ptr) |call_ptr| {
-        var new_proc = try proc(ctx, call_ptr);
-        new_proc.env_map = &ctx.state.env_map;
-
-        try procs.append(ctx.stmnt_scratch, new_proc);
-
-        if (call_ptr.redirect_out) |out| {
-            redirect_output_to_file_token = out.token;
-            redirect_output_to_file = (try contextualizeToken(ctx, out.token)).as.string;
-        }
-
-        ptr = call_ptr.pipe;
-    }
-
-    const redirecting_out = redirect_output_to_file != null;
-    const redirecting_in = redirect_stdin_from_file != null;
-
-    for (procs.items, 0..) |*p, idx| {
-        if (capturing or redirecting_out or procs.items.len > 1) {
-            if (idx > 0 or redirecting_in) {
-                p.stdin_behavior = .Pipe;
-            }
-
-            const piping = idx + 1 < procs.items.len;
-
-            if (capturing or redirecting_out or piping) {
-                p.stdout_behavior = .Pipe;
-            }
-        }
-    }
-
-    for (procs.items) |*p| {
-        p.spawn() catch |e| {
-            switch (e) {
-                error.FileNotFound => {
-                    ctx.state.error_report = .{
-                        .trailing = false,
-                        .offending_token = call.token,
-                        .msg = try std.fmt.allocPrint(ctx.ally, "Could not find command in system", .{}),
-                    };
-                    return error.CommandNotFound;
-                },
-                else => {},
-            }
-            return e;
-        };
-    }
-
-    var capture: ?[]const u8 = null;
-    errdefer if (capture) |c| gc.allocator().free(c);
-
-    if (redirect_stdin_from_file) |stdin_file| {
-        const expr = stdin_file.expression.*;
-        const file_name = switch (try evalExpression(ctx, expr)) {
-            .value => |val| try val.asStr(gc.allocator()),
-            .nothing => {
-                return errRequiresValue(ctx, ast.tokenFromExpr(expr));
-            },
-            .values => {
-                return errRequiresSingleValue(ctx, ast.tokenFromExpr(expr));
-            },
-        };
-        defer gc.allocator().free(file_name);
-        //_ = result; // autofix
-        //std.fs.cwd().openFile(in_token.expression.
-        var file = std.fs.cwd().openFile(file_name, .{}) catch {
-            ctx.state.reportError(.{
-                .trailing = false,
-                .offending_token = ast.tokenFromExpr(expr),
-                .msg = try std.fmt.allocPrint(ctx.ally, "Could not open file '{s}' for redirection", .{file_name}),
-            });
-            return InterpreterError.UnableToOpenFileDuringRedirect;
-        };
-        defer file.close();
-
-        const first_proc = &procs.items[0];
-        var reader_buffer: [1024]u8 = undefined;
-        var writer_buffer: [1024]u8 = undefined;
-        var reader = file.reader(&reader_buffer);
-        var writer = first_proc.stdin.?.writer(&writer_buffer);
-        try algo.pump(&reader.interface, &writer.interface);
-        first_proc.stdin.?.close();
-        first_proc.stdin = null;
-    }
-
-    if (procs.items.len > 1) {
-        var idx: usize = 0;
-        while (idx < procs.items.len) : (idx += 1) {
-            if (idx > 0) {
-                var prev = &procs.items[idx - 1];
-                var this = &procs.items[idx];
-                var reader_buffer: [1024]u8 = undefined;
-                var writer_buffer: [1024]u8 = undefined;
-                var reader = prev.stdout.?.reader(&reader_buffer);
-                var writer = this.stdin.?.writer(&writer_buffer);
-                try algo.pump(&reader.interface, &writer.interface);
-                if (this.stdin) |in| {
-                    in.close();
-                    this.stdin = null;
-                }
-            }
-        }
-    }
-
-    if (capturing) {
-        assert(procs.getLast().stdout != null);
-        capture = try procs.getLast().stdout.?.readToEndAlloc(gc.allocator(), std.math.maxInt(u64));
-    } else if (redirect_output_to_file) |output_file| {
-        var file = std.fs.cwd().createFile(output_file, .{}) catch {
-            ctx.state.reportError(.{
-                .trailing = false,
-                .offending_token = redirect_output_to_file_token.?,
-                .msg = try std.fmt.allocPrint(ctx.ally, "Could not open file '{s}' for redirection", .{output_file}),
-            });
-            return InterpreterError.UnableToOpenFileDuringRedirect;
-        };
-        defer file.close();
-        var reader_buffer: [1024]u8 = undefined;
-        var writer_buffer: [1024]u8 = undefined;
-        var reader = procs.getLast().stdout.?.reader(&reader_buffer);
-        var writer = file.writer(&writer_buffer);
-        try algo.pump(&reader.interface, &writer.interface);
-    }
-
-    var last_code: u8 = 0;
-
-    for (procs.items) |*p| {
-        //TODO: handle term
-        const tm = p.wait() catch |e| {
-            switch (e) {
-                error.FileNotFound => {
-                    ctx.state.reportError(.{
-                        .trailing = false,
-                        .offending_token = call.token,
-                        .msg = try std.fmt.allocPrint(ctx.ally, "Could not find command in system", .{}),
-                    });
-                    return error.CommandNotFound;
-                },
-                error.AccessDenied => {
-                    ctx.state.reportError(.{
-                        .trailing = false,
-                        .offending_token = call.token,
-                        .msg = try std.fmt.allocPrint(ctx.ally, "Unable to run '{s}', permission denied", .{p.argv[0]}),
-                    });
-                    return error.CommandNotFound;
-                },
-                else => {},
-            }
-            return e;
-        };
-        last_code = switch (tm) {
-            .Exited => |e| e,
-            .Signal => |e| @truncate(e),
-            .Unknown => |e| @truncate(e),
-            .Stopped => |e| @truncate(e),
-        };
-    }
-
-    if (capturing) {
-        const opt = gc.ValueOptions{
-            .origin = call.token,
-            .origin_module = ctx.root_module.filename,
-        };
-        const vals = try ctx.stmnt_scratch.alloc(*Value, 2);
-        vals[0] = try gc.allocedString(capture.?, opt);
-        vals[1] = try gc.integer(@intCast(last_code), opt);
-        return multiple(vals);
-    }
-    return nothing;
-}
-
-fn proc(ctx: *Context, call: *const ast.Call) !std.process.Child {
-    const name = call.token.value;
-    var args = try std.ArrayList([]const u8).initCapacity(ctx.stmnt_scratch, call.arguments.len);
-
-    try args.append(ctx.stmnt_scratch, name);
-    for (call.arguments) |arg| {
-        switch (try evalExpression(ctx, arg)) {
-            .value => |value| {
-                switch (value.as) {
-                    .list => |l| {
-                        for (l.items) |e| {
-                            try args.append(ctx.stmnt_scratch, try e.asStr(ctx.stmnt_scratch));
-                        }
-                    },
-                    else => try args.append(ctx.stmnt_scratch, try value.asStr(ctx.stmnt_scratch)),
-                }
-            },
-            .nothing => unreachable, // this construct expects only values
-            .values => unreachable, //TODO: consider this
-        }
-    }
-
-    return std.process.Child.init(args.items, ctx.stmnt_scratch);
+    return jobs.exec(ctx.state, call, ctx.stmnt_scratch);
 }
 
 fn evalArgs(ctx: *Context, arguments: []const ast.Expression) !std.ArrayList(*Value) {
@@ -750,6 +586,31 @@ fn evalArgs(ctx: *Context, arguments: []const ast.Expression) !std.ArrayList(*Va
         }
     }
     return args;
+}
+
+fn joinCurrentAndPriorArgs(ctx: *Context, call: ast.Call, opts: EvalCallOpts) ![]const *Value {
+    const args_len = call.arguments.len + if (opts.piped_result) |p| p.len else 0;
+    var args_list = try std.ArrayList(*Value).initCapacity(ctx.stmnt_scratch, args_len);
+
+    if (opts.piped_result) |p| {
+        args_list.appendSliceAssumeCapacity(p);
+    }
+
+    for (call.arguments) |arg| {
+        switch (try evalExpression(ctx, arg)) {
+            .value => |value| args_list.appendAssumeCapacity(value),
+            .nothing => unreachable, // this construct expects only values
+            .values => |vals| {
+                //TODO: this is like this to allow for external processes to be
+                // piped, but it perhaps shouldn't be like this for user-defined
+                // functions, at least not if we are allowing people to return
+                // multiple values (which we probably should)
+                args_list.appendAssumeCapacity(vals[0]);
+            },
+        }
+    }
+
+    return args_list.items;
 }
 
 fn evalUnaryOperator(ctx: *Context, op: ast.UnaryOperator) EvalError!*Value {
@@ -889,14 +750,14 @@ fn evalOr(ctx: *Context, op: ast.BinaryOperator) !*Value {
     return try gc.boolean(rhs.value.compare(try gc.boolean(true, opt)) == .equal, opt);
 }
 
-fn evalExpression(ctx: *Context, expr: ast.Expression) EvalError!Result {
+pub fn evalExpression(ctx: *Context, expr: ast.Expression) EvalError!Result {
     const base_expr = switch (expr.as) {
         .bareword => |bw| something(try evalBareword(ctx, bw)),
         .string_literal => |str| something(try evalStringLiteral(ctx, str)),
         .integer_literal => |int| something(try evalIntegerLiteral(ctx, int)),
         .bool_literal => |bl| something(try evalBoolLiteral(ctx, bl)),
         .variable => |variable| something(try evalVariable(ctx, variable)),
-        .capturing_call => |cap_inv| try evalCall(ctx, cap_inv),
+        .capturing_call => |cap_inv| try evalCall(ctx, cap_inv, .{}),
         .list_literal => |list| something(try evalListLiteral(ctx, list)),
         .record_literal => |record| something(try evalRecordLiteral(ctx, record)),
         .unary_operator => |op| something(try evalUnaryOperator(ctx, op)),
@@ -965,7 +826,7 @@ fn evalBareword(ctx: *Context, bw: ast.Bareword) !*Value {
 }
 
 fn evalStringLiteral(ctx: *Context, str: ast.StringLiteral) !*Value {
-    return contextualizeToken(ctx, str.token);
+    return contextualizeToken(ctx, str.token, ctx.stmnt_scratch);
 }
 
 fn evalIntegerLiteral(ctx: *Context, int: ast.IntegerLiteral) !*Value {
@@ -1052,12 +913,12 @@ fn appendParentRootIfReturnedValue(result: Result) !void {
     }
 }
 
-fn contextualizeToken(ctx: *Context, token: *const tokens.Token) !*Value {
+pub fn contextualizeToken(ctx: *Context, token: *const tokens.Token, arena: std.mem.Allocator) !*Value {
     const opt = gc.ValueOptions{
         .origin = token,
         .origin_module = ctx.root_module.filename,
     };
-    const contextualized = try strings.processStrLiteral(ctx.state, ctx.stmnt_scratch, token.value);
+    const contextualized = try strings.processStrLiteral(ctx.state, arena, token.value);
     const value = try gc.string(contextualized, opt);
     try gc.appendRoot(value);
     return value;
@@ -1072,7 +933,7 @@ fn errNeverDeclared(ctx: *Context, token: *const tokens.Token) InterpreterError 
     return InterpreterError.BadVariableLookup;
 }
 
-fn errRequiresValue(ctx: *Context, token: *const tokens.Token) InterpreterError {
+pub fn errRequiresValue(ctx: *Context, token: *const tokens.Token) InterpreterError {
     ctx.state.error_report = .{
         .msg = "Context requires value, but the expression was unable to produce it",
         .trailing = false,
@@ -1081,7 +942,7 @@ fn errRequiresValue(ctx: *Context, token: *const tokens.Token) InterpreterError 
     return InterpreterError.ValueRequired;
 }
 
-fn errRequiresSingleValue(ctx: *Context, token: *const tokens.Token) InterpreterError {
+pub fn errRequiresSingleValue(ctx: *Context, token: *const tokens.Token) InterpreterError {
     ctx.state.error_report = .{
         .msg = "Context requires value, but the expression produces multiple",
         .trailing = false,

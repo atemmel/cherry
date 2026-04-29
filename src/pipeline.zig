@@ -43,6 +43,7 @@ pub const State = struct {
     analysis: semantics.Analysis = .{},
     env_map: std.process.EnvMap,
     remaining_args: []const []const u8,
+    interpreter: *interpreter.Context = undefined,
 
     // handle signals
     is_interrupted: bool = false,
@@ -375,10 +376,12 @@ pub fn run(opt: RunOptions) PipelineError!void {
     }
 
     const interpret_start_us = microTimestamp();
-    try interpreter.interpret(&state, .{
+    var interpreter_ctx = try interpreter.createContext(&state, .{
         .root_module_name = opt.root_module_name,
         .root_scope_already_exists = opt.root_scope_already_exists,
     });
+    state.interpreter = &interpreter_ctx;
+    try interpreter.interpret(&interpreter_ctx);
 
     const interpret_stop_us = microTimestamp();
     if (state.verboseInterpretation) {

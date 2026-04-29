@@ -5,6 +5,7 @@ const gc = @import("gc.zig");
 const interpreter = @import("interpreter.zig");
 const semantics = @import("semantics.zig");
 const pipeline = @import("pipeline.zig");
+const jobs = @import("jobs.zig");
 const Token = @import("tokens.zig").Token;
 
 const Signature = ast.Signature;
@@ -14,24 +15,15 @@ const Value = values.Value;
 const Result = values.Result;
 const State = pipeline.State;
 const InterpreterError = interpreter.InterpreterError;
+const EvalError = interpreter.EvalError;
+const BuiltinError = interpreter.BuiltinError;
+const Utf8Error = interpreter.Utf8Error;
 
+const multiple = values.multiple;
 const something = values.something;
 const nothing = values.nothing;
 
-pub const Utf8Error = error{
-    Utf8ExpectedContinuation,
-    Utf8OverlongEncoding,
-    Utf8EncodesSurrogateHalf,
-    Utf8CodepointTooLarge,
-    Utf8InvalidStartByte,
-    TruncatedInput,
-};
-
-pub const BuiltinError = error{
-    AssertionFailed,
-} || std.mem.Allocator.Error || std.fs.File.WriteError || InterpreterError || Utf8Error || std.Io.Writer.Error || std.Io.Reader.Error;
-
-pub const BuiltinFn = fn (ctx: *State, args: []const *Value, call: ast.Call) BuiltinError!Result;
+pub const BuiltinFn = fn (ctx: *State, args: []const *Value, call: ast.Call) EvalError!Result;
 
 pub const BuiltinInfo = struct {
     func: *const BuiltinFn,
@@ -65,6 +57,7 @@ const builtins_table = BuiltinsTable.initComptime(
         .{ "say", say_info },
         .{ "alias", alias_info },
         .{ "cd", cd_info },
+        .{ "exec", unchecked(exec) },
         .{ "export", export_info },
         .{ "exit", exit_info },
         // collections
@@ -271,6 +264,47 @@ fn cd(state: *State, args: []const *Value, _: ast.Call) !Result {
     };
     defer dir.close();
     dir.setAsCwd() catch {};
+    return nothing;
+}
+
+fn exec(state: *State, args: []const *Value, call: ast.Call) !Result {
+    const arena = state.interpreter.stmnt_scratch;
+    const capturing = call.capturing_external_cmd;
+
+    var proc = try jobs.procFromExprs(args, arena);
+
+    if (capturing) {
+        proc.stdout_behavior = .Pipe;
+    }
+
+    var capture: ?[]const u8 = null;
+    errdefer if (capture) |c| gc.allocator().free(c);
+
+    proc.spawn() catch |e| {
+        return jobs.errorProcFailed(state, call.token, &proc, e, arena);
+    };
+
+    if (capturing) {
+        std.debug.assert(proc.stdout != null);
+        capture = try proc.stdout.?.readToEndAlloc(gc.allocator(), std.math.maxInt(u64));
+    }
+
+    const exit_code: i64 = switch (proc.wait() catch |e| {
+        return jobs.errorProcFailed(state, call.token, &proc, e, arena);
+    }) {
+        .Exited, .Signal, .Unknown, .Stopped => |e| e,
+    };
+
+    if (capturing) {
+        const opt = gc.ValueOptions{
+            .origin = call.token,
+            .origin_module = state.interpreter.root_module.filename,
+        };
+        const vals = try arena.alloc(*Value, 2);
+        vals[0] = try gc.allocedString(capture.?, opt);
+        vals[1] = try gc.integer(exit_code, opt);
+        return multiple(vals);
+    }
     return nothing;
 }
 

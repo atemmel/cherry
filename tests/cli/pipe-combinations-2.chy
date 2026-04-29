@@ -1,0 +1,12 @@
+fn f {
+    return 5
+}
+
+fn twice x {
+    return (* $x 2)
+}
+
+y := (f | twice)
+
+say $y
+assert 10 == $y
