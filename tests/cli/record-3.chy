@@ -1,0 +1,7 @@
+obj := [
+    method = () -> {
+        return 5
+    }
+]
+
+assert 5 == ($obj'method)

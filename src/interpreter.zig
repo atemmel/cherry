@@ -36,6 +36,7 @@ pub const InterpreterError = error{
     TypeMismatch,
     UnableToOpenFileDuringRedirect,
     ValueRequired,
+    ClosureRequired,
     VariableAlreadyDeclared,
     BadAssign,
 
@@ -397,20 +398,23 @@ const EvalCallOpts = struct {
 fn evalCall(ctx: *Context, call: ast.Call, opts: EvalCallOpts) !Result {
     const name = call.token.value;
 
-    if (call.accessor) |accessor| {
-        const owning_module_name = call.token.value;
-        if (modules.lookup(owning_module_name)) |internal_module| {
-            const args = try joinCurrentAndPriorArgs(ctx, call, opts);
+    if (call.accessor) |*accessor| {
+        const args = try joinCurrentAndPriorArgs(ctx, call, opts);
+        const owning_thing_name = call.token.value;
+        if (modules.lookup(owning_thing_name)) |internal_module| {
             return evalInternalModuleCall(ctx, call, internal_module, args);
         }
-        const module = ctx.state.modules.get(owning_module_name) orelse {
-            return errNeverImported(ctx, call.token, owning_module_name);
+        if (gc.getSymbol(owning_thing_name)) |variable| {
+            const maybe_closure = try mustResolveAccessorChain(ctx, variable, accessor);
+            return try evalClosureCall(ctx, maybe_closure, args, call.token);
+        }
+        const module = ctx.state.modules.get(owning_thing_name) orelse {
+            return errNeverImported(ctx, call.token, owning_thing_name);
         };
         const func_name = accessor.member.token.value;
         const func = module.ast.functions.get(func_name) orelse {
-            return errNeverExported(ctx, call.token, owning_module_name, func_name);
+            return errNeverExported(ctx, call.token, owning_thing_name, func_name);
         };
-        const args = try joinCurrentAndPriorArgs(ctx, call, opts);
         const result = try evalFunctionCall(ctx, func, args);
         return try evalPipeChain(ctx, call, result);
     }
@@ -437,7 +441,7 @@ fn evalCall(ctx: *Context, call: ast.Call, opts: EvalCallOpts) !Result {
     } else if (gc.getEntry(name)) |entry| {
         const args = try joinCurrentAndPriorArgs(ctx, call, opts);
         const result = switch (entry.value_ptr.*.as) {
-            .closure => try evalClosureCall(ctx, entry.value_ptr.*, args),
+            .closure => try evalClosureCall(ctx, entry.value_ptr.*, args, call.token),
             else => unreachable, //TODO: handle this error
         };
         return try evalPipeChain(ctx, call, result);
@@ -528,11 +532,11 @@ fn evalFunctionCall(ctx: *Context, func: ast.Func, args: []const *Value) !Result
     return nothing;
 }
 
-fn evalClosureCall(ctx: *Context, closure_value: *Value, args: []const *Value) !Result {
+fn evalClosureCall(ctx: *Context, closure_value: *Value, args: []const *Value, token: *const tokens.Token) !Result {
     try gc.pushFrame();
     defer gc.popFrame();
     try gc.appendRoot(closure_value);
-    const closure = &closure_value.as.closure;
+    const closure = try mustClosure(ctx, closure_value, token);
 
     assert(closure.ast.arguments.len == args.len);
 
@@ -766,30 +770,11 @@ pub fn evalExpression(ctx: *Context, expr: ast.Expression) EvalError!Result {
     };
 
     if (expr.accessor) |*accessor| {
-        var current = accessor;
-        var record = base_expr.value;
-        while (true) {
-            if (current.child == null) {
-                switch (record.as) {
-                    .record => |r| return something(r.get(current.member.token.value) orelse unreachable),
-                    else => {},
-                }
-                //TODO: keep working here
-                ctx.state.error_report = .{
-                    .offending_token = current.member.token,
-                    .msg = try std.fmt.allocPrint(ctx.ally, "'{s}' is not a record, and so has no member named '{s}'.", .{ record.origin.value, current.member.token.value }),
-                };
-                return InterpreterError.NonRecordAccessAttempt;
-            }
-            record = record.as.record.get(current.member.token.value) orelse {
-                ctx.state.error_report = .{
-                    .offending_token = current.member.token,
-                    .msg = try std.fmt.allocPrint(ctx.ally, "record has no member '{s}'.", .{current.member.token.value}),
-                };
-                return InterpreterError.EntryNotFoundWithinRecord;
-            };
-            current = current.child.?;
-        }
+        return switch (base_expr) {
+            .value => something(try mustResolveAccessorChain(ctx, base_expr.value, accessor)),
+            //TODO: if nothing or values, this should fail
+            .nothing, .values => unreachable,
+        };
     } else {
         return base_expr;
     }
@@ -922,6 +907,49 @@ pub fn contextualizeToken(ctx: *Context, token: *const tokens.Token, arena: std.
     const value = try gc.string(contextualized, opt);
     try gc.appendRoot(value);
     return value;
+}
+
+//TODO: this function is far from complete
+fn mustResolveAccessorChain(ctx: *Context, base_value: *Value, accessor: *const ast.Accessor) EvalError!*Value {
+    var current = accessor;
+    var record = base_value;
+    while (true) {
+        if (current.child == null) {
+            switch (record.as) {
+                .record => |r| {
+                    return r.get(current.member.token.value) orelse unreachable;
+                },
+                else => {},
+            }
+            //TODO: keep working here
+            ctx.state.error_report = .{
+                .offending_token = current.member.token,
+                .msg = try std.fmt.allocPrint(ctx.ally, "'{s}' is not a record, and so has no member named '{s}'.", .{ record.origin.value, current.member.token.value }),
+            };
+            return InterpreterError.NonRecordAccessAttempt;
+        }
+        record = record.as.record.get(current.member.token.value) orelse {
+            ctx.state.error_report = .{
+                .offending_token = current.member.token,
+                .msg = try std.fmt.allocPrint(ctx.ally, "record has no member '{s}'.", .{current.member.token.value}),
+            };
+            return InterpreterError.EntryNotFoundWithinRecord;
+        };
+        current = current.child.?;
+    }
+}
+
+fn mustClosure(ctx: *Context, value: *Value, token: *const tokens.Token) EvalError!*values.Closure {
+    return switch (value.as) {
+        .closure => |*c| c,
+        else => blk: {
+            ctx.state.error_report = .{
+                .offending_token = token,
+                .msg = try std.fmt.allocPrint(ctx.ally, "cannot invoke non-closure value, tried to invoke value of type '{s}'.", .{value.kindName()}),
+            };
+            break :blk EvalError.ClosureRequired;
+        },
+    };
 }
 
 fn errNeverDeclared(ctx: *Context, token: *const tokens.Token) InterpreterError {
