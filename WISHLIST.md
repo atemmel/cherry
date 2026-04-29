@@ -1,6 +1,3 @@
 # wishlist
 
-* closures
-* autocompletion
-
-* zig 0.14
+* in/has like operator to check for values inside records/lists
