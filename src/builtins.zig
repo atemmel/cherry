@@ -66,6 +66,7 @@ const builtins_table = BuiltinsTable.initComptime(
         .{ "len", len_info },
         .{ "put", put_info },
         .{ "del", del_info },
+        .{ "has", unchecked(has) },
         .{ "slice", unchecked(slice) },
         // operations
         .{ "add", unchecked(add) },
@@ -839,6 +840,16 @@ const del_info: BuiltinInfo = .{
         },
     },
 };
+
+fn has(state: *State, args: []const *Value, call: ast.Call) !Result {
+    try validateArgsCount(state, &.{2}, args.len);
+    const record = try interpreter.mustRecord(state.interpreter, args[0], ast.tokenFromExpr(call.arguments[0]));
+    const member = try interpreter.mustString(state.interpreter, args[1], ast.tokenFromExpr(call.arguments[1]));
+    return something(try gc.boolean(record.contains(member), .{
+        .origin = call.token,
+        .origin_module = state.current_module_in_process,
+    }));
+}
 
 fn slice(state: *State, args: []const *Value, call: ast.Call) !Result {
     try validateArgsCount(state, &.{ 1, 2, 3 }, args.len);

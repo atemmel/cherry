@@ -220,6 +220,8 @@ pub fn writeError(err: PipelineError) !void {
         error.BadVariableLookup,
         error.CommandNotFound,
         error.ClosureRequired,
+        error.StringRequired,
+        error.RecordRequired,
         error.EntryNotFoundWithinRecord,
         error.FunctionNotFoundWithinModule,
         error.MembersNotAllowed,

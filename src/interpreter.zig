@@ -36,6 +36,8 @@ pub const InterpreterError = error{
     TypeMismatch,
     UnableToOpenFileDuringRedirect,
     ValueRequired,
+    StringRequired,
+    RecordRequired,
     ClosureRequired,
     VariableAlreadyDeclared,
     BadAssign,
@@ -936,15 +938,41 @@ fn mustResolveAccessorChain(ctx: *Context, base_value: *Value, accessor: *const 
     }
 }
 
-fn mustClosure(ctx: *Context, value: *Value, token: *const tokens.Token) EvalError!*values.Closure {
+pub fn mustClosure(ctx: *Context, value: *Value, token: *const tokens.Token) EvalError!*values.Closure {
     return switch (value.as) {
         .closure => |*c| c,
         else => blk: {
             ctx.state.error_report = .{
                 .offending_token = token,
-                .msg = try std.fmt.allocPrint(ctx.ally, "cannot invoke non-closure value, tried to invoke value of type '{s}'.", .{value.kindName()}),
+                .msg = try std.fmt.allocPrint(ctx.ally, "must be a closure value, was value of type '{s}'.", .{value.kindName()}),
             };
-            break :blk EvalError.ClosureRequired;
+            break :blk EvalError.RecordRequired;
+        },
+    };
+}
+
+pub fn mustRecord(ctx: *Context, value: *Value, token: *const tokens.Token) EvalError!*values.Record {
+    return switch (value.as) {
+        .record => |*r| r,
+        else => blk: {
+            ctx.state.error_report = .{
+                .offending_token = token,
+                .msg = try std.fmt.allocPrint(ctx.ally, "must be a record value, was value of type '{s}'.", .{value.kindName()}),
+            };
+            break :blk EvalError.RecordRequired;
+        },
+    };
+}
+
+pub fn mustString(ctx: *Context, value: *Value, token: *const tokens.Token) EvalError![]const u8 {
+    return switch (value.as) {
+        .string => |s| s,
+        else => blk: {
+            ctx.state.error_report = .{
+                .offending_token = token,
+                .msg = try std.fmt.allocPrint(ctx.ally, "must be a string value, was value of type '{s}'.", .{value.kindName()}),
+            };
+            break :blk EvalError.StringRequired;
         },
     };
 }
