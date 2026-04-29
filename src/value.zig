@@ -172,7 +172,6 @@ pub const Value = struct {
                 while (it.next()) |*entry| {
                     const key_str = entry.key_ptr.*;
                     const value_str = try entry.value_ptr.*.asStr(ally);
-                    std.debug.print("this is it: {s}\n", .{value_str});
                     defer ally.free(value_str);
                     try write(writer, "{s} = {s} ", .{ key_str, value_str });
                 }
