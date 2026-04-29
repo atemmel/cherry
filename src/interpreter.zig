@@ -440,10 +440,7 @@ fn evalCall(ctx: *Context, call: ast.Call, opts: EvalCallOpts) !Result {
         return try evalPipeChain(ctx, call, result);
     } else if (gc.getEntry(name)) |entry| {
         const args = try joinCurrentAndPriorArgs(ctx, call, opts);
-        const result = switch (entry.value_ptr.*.as) {
-            .closure => try evalClosureCall(ctx, entry.value_ptr.*, args, call.token),
-            else => unreachable, //TODO: handle this error
-        };
+        const result = try evalClosureCall(ctx, entry.value_ptr.*, args, call.token);
         return try evalPipeChain(ctx, call, result);
     } else {
         return try evalProc(ctx, call);

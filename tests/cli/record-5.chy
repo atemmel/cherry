@@ -1,0 +1,5 @@
+operations := [
+  twice = what -> (* $what 2)
+]
+
+assert 6 == ($operations'twice 3)

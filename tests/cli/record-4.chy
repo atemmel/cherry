@@ -1,0 +1,11 @@
+my-var := false
+
+obj := [
+    method = -> {
+        $my-var = true
+    }
+]
+
+$obj'method
+
+assert $my-var
