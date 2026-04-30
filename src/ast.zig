@@ -49,7 +49,7 @@ pub const RecordLiteral = struct {
     items: []const Pair,
 };
 
-pub const Member = Bareword;
+pub const Member = *Expression;
 
 pub const Accessor = struct {
     member: Member,
@@ -1433,9 +1433,13 @@ fn parseMember(ctx: *Context) !?Member {
         return null;
     };
 
-    return parseBareword(ctx) orelse {
-        return ctx.err(.{ .msg = "expected member name (bareword)" });
+    const expr = try parseExpression(ctx, std.math.minInt(i64)) orelse {
+        return ctx.err(.{ .msg = "expected member expression" });
     };
+
+    const expr_ptr = try ctx.ally.create(Expression);
+    expr_ptr.* = expr;
+    return expr_ptr;
 }
 
 pub fn tokenFromExpr(expr: Expression) *const Token {

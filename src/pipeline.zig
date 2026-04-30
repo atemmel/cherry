@@ -233,6 +233,7 @@ pub fn writeError(err: PipelineError) !void {
         error.ValueRequired,
         error.VariableAlreadyDeclared,
         error.NotImplemented,
+        error.SomethingRequired,
         => {
             try writeRuntimeError(&writer.interface);
         },

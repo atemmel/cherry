@@ -39,6 +39,7 @@ pub const InterpreterError = error{
     StringRequired,
     RecordRequired,
     ClosureRequired,
+    SomethingRequired,
     VariableAlreadyDeclared,
     BadAssign,
 
@@ -138,7 +139,7 @@ fn interpretStatement(ctx: *Context, stmnt: ast.Statement) EvalError!Returns {
 }
 
 fn interpretVarDecl(ctx: *Context, var_decl: ast.VarDecl) !void {
-    switch (try evalExpression(ctx, var_decl.expression)) {
+    switch (try evalExpression(ctx, var_decl.expression, .{})) {
         .value => |value| {
             assert(var_decl.tokens.len == 1);
             try gc.insertSymbol(var_decl.tokens[0].value, value);
@@ -166,7 +167,7 @@ fn interpretAssign(ctx: *Context, assign: ast.Assignment) !void {
     const value_to_insert = try interpretExpressionToAssign(ctx, assign);
     if (assign.accessor) |*accessor| {
         const original_record = entry.value_ptr.*;
-        try assignToAccessor(accessor, original_record, value_to_insert);
+        try assignToAccessor(ctx, accessor, original_record, value_to_insert, assign.variable.token);
     } else {
         entry.value_ptr.* = value_to_insert;
     }
@@ -183,7 +184,7 @@ fn interpretAssignToModuleSucceded(ctx: *Context, assign: ast.Assignment) !bool 
     const value_to_assign = try interpretExpressionToAssign(ctx, assign);
 
     if (assign.accessor) |*accessor| {
-        try assignToAccessor(accessor, record, value_to_assign);
+        try assignToAccessor(ctx, accessor, record, value_to_assign, assign.variable.token);
         return true;
     }
     return err(ctx, .{
@@ -193,7 +194,7 @@ fn interpretAssignToModuleSucceded(ctx: *Context, assign: ast.Assignment) !bool 
 }
 
 fn interpretExpressionToAssign(ctx: *Context, assign: ast.Assignment) !*Value {
-    const value = switch (try evalExpression(ctx, assign.expression)) {
+    const value = switch (try evalExpression(ctx, assign.expression, .{})) {
         .value => |v| v,
         .nothing => {
             const ptr = ptrAdd(assign.variable.token, 2);
@@ -224,15 +225,23 @@ fn interpretExpressionToAssign(ctx: *Context, assign: ast.Assignment) !*Value {
     return if (was_owned) try gc.cloneOrReference(value) else value;
 }
 
-fn assignToAccessor(accessor: *const ast.Accessor, original_record: *Value, value_to_insert: *Value) !void {
-    var current = accessor;
+fn assignToAccessor(ctx: *Context, accessor: *const ast.Accessor, original_record: *Value, value_to_insert: *Value, record_token: *const tokens.Token) !void {
     var record = original_record;
+    var current = accessor;
     while (true) {
+        _ = try mustRecord(ctx, original_record, record_token);
+        const str = try mustEvalIntoSomethingString(ctx, current.member.*, .{ .ignore_accessors = true });
+        record = record.as.record.get(str) orelse {
+            if (current.child == null) {
+                try record.as.record.put(str, value_to_insert);
+            } else unreachable;
+            return;
+        };
+
         if (current.child == null) {
-            try record.as.record.put(current.member.token.value, value_to_insert);
-            break;
+            try record.as.record.put(str, value_to_insert);
+            return;
         }
-        record = record.as.record.get(current.member.token.value) orelse unreachable;
         current = current.child.?;
     }
 }
@@ -243,7 +252,7 @@ fn interpretBranches(ctx: *Context, branches: ast.Branches) !Returns {
 
     for (branches) |branch| {
         if (branch.condition) |expr| {
-            const value = try evalExpression(ctx, expr);
+            const value = try evalExpression(ctx, expr, .{});
             switch (value) {
                 .value => |v| {
                     switch (v.as) {
@@ -309,7 +318,7 @@ fn interpretClassicLoop(ctx: *Context, loop: ast.Loop) !Returns {
 
     while (true) {
         if (classic.expr) |expr| {
-            const value = try evalExpression(ctx, expr);
+            const value = try evalExpression(ctx, expr, .{});
             switch (value) {
                 .value => |val| {
                     switch (val.as) {
@@ -351,7 +360,7 @@ fn interpretClassicLoop(ctx: *Context, loop: ast.Loop) !Returns {
 
 fn interpretRangeLoop(ctx: *Context, loop: ast.Loop) !Returns {
     const range = loop.kind.range_loop;
-    const iterable = switch (try evalExpression(ctx, range.iterable_expression)) {
+    const iterable = switch (try evalExpression(ctx, range.iterable_expression, .{})) {
         .value => |v| v,
         .values => return errRequiresSingleValue(ctx, ast.tokenFromExpr(range.iterable_expression)),
         .nothing => return errRequiresValue(ctx, ast.tokenFromExpr(range.iterable_expression)),
@@ -379,7 +388,7 @@ fn interpretRangeLoop(ctx: *Context, loop: ast.Loop) !Returns {
 
 fn evalReturn(ctx: *Context, ret: ast.Return) !Returns {
     if (ret.expression) |expr| {
-        const eval_expr: Result = try evalExpression(ctx, expr);
+        const eval_expr: Result = try evalExpression(ctx, expr, .{});
         switch (eval_expr) {
             .nothing => {},
             .value => |value| {
@@ -413,7 +422,7 @@ fn evalCall(ctx: *Context, call: ast.Call, opts: EvalCallOpts) !Result {
         const module = ctx.state.modules.get(owning_thing_name) orelse {
             return errNeverImported(ctx, call.token, owning_thing_name);
         };
-        const func_name = accessor.member.token.value;
+        const func_name = try mustEvalIntoSomethingString(ctx, accessor.member.*, .{});
         const func = module.ast.functions.get(func_name) orelse {
             return errNeverExported(ctx, call.token, owning_thing_name, func_name);
         };
@@ -463,7 +472,8 @@ fn evalPipeChain(ctx: *Context, call: ast.Call, prior_result: Result) EvalError!
 
 fn evalInternalModuleCall(ctx: *Context, call: ast.Call, module: *const modules.InternalModule, args: []const *Value) !Result {
     const module_name = call.token.value;
-    const fn_name = call.accessor.?.member.token.value;
+    const expr = call.accessor.?.member;
+    const fn_name = try mustEvalIntoSomethingString(ctx, expr.*, .{});
 
     if (!module.was_imported) {
         return errNeverImported(ctx, call.token, module_name);
@@ -546,7 +556,7 @@ fn evalClosureCall(ctx: *Context, closure_value: *Value, args: []const *Value, t
 
     switch (closure.ast.as) {
         .expression => |expr| {
-            return try evalExpression(ctx, expr.*);
+            return try evalExpression(ctx, expr.*, .{});
         },
         .body => |body| {
             for (body) |stmnt| {
@@ -600,7 +610,7 @@ fn joinCurrentAndPriorArgs(ctx: *Context, call: ast.Call, opts: EvalCallOpts) ![
     }
 
     for (call.arguments) |arg| {
-        switch (try evalExpression(ctx, arg)) {
+        switch (try evalExpression(ctx, arg, .{})) {
             .value => |value| args_list.appendAssumeCapacity(value),
             .nothing => unreachable, // this construct expects only values
             .values => |vals| {
@@ -625,7 +635,7 @@ fn evalUnaryOperator(ctx: *Context, op: ast.UnaryOperator) EvalError!*Value {
 }
 
 fn evalNot(ctx: *Context, op: ast.UnaryOperator) EvalError!*Value {
-    const expr_result = try evalExpression(ctx, op.expression.*);
+    const expr_result = try evalExpression(ctx, op.expression.*, .{});
     const val = switch (expr_result) {
         .value => |val| val,
         .nothing => {
@@ -722,8 +732,8 @@ fn promoteBoolToValue(ctx: *Context, op: ast.BinaryOperator, value: bool) EvalEr
 }
 
 fn evalComparison(ctx: *Context, op: ast.BinaryOperator) !Value.Order {
-    const lhs = try evalExpression(ctx, op.lhs.*);
-    const rhs = try evalExpression(ctx, op.rhs.*);
+    const lhs = try evalExpression(ctx, op.lhs.*, .{});
+    const rhs = try evalExpression(ctx, op.rhs.*, .{});
     return lhs.value.compare(rhs.value);
 }
 
@@ -732,11 +742,11 @@ fn evalAnd(ctx: *Context, op: ast.BinaryOperator) !*Value {
         .origin = op.token,
         .origin_module = ctx.state.current_module_in_process,
     };
-    const lhs = try evalExpression(ctx, op.lhs.*);
+    const lhs = try evalExpression(ctx, op.lhs.*, .{});
     if (lhs.value.compare(try gc.boolean(false, opt)) == .equal) {
         return try gc.boolean(false, opt);
     }
-    const rhs = try evalExpression(ctx, op.rhs.*);
+    const rhs = try evalExpression(ctx, op.rhs.*, .{});
     return try gc.boolean(rhs.value.compare(try gc.boolean(true, opt)) == .equal, opt);
 }
 
@@ -745,15 +755,19 @@ fn evalOr(ctx: *Context, op: ast.BinaryOperator) !*Value {
         .origin = op.token,
         .origin_module = ctx.state.current_module_in_process,
     };
-    const lhs = try evalExpression(ctx, op.lhs.*);
+    const lhs = try evalExpression(ctx, op.lhs.*, .{});
     if (lhs.value.compare(try gc.boolean(true, opt)) == .equal) {
         return try gc.boolean(true, opt);
     }
-    const rhs = try evalExpression(ctx, op.rhs.*);
+    const rhs = try evalExpression(ctx, op.rhs.*, .{});
     return try gc.boolean(rhs.value.compare(try gc.boolean(true, opt)) == .equal, opt);
 }
 
-pub fn evalExpression(ctx: *Context, expr: ast.Expression) EvalError!Result {
+const EvalExpressionOpts = struct {
+    ignore_accessors: bool = false,
+};
+
+pub fn evalExpression(ctx: *Context, expr: ast.Expression, opts: EvalExpressionOpts) EvalError!Result {
     const base_expr = switch (expr.as) {
         .bareword => |bw| something(try evalBareword(ctx, bw)),
         .string_literal => |str| something(try evalStringLiteral(ctx, str)),
@@ -768,15 +782,16 @@ pub fn evalExpression(ctx: *Context, expr: ast.Expression) EvalError!Result {
         .closure => |closure| something(try evalClosure(ctx, closure)),
     };
 
-    if (expr.accessor) |*accessor| {
-        return switch (base_expr) {
-            .value => something(try mustResolveAccessorChain(ctx, base_expr.value, accessor)),
-            //TODO: if nothing or values, this should fail
-            .nothing, .values => unreachable,
-        };
-    } else {
-        return base_expr;
+    if (!opts.ignore_accessors) {
+        if (expr.accessor) |*accessor| {
+            return switch (base_expr) {
+                .value => something(try mustResolveAccessorChain(ctx, base_expr.value, accessor)),
+                //TODO: if nothing or values, this should fail
+                .nothing, .values => unreachable,
+            };
+        }
     }
+    return base_expr;
 }
 
 fn evalClosure(ctx: *Context, closure_ast: ast.Closure) !*Value {
@@ -854,7 +869,7 @@ fn evalListLiteral(ctx: *Context, list_literal: ast.ListLiteral) !*Value {
     var list = try values.List.initCapacity(gc.allocator(), list_literal.items.len);
     errdefer list.deinit();
     for (list_literal.items) |item| {
-        const value = try evalExpression(ctx, item);
+        const value = try evalExpression(ctx, item, .{});
         switch (value) {
             .value => |v| try list.append(v),
             .nothing => unreachable, // Construct needs value
@@ -877,7 +892,7 @@ fn evalRecordLiteral(ctx: *Context, record_literal: ast.RecordLiteral) !*Value {
 
     var record = values.Record.init(gc.allocator());
     for (record_literal.items) |item| {
-        const value = switch (try evalExpression(ctx, item.value)) {
+        const value = switch (try evalExpression(ctx, item.value, .{})) {
             .value => |v| v,
             .nothing => unreachable,
             .values => unreachable,
@@ -913,29 +928,32 @@ fn mustResolveAccessorChain(ctx: *Context, base_value: *Value, accessor: *const 
     var current = accessor;
     var record = base_value;
     while (true) {
-        if (current.child == null) {
-            switch (record.as) {
-                .record => |r| {
-                    return r.get(current.member.token.value) orelse unreachable;
-                },
-                else => {},
-            }
-            //TODO: keep working here
-            ctx.state.error_report = .{
-                .offending_token = current.member.token,
-                .msg = try std.fmt.allocPrint(ctx.ally, "'{s}' is not a record, and so has no member named '{s}'.", .{ record.origin.value, current.member.token.value }),
-            };
-            return InterpreterError.NonRecordAccessAttempt;
+        if (current.child == null and current != accessor) {
+            return record;
         }
-        record = record.as.record.get(current.member.token.value) orelse {
+        const str = try mustEvalIntoSomethingString(ctx, current.member.*, .{ .ignore_accessors = true });
+        record = record.as.record.get(str) orelse {
+            const token = ast.tokenFromExpr(current.member.*);
             ctx.state.error_report = .{
-                .offending_token = current.member.token,
-                .msg = try std.fmt.allocPrint(ctx.ally, "record has no member '{s}'.", .{current.member.token.value}),
+                .offending_token = token,
+                .msg = try std.fmt.allocPrint(ctx.ally, "record {s} has no member '{s}'.", .{ try record.asStr(ctx.stmnt_scratch), str }),
             };
             return InterpreterError.EntryNotFoundWithinRecord;
         };
-        current = current.child.?;
+
+        if (current.child == null) {
+            return record;
+        } else {
+            current = current.child.?;
+        }
     }
+}
+
+pub fn mustEvalIntoSomethingString(ctx: *Context, expr: ast.Expression, opts: EvalExpressionOpts) EvalError![]const u8 {
+    const token = ast.tokenFromExpr(expr);
+    const result = try evalExpression(ctx, expr, opts);
+    const value = try mustSomething(ctx, result, token);
+    return mustString(ctx, value, token);
 }
 
 pub fn mustClosure(ctx: *Context, value: *Value, token: *const tokens.Token) EvalError!*values.Closure {
@@ -973,6 +991,26 @@ pub fn mustString(ctx: *Context, value: *Value, token: *const tokens.Token) Eval
                 .msg = try std.fmt.allocPrint(ctx.ally, "must be a string value, was value of type '{s}'.", .{value.kindName()}),
             };
             break :blk EvalError.StringRequired;
+        },
+    };
+}
+
+pub fn mustSomething(ctx: *Context, result: Result, token: *const tokens.Token) EvalError!*Value {
+    return switch (result) {
+        .value => |v| v,
+        .values => |v| blk: {
+            ctx.state.error_report = .{
+                .offending_token = token,
+                .msg = try std.fmt.allocPrint(ctx.ally, "must produce a single value, but produces {} values.", .{v.len}),
+            };
+            break :blk EvalError.SomethingRequired;
+        },
+        .nothing => blk: {
+            ctx.state.error_report = .{
+                .offending_token = token,
+                .msg = try std.fmt.allocPrint(ctx.ally, "must produce a single value, but produces nothing.", .{}),
+            };
+            break :blk EvalError.SomethingRequired;
         },
     };
 }

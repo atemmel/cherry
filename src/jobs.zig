@@ -68,7 +68,7 @@ pub fn exec(state: *State, call: ast.Call, arena: std.mem.Allocator) EvalError!R
 
     if (redirect_stdin_from_file) |stdin_file| {
         const expr = stdin_file.expression.*;
-        const file_name = switch (try interpreter.evalExpression(state.interpreter, expr)) {
+        const file_name = switch (try interpreter.evalExpression(state.interpreter, expr, .{})) {
             .value => |val| try val.asStr(gc.allocator()),
             .nothing => {
                 return interpreter.errRequiresValue(state.interpreter, ast.tokenFromExpr(expr));
@@ -168,7 +168,7 @@ pub fn proc(state: *State, call: *const ast.Call, arena: std.mem.Allocator) !std
 
     try args.append(arena, name);
     for (call.arguments) |arg| {
-        switch (try interpreter.evalExpression(state.interpreter, arg)) {
+        switch (try interpreter.evalExpression(state.interpreter, arg, .{})) {
             .value => |value| {
                 switch (value.as) {
                     .list => |l| {

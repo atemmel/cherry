@@ -328,7 +328,7 @@ fn dumpRecordLiteral(record: ast.RecordLiteral) void {
 fn dumpAccessor(acc: ast.Accessor) void {
     leaf("Accessor:\n", .{});
     defer up();
-    dumpBareword(acc.member);
+    dumpExpression(acc.member.*);
     if (acc.child) |child| {
         dumpAccessor(child.*);
     }

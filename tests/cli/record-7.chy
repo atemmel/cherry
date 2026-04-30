@@ -1,0 +1,13 @@
+condition := false
+
+x := [
+    proc = -> {
+        $condition = true
+    }
+]
+
+key := proc
+
+$x'$key
+
+assert $condition
