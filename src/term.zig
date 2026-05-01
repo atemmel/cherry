@@ -411,8 +411,11 @@ const escape_key_codes = blk: {
     );
 };
 
-pub fn clearLine(writer: *std.Io.Writer, len: usize) void {
+pub fn clearLine(writer: *std.Io.Writer, len: usize, height: usize) void {
     _ = writer.print("\r", .{}) catch unreachable;
+    if (height > 0) {
+        moveUp(writer, height);
+    }
     for (0..len) |_| {
         _ = writer.print(" ", .{}) catch unreachable;
     }

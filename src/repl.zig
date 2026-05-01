@@ -105,6 +105,14 @@ const State = struct {
         return self.cwd;
     }
 
+    pub fn calcPromptHeight(self: *State) usize {
+        const size = self.term.size();
+        const n_visible_glyphs = self.prefixLen() + self.line().len;
+        const height = n_visible_glyphs / size.x;
+        //std.debug.print("height: {}\n\n\n", .{height});
+        return height;
+    }
+
     pub fn writeKeyAtCursor(self: *State, key: u21) void {
         if (self.length + 1 >= self.buffer.len) {
             return;
@@ -135,7 +143,7 @@ const State = struct {
     pub fn writePrefix(self: *State) !void {
         const out = self.writer;
         const size = self.term.size();
-        terminal.clearLine(out, size.x);
+        terminal.clearLine(out, size.x, self.calcPromptHeight());
         switch (self.mode) {
             .prompt => {
                 try self.writePromptAndLine();
@@ -517,13 +525,13 @@ pub fn repl(persistent_allocator: std.mem.Allocator) !void {
                             slice = slice[0 .. slice.len - 2];
                         }
                         const delete_n = slice.len - (std.mem.lastIndexOfScalar(u21, slice, ' ') orelse 0);
-                        terminal.clearLine(out, state.length + state.prefixLen());
+                        terminal.clearLine(out, state.length + state.prefixLen(), state.calcPromptHeight());
                         @memmove(state.buffer[state.cursor - delete_n .. state.length - delete_n], state.buffer[state.cursor..state.length]);
                         state.length = state.length - delete_n;
                         state.cursor = state.cursor - delete_n;
                     },
                     'u' => {
-                        terminal.clearLine(out, state.length + state.prefixLen());
+                        terminal.clearLine(out, state.length + state.prefixLen(), state.calcPromptHeight());
                         state.clearLine();
                         state.cursor = 0;
                     },
@@ -534,7 +542,7 @@ pub fn repl(persistent_allocator: std.mem.Allocator) !void {
                     'r' => {
                         switch (state.mode) {
                             .prompt => {
-                                terminal.clearLine(out, state.length + state.prefixLen());
+                                terminal.clearLine(out, state.length + state.prefixLen(), state.calcPromptHeight());
                                 state.length = 0;
                                 state.cursor = 0;
                                 state.mode = .search;
@@ -580,7 +588,7 @@ fn eval(state: *State) !EvalResult {
         state.flush();
     };
     state.print("\r\n", .{});
-    terminal.clearLine(state.writer, state.prefixLen());
+    terminal.clearLine(state.writer, state.prefixLen(), state.calcPromptHeight());
     state.term.restore();
     state.flush();
 
@@ -717,7 +725,7 @@ fn nextCommand(state: *State) void {
 }
 
 fn replaceCommand(state: *State, cmd: []const u8) void {
-    terminal.clearLine(state.writer, state.prefixLen() + 7 + state.length);
+    terminal.clearLine(state.writer, state.prefixLen() + 7 + state.length, state.calcPromptHeight());
     const len = algo.writeU8SliceToU21Slice(cmd, &state.buffer);
     state.cursor = len;
     state.length = len;
@@ -1095,7 +1103,7 @@ fn reverseSearch(state: *State, reset: enum { reset, forward }) !void {
         return;
     }
 
-    terminal.clearLine(state.writer, state.prefixLen() + 7 + state.length);
+    terminal.clearLine(state.writer, state.prefixLen() + 7 + state.length, state.calcPromptHeight());
 
     if (state.line().len == 0) {
         state.search_idx = null;
