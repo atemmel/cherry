@@ -461,22 +461,32 @@ pub fn repl(persistent_allocator: std.mem.Allocator) !void {
                         }
                     },
                     .home => {
-                        state.cursor = 0;
                         switch (state.mode) {
                             .prompt, .multi_line_prompt => {},
                             .search => {
-                                state.mode = .prompt;
+                                if (state.search_idx) |idx| { // if holds a match from history
+                                    state.flush();
+                                    const match = state.history.items[idx];
+                                    replaceCommand(&state, match);
+                                    state.mode = .prompt;
+                                }
                             },
                         }
+                        state.cursor = 0;
                     },
                     .end => {
-                        state.cursor = state.length;
                         switch (state.mode) {
                             .prompt, .multi_line_prompt => {},
                             .search => {
-                                state.mode = .prompt;
+                                if (state.search_idx) |idx| { // if holds a match from history
+                                    state.flush();
+                                    const match = state.history.items[idx];
+                                    replaceCommand(&state, match);
+                                    state.mode = .prompt;
+                                }
                             },
                         }
+                        state.cursor = state.length;
                     },
                     .tab => switch (state.mode) {
                         .prompt, .multi_line_prompt => {
